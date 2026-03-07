@@ -36,7 +36,14 @@ func main() {
 	accountRecoveryRepo := repository.NewAccountRecoveryRepository(db)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
 	tokenGen := token.NewSecureGenerator()
-	notifier := notify.NewLogNotifier(log.Default())
+
+	var notifier ports.Notifier = notify.NewLogNotifier(log.Default())
+	if cfg.SendGridAPIKey != "" && cfg.SendGridFromEmail != "" {
+		notifier = notify.NewSendGridNotifier(cfg.SendGridAPIKey, cfg.SendGridFromEmail, cfg.SendGridFromName)
+		log.Printf("sendgrid notifier enabled")
+	} else {
+		log.Printf("sendgrid notifier disabled, using log notifier")
+	}
 
 	var paymentGateway ports.PaymentGateway = payment.NewMockGateway(cfg.PublicBaseURL)
 	if cfg.StripeSecretKey != "" {

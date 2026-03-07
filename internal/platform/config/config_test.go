@@ -8,7 +8,7 @@ import (
 
 func TestLoadReadsDotEnvFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	dotEnv := []byte("HTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\nMAX_CONCURRENT_REQUESTS=77\n")
+	dotEnv := []byte("HTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\nMAX_CONCURRENT_REQUESTS=77\nSENDGRID_FROM_EMAIL=noreply@example.com\n")
 	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), dotEnv, 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
@@ -30,6 +30,7 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 	t.Setenv("HTTP_ADDR", "")
 	t.Setenv("STRIPE_CURRENCY", "")
 	t.Setenv("MAX_CONCURRENT_REQUESTS", "")
+	t.Setenv("SENDGRID_FROM_EMAIL", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -44,5 +45,8 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 	}
 	if cfg.MaxConcurrentReqs != 77 {
 		t.Fatalf("expected max concurrent requests from .env, got %d", cfg.MaxConcurrentReqs)
+	}
+	if cfg.SendGridFromEmail != "noreply@example.com" {
+		t.Fatalf("expected sendgrid from email from .env, got %q", cfg.SendGridFromEmail)
 	}
 }

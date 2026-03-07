@@ -8,7 +8,7 @@ Flow:
 3. Owner email recovery remains human-only fallback when all bot credentials are lost.
 4. OpenClaw lists mailboxes (`GET /v1/mailboxes`).
 5. OpenClaw creates mailbox (`POST /v1/mailboxes`).
-6. Service creates Stripe Checkout link and sends it to owner email (currently logged by notifier adapter).
+6. Service creates Stripe Checkout link and sends it to owner email (SendGrid when configured, log fallback otherwise).
 7. Owner pays.
 8. Stripe webhook marks mailbox active.
 9. OpenClaw polls mailbox status (`GET /v1/mailboxes/{id}`) and receives `access_token` once usable.
@@ -43,6 +43,9 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 - `STRIPE_CANCEL_URL` (default `http://localhost:8080/payment/cancel`)
 - `STRIPE_SECRET_KEY` (optional; if empty, mock payment links are used)
 - `STRIPE_WEBHOOK_SECRET` (required only for real Stripe webhook verification)
+- `SENDGRID_API_KEY` (optional; enable SendGrid notifier)
+- `SENDGRID_FROM_EMAIL` (required when SendGrid is enabled)
+- `SENDGRID_FROM_NAME` (optional, default `MailService`)
 
 ## API examples
 
@@ -78,12 +81,12 @@ Human recovery complete by URL token (browser friendly):
 open "http://localhost:8080/v1/accounts/recovery/complete?token=<one-time-token>"
 ```
 
-Complete token recovery with one-time code from owner inbox:
+Complete token recovery by POST token:
 
 ```bash
 curl -X POST http://localhost:8080/v1/accounts/recovery/complete \
   -H 'Content-Type: application/json' \
-  -d '{"owner_email":"owner@example.com","code":"<recovery-code>"}'
+  -d '{"token":"<one-time-token>"}'
 ```
 
 List mailboxes:

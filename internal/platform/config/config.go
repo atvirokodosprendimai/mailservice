@@ -12,6 +12,9 @@ type Config struct {
 	DatabaseDSN         string
 	MaxConcurrentReqs   int
 	PublicBaseURL       string
+	SendGridAPIKey      string
+	SendGridFromEmail   string
+	SendGridFromName    string
 	StripeSecretKey     string
 	StripeWebhookSecret string
 	StripeSuccessURL    string
@@ -30,6 +33,9 @@ func Load() (*Config, error) {
 		DatabaseDSN:         getEnv("DATABASE_DSN", "mailservice.db"),
 		MaxConcurrentReqs:   getEnvInt("MAX_CONCURRENT_REQUESTS", 100),
 		PublicBaseURL:       getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
+		SendGridAPIKey:      os.Getenv("SENDGRID_API_KEY"),
+		SendGridFromEmail:   getEnv("SENDGRID_FROM_EMAIL", ""),
+		SendGridFromName:    getEnv("SENDGRID_FROM_NAME", "MailService"),
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		StripeSuccessURL:    getEnv("STRIPE_SUCCESS_URL", "http://localhost:8080/payment/success"),
