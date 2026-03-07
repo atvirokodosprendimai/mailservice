@@ -2,6 +2,7 @@ FROM alpine:3.20
 
 RUN apk add --no-cache \
     postfix \
+    postfix-sqlite \
     dovecot \
     dovecot-lmtpd \
     dovecot-sqlite \
