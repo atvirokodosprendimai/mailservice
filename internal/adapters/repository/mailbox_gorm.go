@@ -1,0 +1,148 @@
+package repository
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"gorm.io/gorm"
+
+	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
+	"github.com/atvirokodosprendimai/mailservice/internal/domain"
+)
+
+type mailboxModel struct {
+	ID              string `gorm:"primaryKey;type:text"`
+	AccountID       string `gorm:"not null;index"`
+	OwnerEmail      string `gorm:"not null"`
+	IMAPHost        string `gorm:"not null"`
+	IMAPPort        int    `gorm:"not null"`
+	IMAPUsername    string `gorm:"not null;uniqueIndex"`
+	IMAPPassword    string `gorm:"not null"`
+	AccessToken     string `gorm:"not null;uniqueIndex"`
+	StripeSessionID string `gorm:"not null;uniqueIndex"`
+	PaymentURL      string `gorm:"not null"`
+	Status          string `gorm:"not null;index"`
+	PaidAt          *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+func (mailboxModel) TableName() string {
+	return "mailboxes"
+}
+
+func toDomain(model *mailboxModel) *domain.Mailbox {
+	return &domain.Mailbox{
+		ID:              model.ID,
+		AccountID:       model.AccountID,
+		OwnerEmail:      model.OwnerEmail,
+		IMAPHost:        model.IMAPHost,
+		IMAPPort:        model.IMAPPort,
+		IMAPUsername:    model.IMAPUsername,
+		IMAPPassword:    model.IMAPPassword,
+		AccessToken:     model.AccessToken,
+		StripeSessionID: model.StripeSessionID,
+		PaymentURL:      model.PaymentURL,
+		Status:          domain.MailboxStatus(model.Status),
+		PaidAt:          model.PaidAt,
+		CreatedAt:       model.CreatedAt,
+		UpdatedAt:       model.UpdatedAt,
+	}
+}
+
+func toModel(mailbox *domain.Mailbox) *mailboxModel {
+	return &mailboxModel{
+		ID:              mailbox.ID,
+		AccountID:       mailbox.AccountID,
+		OwnerEmail:      mailbox.OwnerEmail,
+		IMAPHost:        mailbox.IMAPHost,
+		IMAPPort:        mailbox.IMAPPort,
+		IMAPUsername:    mailbox.IMAPUsername,
+		IMAPPassword:    mailbox.IMAPPassword,
+		AccessToken:     mailbox.AccessToken,
+		StripeSessionID: mailbox.StripeSessionID,
+		PaymentURL:      mailbox.PaymentURL,
+		Status:          string(mailbox.Status),
+		PaidAt:          mailbox.PaidAt,
+	}
+}
+
+type MailboxRepository struct {
+	db *gorm.DB
+}
+
+func NewMailboxRepository(db *gorm.DB) *MailboxRepository {
+	return &MailboxRepository{db: db}
+}
+
+func (r *MailboxRepository) Create(ctx context.Context, mailbox *domain.Mailbox) error {
+	return r.db.WithContext(ctx).Create(toModel(mailbox)).Error
+}
+
+func (r *MailboxRepository) Update(ctx context.Context, mailbox *domain.Mailbox) error {
+	return r.db.WithContext(ctx).Save(toModel(mailbox)).Error
+}
+
+func (r *MailboxRepository) GetByID(ctx context.Context, id string) (*domain.Mailbox, error) {
+	var model mailboxModel
+	err := r.db.WithContext(ctx).First(&model, "id = ?", id).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrMailboxNotFound
+		}
+		return nil, err
+	}
+	return toDomain(&model), nil
+}
+
+func (r *MailboxRepository) ListByAccountID(ctx context.Context, accountID string) ([]domain.Mailbox, error) {
+	var models []mailboxModel
+	err := r.db.WithContext(ctx).Order("created_at DESC").Find(&models, "account_id = ?", accountID).Error
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]domain.Mailbox, 0, len(models))
+	for i := range models {
+		items = append(items, *toDomain(&models[i]))
+	}
+	return items, nil
+}
+
+func (r *MailboxRepository) GetPendingByAccountID(ctx context.Context, accountID string) (*domain.Mailbox, error) {
+	var model mailboxModel
+	err := r.db.WithContext(ctx).
+		First(&model, "account_id = ? AND status = ?", accountID, string(domain.MailboxStatusPendingPayment)).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrMailboxNotFound
+		}
+		return nil, err
+	}
+	return toDomain(&model), nil
+}
+
+func (r *MailboxRepository) GetByStripeSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error) {
+	var model mailboxModel
+	err := r.db.WithContext(ctx).First(&model, "stripe_session_id = ?", sessionID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrMailboxNotFound
+		}
+		return nil, err
+	}
+	return toDomain(&model), nil
+}
+
+func (r *MailboxRepository) GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error) {
+	var model mailboxModel
+	err := r.db.WithContext(ctx).First(&model, "access_token = ?", accessToken).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrMailboxNotFound
+		}
+		return nil, err
+	}
+	return toDomain(&model), nil
+}

@@ -1,0 +1,14 @@
+.DS_Store
+
+# Local environment secrets
+.env
+
+# Local runtime data
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+
+# Build output
+bin/
+dist/
