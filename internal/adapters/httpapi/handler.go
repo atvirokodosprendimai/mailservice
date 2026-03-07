@@ -100,10 +100,6 @@ func (h *Handler) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusAccepted, map[string]string{"status": "email_sent_if_exists"})
 			return
 		}
-		if errors.Is(err, ports.ErrRateLimitReached) {
-			writeError(w, http.StatusTooManyRequests, err)
-			return
-		}
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -161,7 +157,7 @@ func (h *Handler) handleStartRecovery(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.accountService.StartRecovery(r.Context(), req.OwnerEmail); err != nil {
 		if errors.Is(err, ports.ErrRateLimitReached) {
-			writeError(w, http.StatusTooManyRequests, err)
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "email_sent_if_exists"})
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err)
