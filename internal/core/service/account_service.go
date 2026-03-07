@@ -17,6 +17,7 @@ import (
 )
 
 const recoveryTTL = 10 * time.Minute
+const recoveryRateLimitWindow = 1 * time.Minute
 
 type AccountService struct {
 	accounts   ports.AccountRepository
@@ -59,6 +60,40 @@ func (s *AccountService) CreateAccount(ctx context.Context, ownerEmail string) (
 	return account, nil
 }
 
+func (s *AccountService) StartAccountAccess(ctx context.Context, ownerEmail string) error {
+	ownerEmail = normalizeEmail(ownerEmail)
+	if ownerEmail == "" || !strings.Contains(ownerEmail, "@") {
+		return nil
+	}
+
+	account, err := s.accounts.GetByOwnerEmail(ctx, ownerEmail)
+	if err != nil {
+		if !errors.Is(err, ports.ErrAccountNotFound) {
+			return err
+		}
+
+		token, tokenErr := s.tokenGen.NewToken(32)
+		if tokenErr != nil {
+			return fmt.Errorf("generate api token: %w", tokenErr)
+		}
+		account = &domain.Account{
+			ID:         uuid.NewString(),
+			OwnerEmail: ownerEmail,
+			APIToken:   token,
+		}
+		if createErr := s.accounts.Create(ctx, account); createErr != nil {
+			return createErr
+		}
+	}
+
+	now := time.Now().UTC()
+	if err := s.enforceRecoveryRateLimit(ctx, account.ID, now); err != nil {
+		return err
+	}
+
+	return s.createAndSendRecoveryCode(ctx, account, ownerEmail, now)
+}
+
 func (s *AccountService) StartRecovery(ctx context.Context, ownerEmail string) error {
 	ownerEmail = normalizeEmail(ownerEmail)
 	if ownerEmail == "" || !strings.Contains(ownerEmail, "@") {
@@ -73,12 +108,36 @@ func (s *AccountService) StartRecovery(ctx context.Context, ownerEmail string) e
 		return err
 	}
 
+	now := time.Now().UTC()
+	if err := s.enforceRecoveryRateLimit(ctx, account.ID, now); err != nil {
+		return err
+	}
+
+	return s.createAndSendRecoveryCode(ctx, account, ownerEmail, now)
+}
+
+func (s *AccountService) enforceRecoveryRateLimit(ctx context.Context, accountID string, now time.Time) error {
+	latest, err := s.recoveries.GetLatestByAccountID(ctx, accountID)
+	if err != nil {
+		if errors.Is(err, ports.ErrRecoveryNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	if now.Sub(latest.CreatedAt) < recoveryRateLimitWindow {
+		return ports.ErrRateLimitReached
+	}
+	return nil
+}
+
+func (s *AccountService) createAndSendRecoveryCode(ctx context.Context, account *domain.Account, ownerEmail string, now time.Time) error {
+
 	code, err := s.tokenGen.NewToken(12)
 	if err != nil {
 		return fmt.Errorf("generate recovery code: %w", err)
 	}
 
-	now := time.Now().UTC()
 	recovery := &domain.AccountRecovery{
 		ID:        uuid.NewString(),
 		AccountID: account.ID,
@@ -115,7 +174,7 @@ func (s *AccountService) CompleteRecovery(ctx context.Context, ownerEmail string
 		return nil, err
 	}
 
-	recovery, err := s.recoveries.GetLatestByAccountID(ctx, account.ID)
+	recovery, err := s.recoveries.GetLatestActiveByAccountID(ctx, account.ID)
 	if err != nil {
 		if errors.Is(err, ports.ErrRecoveryNotFound) {
 			return nil, ports.ErrRecoveryInvalid

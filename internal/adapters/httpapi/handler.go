@@ -19,6 +19,7 @@ import (
 
 type Config struct {
 	StripeWebhookSecret string
+	MaxConcurrentReqs   int
 	MailboxService      *service.MailboxService
 	AccountService      *service.AccountService
 	Logger              *log.Logger
@@ -26,6 +27,7 @@ type Config struct {
 
 type Handler struct {
 	stripeWebhookSecret string
+	concurrencySem      chan struct{}
 	mailboxService      *service.MailboxService
 	accountService      *service.AccountService
 	logger              *log.Logger
@@ -34,8 +36,14 @@ type Handler struct {
 type accountContextKey struct{}
 
 func NewHandler(cfg Config) *Handler {
+	var sem chan struct{}
+	if cfg.MaxConcurrentReqs > 0 {
+		sem = make(chan struct{}, cfg.MaxConcurrentReqs)
+	}
+
 	return &Handler{
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
+		concurrencySem:      sem,
 		mailboxService:      cfg.MailboxService,
 		accountService:      cfg.AccountService,
 		logger:              cfg.Logger,
@@ -55,7 +63,11 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/imap/messages", h.withAccountToken(h.handleListIMAPMessages))
 	mux.HandleFunc("POST /v1/webhooks/stripe", h.handleStripeWebhook)
 	mux.HandleFunc("GET /mock/pay/{sessionID}", h.handleMockPay)
-	return mux
+	handler := http.Handler(mux)
+	if h.concurrencySem != nil {
+		handler = h.withGlobalSemaphore(handler)
+	}
+	return handler
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -79,21 +91,17 @@ func (h *Handler) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	account, err := h.accountService.CreateAccount(r.Context(), req.OwnerEmail)
+	err := h.accountService.StartAccountAccess(r.Context(), req.OwnerEmail)
 	if err != nil {
-		if errors.Is(err, ports.ErrAccountExists) {
-			writeJSON(w, http.StatusConflict, map[string]string{"status": "recovery_required"})
+		if errors.Is(err, ports.ErrRateLimitReached) {
+			writeError(w, http.StatusTooManyRequests, err)
 			return
 		}
-		writeError(w, http.StatusBadRequest, err)
+		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, accountView{
-		ID:         account.ID,
-		OwnerEmail: account.OwnerEmail,
-		APIToken:   account.APIToken,
-	})
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "email_sent_if_exists"})
 }
 
 type accountRecoveryRequest struct {
@@ -108,6 +116,10 @@ func (h *Handler) handleStartRecovery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.accountService.StartRecovery(r.Context(), req.OwnerEmail); err != nil {
+		if errors.Is(err, ports.ErrRateLimitReached) {
+			writeError(w, http.StatusTooManyRequests, err)
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}

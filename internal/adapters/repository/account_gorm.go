@@ -141,6 +141,20 @@ func (r *AccountRecoveryRepository) GetLatestByAccountID(ctx context.Context, ac
 	var model accountRecoveryModel
 	err := r.db.WithContext(ctx).
 		Order("created_at DESC").
+		First(&model, "account_id = ?", accountID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrRecoveryNotFound
+		}
+		return nil, err
+	}
+	return toAccountRecoveryDomain(&model), nil
+}
+
+func (r *AccountRecoveryRepository) GetLatestActiveByAccountID(ctx context.Context, accountID string) (*domain.AccountRecovery, error) {
+	var model accountRecoveryModel
+	err := r.db.WithContext(ctx).
+		Order("created_at DESC").
 		First(&model, "account_id = ? AND used_at IS NULL", accountID).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

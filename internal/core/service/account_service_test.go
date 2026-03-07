@@ -15,7 +15,7 @@ func TestCreateAccountFailsWhenAlreadyExists(t *testing.T) {
 			"owner@example.com": {ID: "acc-1", OwnerEmail: "owner@example.com", APIToken: "token-1"},
 		},
 	}
-	service := NewAccountService(accounts, &fakeRecoveryRepo{}, &fakeAccountNotifier{}, fakeTokenGenerator{tokens: []string{"new-token"}})
+	service := NewAccountService(accounts, &fakeRecoveryRepo{}, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-token"}})
 
 	_, err := service.CreateAccount(context.Background(), "owner@example.com")
 	if err == nil {
@@ -23,6 +23,30 @@ func TestCreateAccountFailsWhenAlreadyExists(t *testing.T) {
 	}
 	if err != ports.ErrAccountExists {
 		t.Fatalf("expected ErrAccountExists, got %v", err)
+	}
+}
+
+func TestStartRecoveryRateLimited(t *testing.T) {
+	accounts := &fakeAccountRepo{
+		byOwner: map[string]*domain.Account{
+			"owner@example.com": {ID: "acc-1", OwnerEmail: "owner@example.com", APIToken: "token-1"},
+		},
+	}
+	recoveries := &fakeRecoveryRepo{
+		latest: &domain.AccountRecovery{
+			ID:        "rec-last",
+			AccountID: "acc-1",
+			CreatedAt: time.Now().UTC(),
+		},
+	}
+	service := NewAccountService(accounts, recoveries, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"recover-code"}})
+
+	err := service.StartRecovery(context.Background(), "owner@example.com")
+	if err == nil {
+		t.Fatalf("expected rate limit error")
+	}
+	if err != ports.ErrRateLimitReached {
+		t.Fatalf("expected ErrRateLimitReached, got %v", err)
 	}
 }
 
@@ -34,7 +58,7 @@ func TestStartRecoveryCreatesCodeAndSendsNotification(t *testing.T) {
 	}
 	recoveries := &fakeRecoveryRepo{}
 	notifier := &fakeAccountNotifier{}
-	service := NewAccountService(accounts, recoveries, notifier, fakeTokenGenerator{tokens: []string{"recover-code"}})
+	service := NewAccountService(accounts, recoveries, notifier, &fakeTokenGenerator{tokens: []string{"recover-code"}})
 
 	err := service.StartRecovery(context.Background(), "owner@example.com")
 	if err != nil {
@@ -48,6 +72,24 @@ func TestStartRecoveryCreatesCodeAndSendsNotification(t *testing.T) {
 	}
 	if recoveries.latest == nil {
 		t.Fatalf("expected recovery record created")
+	}
+}
+
+func TestStartAccountAccessCreatesAccountWithoutEnumeration(t *testing.T) {
+	accounts := &fakeAccountRepo{}
+	recoveries := &fakeRecoveryRepo{}
+	notifier := &fakeAccountNotifier{}
+	service := NewAccountService(accounts, recoveries, notifier, &fakeTokenGenerator{tokens: []string{"new-api-token", "recover-code"}})
+
+	err := service.StartAccountAccess(context.Background(), "owner@example.com")
+	if err != nil {
+		t.Fatalf("StartAccountAccess failed: %v", err)
+	}
+	if accounts.byOwner["owner@example.com"] == nil {
+		t.Fatalf("expected account to be created")
+	}
+	if notifier.recoveryCalls != 1 {
+		t.Fatalf("expected recovery code send")
 	}
 }
 
@@ -65,7 +107,7 @@ func TestCompleteRecoveryRotatesToken(t *testing.T) {
 			ExpiresAt: time.Now().UTC().Add(5 * time.Minute),
 		},
 	}
-	service := NewAccountService(accounts, recoveries, &fakeAccountNotifier{}, fakeTokenGenerator{tokens: []string{"new-api-token"}})
+	service := NewAccountService(accounts, recoveries, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api-token"}})
 
 	account, err := service.CompleteRecovery(context.Background(), "owner@example.com", "recover-code")
 	if err != nil {
@@ -149,6 +191,13 @@ func (f *fakeRecoveryRepo) GetLatestByAccountID(_ context.Context, accountID str
 	return nil, ports.ErrRecoveryNotFound
 }
 
+func (f *fakeRecoveryRepo) GetLatestActiveByAccountID(_ context.Context, accountID string) (*domain.AccountRecovery, error) {
+	if f.latest != nil && f.latest.AccountID == accountID && f.latest.UsedAt == nil {
+		return f.latest, nil
+	}
+	return nil, ports.ErrRecoveryNotFound
+}
+
 func (f *fakeRecoveryRepo) MarkUsed(_ context.Context, recoveryID string, usedAt time.Time) error {
 	f.markedUsedID = recoveryID
 	if f.latest != nil && f.latest.ID == recoveryID {
@@ -161,11 +210,13 @@ type fakeTokenGenerator struct {
 	tokens []string
 }
 
-func (f fakeTokenGenerator) NewToken(_ int) (string, error) {
+func (f *fakeTokenGenerator) NewToken(_ int) (string, error) {
 	if len(f.tokens) == 0 {
 		return "", nil
 	}
-	return f.tokens[0], nil
+	value := f.tokens[0]
+	f.tokens = f.tokens[1:]
+	return value, nil
 }
 
 type fakeAccountNotifier struct {

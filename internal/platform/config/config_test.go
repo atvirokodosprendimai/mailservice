@@ -8,7 +8,7 @@ import (
 
 func TestLoadReadsDotEnvFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	dotEnv := []byte("HTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\n")
+	dotEnv := []byte("HTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\nMAX_CONCURRENT_REQUESTS=77\n")
 	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), dotEnv, 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
@@ -29,6 +29,7 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 
 	t.Setenv("HTTP_ADDR", "")
 	t.Setenv("STRIPE_CURRENCY", "")
+	t.Setenv("MAX_CONCURRENT_REQUESTS", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -40,5 +41,8 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 	}
 	if cfg.StripeCurrency != "eur" {
 		t.Fatalf("expected Stripe currency from .env, got %q", cfg.StripeCurrency)
+	}
+	if cfg.MaxConcurrentReqs != 77 {
+		t.Fatalf("expected max concurrent requests from .env, got %d", cfg.MaxConcurrentReqs)
 	}
 }

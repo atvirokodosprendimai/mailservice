@@ -17,6 +17,7 @@ var (
 	ErrRecoveryNotFound = errors.New("recovery not found")
 	ErrRecoveryInvalid  = errors.New("recovery code invalid")
 	ErrRecoveryExpired  = errors.New("recovery code expired")
+	ErrRateLimitReached = errors.New("rate limit reached")
 )
 
 type MailboxRepository interface {
@@ -40,6 +41,7 @@ type AccountRecoveryRepository interface {
 	Create(ctx context.Context, recovery *domain.AccountRecovery) error
 	DeleteActiveByAccountID(ctx context.Context, accountID string) error
 	GetLatestByAccountID(ctx context.Context, accountID string) (*domain.AccountRecovery, error)
+	GetLatestActiveByAccountID(ctx context.Context, accountID string) (*domain.AccountRecovery, error)
 	MarkUsed(ctx context.Context, recoveryID string, usedAt time.Time) error
 }
 

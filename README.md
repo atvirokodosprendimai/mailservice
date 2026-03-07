@@ -3,9 +3,9 @@
 Tiny hexagonal Go API for paid mailbox provisioning.
 
 Flow:
-1. OpenClaw creates account token (`POST /v1/accounts`) for new owner email.
-2. If account exists and token is lost, OpenClaw starts email-based recovery (`POST /v1/accounts/recovery/start`).
-3. Owner mailbox receives one-time recovery code; OpenClaw reads it and completes recovery (`POST /v1/accounts/recovery/complete`).
+1. OpenClaw starts account access flow (`POST /v1/accounts`) for owner email.
+2. Service sends one-time access code to owner email (new registration and token recovery use the same flow).
+3. OpenClaw reads owner inbox and completes access (`POST /v1/accounts/recovery/complete`) to receive API token.
 4. OpenClaw lists mailboxes (`GET /v1/mailboxes`).
 5. OpenClaw creates mailbox (`POST /v1/mailboxes`).
 6. Service creates Stripe Checkout link and sends it to owner email (currently logged by notifier adapter).
@@ -35,6 +35,7 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 
 - `HTTP_ADDR` (default `:8080`)
 - `DATABASE_DSN` (default `mailservice.db`)
+- `MAX_CONCURRENT_REQUESTS` (default `100`, set `0` to disable semaphore)
 - `PUBLIC_BASE_URL` (default `http://localhost:8080`)
 - `MAILBOX_PRICE_CENTS` (default `299`)
 - `STRIPE_CURRENCY` (default `usd`)
@@ -45,7 +46,7 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 
 ## API examples
 
-Create account (new owner email):
+Start account access (always generic response):
 
 ```bash
 curl -X POST http://localhost:8080/v1/accounts \
@@ -53,7 +54,11 @@ curl -X POST http://localhost:8080/v1/accounts \
   -d '{"owner_email":"owner@example.com"}'
 ```
 
-Start token recovery (always returns accepted):
+If this request is repeated in less than one minute for the same owner email, API returns `429`.
+
+If global concurrency limit is reached, API returns `503` with `retry_after_seconds` random value in range `3..100`.
+
+Optional explicit recovery start endpoint:
 
 ```bash
 curl -X POST http://localhost:8080/v1/accounts/recovery/start \

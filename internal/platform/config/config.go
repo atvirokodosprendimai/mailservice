@@ -10,6 +10,7 @@ import (
 type Config struct {
 	HTTPAddr            string
 	DatabaseDSN         string
+	MaxConcurrentReqs   int
 	PublicBaseURL       string
 	StripeSecretKey     string
 	StripeWebhookSecret string
@@ -27,6 +28,7 @@ func Load() (*Config, error) {
 	return &Config{
 		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
 		DatabaseDSN:         getEnv("DATABASE_DSN", "mailservice.db"),
+		MaxConcurrentReqs:   getEnvInt("MAX_CONCURRENT_REQUESTS", 100),
 		PublicBaseURL:       getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
@@ -73,6 +75,21 @@ func getEnvInt64(key string, fallback int64) int64 {
 	}
 	n, err := strconv.ParseInt(v, 10, 64)
 	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+func getEnvInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	if n < 0 {
 		return fallback
 	}
 	return n
