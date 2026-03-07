@@ -48,7 +48,11 @@ if [ -n "${MAILBOX_USER}" ] && [ -n "${MAILBOX_PASSWORD}" ]; then
   chown -R vmail:vmail "/var/mail/vhosts/${MAIL_DOMAIN}/${MAILBOX_USER}"
 fi
 
-postfix start
+if ! postfix start; then
+  echo "postfix failed to start; dumping effective postfix config" >&2
+  postconf -n >&2 || true
+  exit 1
+fi
 
 echo "mailreceive started: domain=${MAIL_DOMAIN} db=${MAIL_DB_PATH} debug=${MAIL_DEBUG}"
 postconf myhostname mydomain myorigin maillog_file debug_peer_level || true
