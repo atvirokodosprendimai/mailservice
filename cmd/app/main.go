@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/httpapi"
+	"github.com/atvirokodosprendimai/mailservice/internal/adapters/imap"
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/notify"
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/payment"
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/repository"
@@ -33,6 +34,7 @@ func main() {
 
 	mailboxRepo := repository.NewMailboxRepository(db)
 	mailRuntimeProvisioner := repository.NewMailRuntimeProvisioner(db, cfg.MailDomain)
+	imapReader := imap.NewReader()
 	accountRepo := repository.NewAccountRepository(db)
 	accountRecoveryRepo := repository.NewAccountRecoveryRepository(db)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
@@ -63,7 +65,7 @@ func main() {
 		log.Printf("stripe disabled, using mock payment links")
 	}
 
-	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner)
+	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.IMAPHost, cfg.IMAPPort)
 	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen, cfg.PublicBaseURL)
 
 	handler := httpapi.NewHandler(httpapi.Config{

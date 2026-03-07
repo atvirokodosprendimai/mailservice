@@ -13,6 +13,8 @@ type Config struct {
 	MaxConcurrentReqs   int
 	PublicBaseURL       string
 	MailDomain          string
+	IMAPHost            string
+	IMAPPort            int
 	SendGridAPIKey      string
 	SendGridFromEmail   string
 	SendGridFromName    string
@@ -38,6 +40,8 @@ func Load() (*Config, error) {
 		MaxConcurrentReqs:   getEnvInt("MAX_CONCURRENT_REQUESTS", 100),
 		PublicBaseURL:       getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
 		MailDomain:          getEnv("MAIL_DOMAIN", "mail.local"),
+		IMAPHost:            getEnv("IMAP_HOST", getEnv("MAIL_DOMAIN", "mail.local")),
+		IMAPPort:            getEnvInt("IMAP_PORT", 143),
 		SendGridAPIKey:      os.Getenv("SENDGRID_API_KEY"),
 		SendGridFromEmail:   getEnv("SENDGRID_FROM_EMAIL", ""),
 		SendGridFromName:    getEnv("SENDGRID_FROM_NAME", "MailService"),

@@ -6,6 +6,8 @@ services:
       DATABASE_DSN: /data/mailservice.db
       PUBLIC_BASE_URL: http://localhost:8080
       MAIL_DOMAIN: mail.local
+      IMAP_HOST: mail.local
+      IMAP_PORT: "143"
       MAX_CONCURRENT_REQUESTS: "100"
       STRIPE_SECRET_KEY: ""
       STRIPE_WEBHOOK_SECRET: ""

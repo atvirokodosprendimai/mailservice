@@ -343,6 +343,7 @@ func (h *Handler) handleResolveIMAP(w http.ResponseWriter, r *http.Request) {
 
 type listMessagesRequest struct {
 	AccessToken string `json:"access_token"`
+	Limit       int    `json:"limit,omitempty"`
 }
 
 func (h *Handler) handleListIMAPMessages(w http.ResponseWriter, r *http.Request) {
@@ -352,7 +353,7 @@ func (h *Handler) handleListIMAPMessages(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, err := h.mailboxService.ResolveIMAPByToken(r.Context(), req.AccessToken)
+	messages, err := h.mailboxService.ListMessagesByToken(r.Context(), req.AccessToken, req.Limit)
 	if err != nil {
 		switch {
 		case errors.Is(err, ports.ErrMailboxNotFound):
@@ -368,7 +369,7 @@ func (h *Handler) handleListIMAPMessages(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"provider": "imap",
-		"messages": []any{},
+		"messages": messages,
 	})
 }
 

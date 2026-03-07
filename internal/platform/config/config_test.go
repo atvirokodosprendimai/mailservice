@@ -8,7 +8,7 @@ import (
 
 func TestLoadReadsDotEnvFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	dotEnv := []byte("HTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\nMAX_CONCURRENT_REQUESTS=77\nMAIL_DOMAIN=mx.example.com\nSENDGRID_FROM_EMAIL=noreply@example.com\nRESEND_FROM_EMAIL=hello@example.com\n")
+	dotEnv := []byte("HTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\nMAX_CONCURRENT_REQUESTS=77\nMAIL_DOMAIN=mx.example.com\nIMAP_HOST=imap.example.com\nIMAP_PORT=1143\nSENDGRID_FROM_EMAIL=noreply@example.com\nRESEND_FROM_EMAIL=hello@example.com\n")
 	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), dotEnv, 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
@@ -31,6 +31,8 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 	t.Setenv("STRIPE_CURRENCY", "")
 	t.Setenv("MAX_CONCURRENT_REQUESTS", "")
 	t.Setenv("MAIL_DOMAIN", "")
+	t.Setenv("IMAP_HOST", "")
+	t.Setenv("IMAP_PORT", "")
 	t.Setenv("SENDGRID_FROM_EMAIL", "")
 	t.Setenv("RESEND_FROM_EMAIL", "")
 
@@ -50,6 +52,12 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 	}
 	if cfg.MailDomain != "mx.example.com" {
 		t.Fatalf("expected mail domain from .env, got %q", cfg.MailDomain)
+	}
+	if cfg.IMAPHost != "imap.example.com" {
+		t.Fatalf("expected imap host from .env, got %q", cfg.IMAPHost)
+	}
+	if cfg.IMAPPort != 1143 {
+		t.Fatalf("expected imap port from .env, got %d", cfg.IMAPPort)
 	}
 	if cfg.SendGridFromEmail != "noreply@example.com" {
 		t.Fatalf("expected sendgrid from email from .env, got %q", cfg.SendGridFromEmail)

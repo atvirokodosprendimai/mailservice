@@ -82,3 +82,14 @@ type TokenGenerator interface {
 type MailRuntimeProvisioner interface {
 	EnsureMailbox(ctx context.Context, mailbox *domain.Mailbox) error
 }
+
+type IMAPMessage struct {
+	UID     uint32
+	Subject string
+	From    string
+	Date    time.Time
+}
+
+type MailReader interface {
+	ListMessages(ctx context.Context, host string, port int, username string, password string, limit int) ([]IMAPMessage, error)
+}

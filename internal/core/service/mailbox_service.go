@@ -20,9 +20,19 @@ type MailboxService struct {
 	notifier    ports.Notifier
 	tokenGen    ports.TokenGenerator
 	provisioner ports.MailRuntimeProvisioner
+	mailReader  ports.MailReader
+	imapHost    string
+	imapPort    int
 }
 
-func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner) *MailboxService {
+func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, imapHost string, imapPort int) *MailboxService {
+	if strings.TrimSpace(imapHost) == "" {
+		imapHost = "mail.local"
+	}
+	if imapPort <= 0 {
+		imapPort = 143
+	}
+
 	return &MailboxService{
 		repo:        repo,
 		accounts:    accounts,
@@ -30,6 +40,9 @@ func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepos
 		notifier:    notifier,
 		tokenGen:    tokenGen,
 		provisioner: provisioner,
+		mailReader:  mailReader,
+		imapHost:    imapHost,
+		imapPort:    imapPort,
 	}
 }
 
@@ -77,8 +90,8 @@ func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxReq
 		ID:           id,
 		AccountID:    req.Account.ID,
 		OwnerEmail:   ownerEmail,
-		IMAPHost:     "imap.mailservice.local",
-		IMAPPort:     143,
+		IMAPHost:     s.imapHost,
+		IMAPPort:     s.imapPort,
 		IMAPUsername: "mbx_" + strings.ReplaceAll(id[:12], "-", ""),
 		IMAPPassword: imapPassword,
 		AccessToken:  accessToken,
@@ -222,4 +235,49 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 		Username:  mailbox.IMAPUsername,
 		Password:  mailbox.IMAPPassword,
 	}, nil
+}
+
+func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken string, limit int) ([]ports.IMAPMessage, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	mailbox, err := s.repo.GetByAccessToken(ctx, accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	if !account.SubscriptionActive(time.Now().UTC()) {
+		if mailbox.Status == domain.MailboxStatusActive {
+			mailbox.Status = domain.MailboxStatusExpired
+			_ = s.repo.Update(ctx, mailbox)
+		}
+		return nil, ports.ErrMailboxNotUsable
+	}
+
+	if mailbox.Status != domain.MailboxStatusActive {
+		mailbox.Status = domain.MailboxStatusActive
+		mailbox.ExpiresAt = account.SubscriptionExpiresAt
+		_ = s.repo.Update(ctx, mailbox)
+	}
+
+	if s.provisioner != nil {
+		if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+			return nil, err
+		}
+	}
+
+	if s.mailReader == nil {
+		return []ports.IMAPMessage{}, nil
+	}
+
+	return s.mailReader.ListMessages(ctx, mailbox.IMAPHost, mailbox.IMAPPort, mailbox.IMAPUsername, mailbox.IMAPPassword, limit)
 }
