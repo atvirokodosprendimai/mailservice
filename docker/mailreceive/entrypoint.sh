@@ -12,9 +12,6 @@ MAIL_DEBUG="${MAIL_DEBUG:-0}"
 mkdir -p /var/lib/mail /var/mail/vhosts /var/spool/postfix /run/dovecot
 chown -R vmail:vmail /var/mail/vhosts
 
-mkdir -p /var/log
-touch /var/log/maillog
-
 ln -sf "${MAIL_DB_PATH}" "${POSTFIX_SQLITE_DB}"
 
 # Apply runtime Postfix identity from env (avoid hardcoded mail.local).
@@ -51,7 +48,8 @@ if [ -n "${MAILBOX_USER}" ] && [ -n "${MAILBOX_PASSWORD}" ]; then
   chown -R vmail:vmail "/var/mail/vhosts/${MAIL_DOMAIN}/${MAILBOX_USER}"
 fi
 
-tail -n 0 -F /var/log/maillog &
+# Start syslog in foreground mode and emit logs to stdout.
+syslogd -n -O /dev/stdout &
 
 if ! postfix start; then
   echo "postfix failed to start; dumping effective postfix config" >&2
