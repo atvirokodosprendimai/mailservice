@@ -17,6 +17,5 @@ message_size_limit = 52428800
 mailbox_size_limit = 0
 recipient_delimiter = +
 
-# Verbose protocol debug for inbound SMTP peers.
-debug_peer_list = 0.0.0.0/0
-debug_peer_level = 2
+# Keep normal Postfix logging. Do not set debug_peer_* here because
+# debug_peer_level requires debugger_command and can break startup.
