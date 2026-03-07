@@ -59,10 +59,10 @@ if ! postfix start; then
 fi
 
 echo "mailreceive started: domain=${MAIL_DOMAIN} db=${MAIL_DB_PATH} debug=${MAIL_DEBUG}"
-postconf myhostname mydomain myorigin maillog_file debug_peer_level || true
+postconf myhostname mydomain myorigin maillog_file debugger_command || true
 
 if [ "${MAIL_DEBUG}" = "1" ]; then
-  exec dovecot -F -D
+  doveconf -n || true
 fi
 
 exec dovecot -F
