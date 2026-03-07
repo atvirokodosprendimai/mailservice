@@ -222,6 +222,11 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 		mailbox.ExpiresAt = account.SubscriptionExpiresAt
 		_ = s.repo.Update(ctx, mailbox)
 	}
+	if s.shouldRewriteLegacyIMAPHost(mailbox.IMAPHost) || mailbox.IMAPPort <= 0 {
+		mailbox.IMAPHost = s.imapHost
+		mailbox.IMAPPort = s.imapPort
+		_ = s.repo.Update(ctx, mailbox)
+	}
 	if s.provisioner != nil {
 		if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
 			return nil, err
@@ -269,6 +274,12 @@ func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken st
 		_ = s.repo.Update(ctx, mailbox)
 	}
 
+	if s.shouldRewriteLegacyIMAPHost(mailbox.IMAPHost) || mailbox.IMAPPort <= 0 {
+		mailbox.IMAPHost = s.imapHost
+		mailbox.IMAPPort = s.imapPort
+		_ = s.repo.Update(ctx, mailbox)
+	}
+
 	if s.provisioner != nil {
 		if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
 			return nil, err
@@ -280,4 +291,12 @@ func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken st
 	}
 
 	return s.mailReader.ListMessages(ctx, mailbox.IMAPHost, mailbox.IMAPPort, mailbox.IMAPUsername, mailbox.IMAPPassword, limit)
+}
+
+func (s *MailboxService) shouldRewriteLegacyIMAPHost(value string) bool {
+	host := strings.TrimSpace(strings.ToLower(value))
+	if host == "" {
+		return true
+	}
+	return host == "imap.mailservice.local"
 }
