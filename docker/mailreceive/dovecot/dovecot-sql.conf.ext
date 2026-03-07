@@ -1,4 +1,5 @@
 driver = sqlite
 connect = /var/lib/mail/shared-mailservice.db
 default_pass_scheme = PLAIN
-password_query = SELECT login AS user, password FROM mail_users WHERE login='%u' AND enabled=1
+password_query = SELECT email AS user, password FROM mail_users WHERE enabled=1 AND (email='%u' OR login='%n')
+user_query = SELECT '/var/mail/vhosts/' || maildir || '/Maildir' AS home, 5000 AS uid, 5000 AS gid FROM mail_users WHERE enabled=1 AND (email='%u' OR login='%n')
