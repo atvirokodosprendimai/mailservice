@@ -56,6 +56,7 @@ type ResolveIMAPResult struct {
 	Port      int
 	Username  string
 	Password  string
+	Email     string
 }
 
 func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxRequest) (*domain.Mailbox, bool, error) {
@@ -239,6 +240,7 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 		Port:      mailbox.IMAPPort,
 		Username:  mailbox.IMAPUsername,
 		Password:  mailbox.IMAPPassword,
+		Email:     mailbox.IMAPUsername + "@" + mailbox.IMAPHost,
 	}, nil
 }
 
