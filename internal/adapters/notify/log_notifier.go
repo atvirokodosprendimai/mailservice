@@ -17,3 +17,8 @@ func (n *LogNotifier) SendPaymentLink(_ context.Context, ownerEmail string, paym
 	n.logger.Printf("send owner payment email owner=%s mailbox=%s payment_url=%s", ownerEmail, mailboxID, paymentURL)
 	return nil
 }
+
+func (n *LogNotifier) SendRecoveryCode(_ context.Context, ownerEmail string, code string) error {
+	n.logger.Printf("send owner recovery code owner=%s code=%s", ownerEmail, code)
+	return nil
+}

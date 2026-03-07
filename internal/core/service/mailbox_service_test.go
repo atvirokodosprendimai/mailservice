@@ -20,8 +20,8 @@ func TestCreateMailboxReturnsExistingPendingMailbox(t *testing.T) {
 		},
 	}
 	payment := &fakePaymentGateway{}
-	notifier := &fakeNotifier{}
-	service := NewMailboxService(repo, payment, notifier, fakeTokenGenerator{token: "token"})
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, payment, notifier, fakeMailboxTokenGenerator{token: "token"})
 
 	mailbox, created, err := service.CreateMailbox(context.Background(), CreateMailboxRequest{
 		Account: &domain.Account{ID: "acc-1", OwnerEmail: "owner@example.com"},
@@ -89,11 +89,23 @@ func (f *fakePaymentGateway) CreatePaymentLink(_ context.Context, _ ports.Paymen
 	return &ports.PaymentLink{SessionID: "sess-1", URL: "http://pay/1"}, nil
 }
 
-type fakeNotifier struct {
+type fakeMailboxTokenGenerator struct {
+	token string
+}
+
+func (f fakeMailboxTokenGenerator) NewToken(_ int) (string, error) {
+	return f.token, nil
+}
+
+type fakeMailboxNotifier struct {
 	calls int
 }
 
-func (f *fakeNotifier) SendPaymentLink(_ context.Context, _ string, _ string, _ string) error {
+func (f *fakeMailboxNotifier) SendPaymentLink(_ context.Context, _ string, _ string, _ string) error {
 	f.calls++
+	return nil
+}
+
+func (f *fakeMailboxNotifier) SendRecoveryCode(_ context.Context, _ string, _ string) error {
 	return nil
 }

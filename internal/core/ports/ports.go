@@ -3,6 +3,7 @@ package ports
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
 )
@@ -12,6 +13,10 @@ var (
 	ErrMailboxNotUsable = errors.New("mailbox not usable")
 	ErrAccountNotFound  = errors.New("account not found")
 	ErrForbidden        = errors.New("forbidden")
+	ErrAccountExists    = errors.New("account already exists")
+	ErrRecoveryNotFound = errors.New("recovery not found")
+	ErrRecoveryInvalid  = errors.New("recovery code invalid")
+	ErrRecoveryExpired  = errors.New("recovery code expired")
 )
 
 type MailboxRepository interface {
@@ -28,6 +33,14 @@ type AccountRepository interface {
 	Create(ctx context.Context, account *domain.Account) error
 	GetByOwnerEmail(ctx context.Context, ownerEmail string) (*domain.Account, error)
 	GetByAPIToken(ctx context.Context, apiToken string) (*domain.Account, error)
+	UpdateAPIToken(ctx context.Context, accountID string, apiToken string) error
+}
+
+type AccountRecoveryRepository interface {
+	Create(ctx context.Context, recovery *domain.AccountRecovery) error
+	DeleteActiveByAccountID(ctx context.Context, accountID string) error
+	GetLatestByAccountID(ctx context.Context, accountID string) (*domain.AccountRecovery, error)
+	MarkUsed(ctx context.Context, recoveryID string, usedAt time.Time) error
 }
 
 type PaymentLinkRequest struct {
@@ -46,6 +59,7 @@ type PaymentGateway interface {
 
 type Notifier interface {
 	SendPaymentLink(ctx context.Context, ownerEmail string, paymentURL string, mailboxID string) error
+	SendRecoveryCode(ctx context.Context, ownerEmail string, code string) error
 }
 
 type TokenGenerator interface {

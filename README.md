@@ -3,14 +3,16 @@
 Tiny hexagonal Go API for paid mailbox provisioning.
 
 Flow:
-1. OpenClaw creates/gets account token (`POST /v1/accounts`).
-2. OpenClaw lists mailboxes (`GET /v1/mailboxes`).
-3. OpenClaw creates mailbox (`POST /v1/mailboxes`).
-4. Service creates Stripe Checkout link and sends it to owner email (currently logged by notifier adapter).
-5. Owner pays.
-6. Stripe webhook marks mailbox active.
-7. OpenClaw polls mailbox status (`GET /v1/mailboxes/{id}`) and receives `access_token` once usable.
-8. OpenClaw resolves token to IMAP login (`POST /v1/imap/resolve`) or fetches messages (`POST /v1/imap/messages`).
+1. OpenClaw creates account token (`POST /v1/accounts`) for new owner email.
+2. If account exists and token is lost, OpenClaw starts email-based recovery (`POST /v1/accounts/recovery/start`).
+3. Owner mailbox receives one-time recovery code; OpenClaw reads it and completes recovery (`POST /v1/accounts/recovery/complete`).
+4. OpenClaw lists mailboxes (`GET /v1/mailboxes`).
+5. OpenClaw creates mailbox (`POST /v1/mailboxes`).
+6. Service creates Stripe Checkout link and sends it to owner email (currently logged by notifier adapter).
+7. Owner pays.
+8. Stripe webhook marks mailbox active.
+9. OpenClaw polls mailbox status (`GET /v1/mailboxes/{id}`) and receives `access_token` once usable.
+10. OpenClaw resolves token to IMAP login (`POST /v1/imap/resolve`) or fetches messages (`POST /v1/imap/messages`).
 
 ## Stack
 
@@ -43,12 +45,28 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 
 ## API examples
 
-Create/get account:
+Create account (new owner email):
 
 ```bash
 curl -X POST http://localhost:8080/v1/accounts \
   -H 'Content-Type: application/json' \
   -d '{"owner_email":"owner@example.com"}'
+```
+
+Start token recovery (always returns accepted):
+
+```bash
+curl -X POST http://localhost:8080/v1/accounts/recovery/start \
+  -H 'Content-Type: application/json' \
+  -d '{"owner_email":"owner@example.com"}'
+```
+
+Complete token recovery with one-time code from owner inbox:
+
+```bash
+curl -X POST http://localhost:8080/v1/accounts/recovery/complete \
+  -H 'Content-Type: application/json' \
+  -d '{"owner_email":"owner@example.com","code":"<recovery-code>"}'
 ```
 
 List mailboxes:
