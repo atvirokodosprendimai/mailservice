@@ -196,7 +196,7 @@ func TestListMessagesByTokenReturnsReaderMessages(t *testing.T) {
 	reader := &fakeMailReader{messages: []ports.IMAPMessage{{UID: 1, Subject: "hello", From: "a@b"}}}
 	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, reader, "imap.test.local", 1143)
 
-	messages, err := service.ListMessagesByToken(context.Background(), "token-1", 20, true)
+	messages, err := service.ListMessagesByToken(context.Background(), "token-1", 20, true, true)
 	if err != nil {
 		t.Fatalf("ListMessagesByToken failed: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestGetMessageByUIDTokenReturnsSingleMessage(t *testing.T) {
 	reader := &fakeMailReader{messageByUID: map[uint32]ports.IMAPMessage{7: {UID: 7, Subject: "single"}}}
 	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, reader, "imap.test.local", 1143)
 
-	message, err := service.GetMessageByUIDToken(context.Background(), "token-1", 7)
+	message, err := service.GetMessageByUIDToken(context.Background(), "token-1", 7, true)
 	if err != nil {
 		t.Fatalf("GetMessageByUIDToken failed: %v", err)
 	}
@@ -350,18 +350,21 @@ type fakeMailRuntimeProvisioner struct {
 }
 
 type fakeMailReader struct {
-	messages     []ports.IMAPMessage
-	messageByUID map[uint32]ports.IMAPMessage
+	messages        []ports.IMAPMessage
+	messageByUID    map[uint32]ports.IMAPMessage
+	lastIncludeBody bool
 }
 
-func (f *fakeMailReader) ListMessages(_ context.Context, _ string, _ int, _ string, _ string, _ int, _ bool) ([]ports.IMAPMessage, error) {
+func (f *fakeMailReader) ListMessages(_ context.Context, _ string, _ int, _ string, _ string, _ int, _ bool, includeBody bool) ([]ports.IMAPMessage, error) {
+	f.lastIncludeBody = includeBody
 	if f.messages == nil {
 		return []ports.IMAPMessage{}, nil
 	}
 	return f.messages, nil
 }
 
-func (f *fakeMailReader) GetMessageByUID(_ context.Context, _ string, _ int, _ string, _ string, uid uint32) (*ports.IMAPMessage, error) {
+func (f *fakeMailReader) GetMessageByUID(_ context.Context, _ string, _ int, _ string, _ string, uid uint32, includeBody bool) (*ports.IMAPMessage, error) {
+	f.lastIncludeBody = includeBody
 	if f.messageByUID == nil {
 		return nil, nil
 	}

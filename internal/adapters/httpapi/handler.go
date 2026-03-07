@@ -346,6 +346,7 @@ type listMessagesRequest struct {
 	AccessToken string `json:"access_token"`
 	Limit       int    `json:"limit,omitempty"`
 	UnreadOnly  *bool  `json:"unread_only,omitempty"`
+	IncludeBody *bool  `json:"include_body,omitempty"`
 }
 
 func (h *Handler) handleListIMAPMessages(w http.ResponseWriter, r *http.Request) {
@@ -360,7 +361,12 @@ func (h *Handler) handleListIMAPMessages(w http.ResponseWriter, r *http.Request)
 		unreadOnly = *req.UnreadOnly
 	}
 
-	messages, err := h.mailboxService.ListMessagesByToken(r.Context(), req.AccessToken, req.Limit, unreadOnly)
+	includeBody := false
+	if req.IncludeBody != nil {
+		includeBody = *req.IncludeBody
+	}
+
+	messages, err := h.mailboxService.ListMessagesByToken(r.Context(), req.AccessToken, req.Limit, unreadOnly, includeBody)
 	if err != nil {
 		switch {
 		case errors.Is(err, ports.ErrMailboxNotFound):
@@ -383,6 +389,7 @@ func (h *Handler) handleListIMAPMessages(w http.ResponseWriter, r *http.Request)
 type getMessageByUIDRequest struct {
 	AccessToken string `json:"access_token"`
 	UID         uint32 `json:"uid"`
+	IncludeBody *bool  `json:"include_body,omitempty"`
 }
 
 func (h *Handler) handleGetIMAPMessageByUID(w http.ResponseWriter, r *http.Request) {
@@ -397,7 +404,12 @@ func (h *Handler) handleGetIMAPMessageByUID(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	message, err := h.mailboxService.GetMessageByUIDToken(r.Context(), req.AccessToken, req.UID)
+	includeBody := true
+	if req.IncludeBody != nil {
+		includeBody = *req.IncludeBody
+	}
+
+	message, err := h.mailboxService.GetMessageByUIDToken(r.Context(), req.AccessToken, req.UID, includeBody)
 	if err != nil {
 		switch {
 		case errors.Is(err, ports.ErrMailboxNotFound):

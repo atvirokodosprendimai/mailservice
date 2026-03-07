@@ -170,8 +170,10 @@ Fetch unread messages by access token:
 curl -X POST http://localhost:8080/v1/imap/messages \
   -H 'Content-Type: application/json' \
   -H 'X-API-Token: <api-token>' \
-  -d '{"access_token":"<access-token>","unread_only":true,"limit":20}'
+  -d '{"access_token":"<access-token>","unread_only":true,"limit":20,"include_body":false}'
 ```
+
+`unread_only` defaults to `true`; `include_body` defaults to `false`.
 
 Fetch a single message by UID:
 
@@ -179,8 +181,10 @@ Fetch a single message by UID:
 curl -X POST http://localhost:8080/v1/imap/messages/get \
   -H 'Content-Type: application/json' \
   -H 'X-API-Token: <api-token>' \
-  -d '{"access_token":"<access-token>","uid":1}'
+  -d '{"access_token":"<access-token>","uid":1,"include_body":true}'
 ```
+
+For `messages/get`, `include_body` defaults to `true`.
 
 Mock payment (only when Stripe key is not configured):
 

@@ -93,6 +93,6 @@ type IMAPMessage struct {
 }
 
 type MailReader interface {
-	ListMessages(ctx context.Context, host string, port int, username string, password string, limit int, unreadOnly bool) ([]IMAPMessage, error)
-	GetMessageByUID(ctx context.Context, host string, port int, username string, password string, uid uint32) (*IMAPMessage, error)
+	ListMessages(ctx context.Context, host string, port int, username string, password string, limit int, unreadOnly bool, includeBody bool) ([]IMAPMessage, error)
+	GetMessageByUID(ctx context.Context, host string, port int, username string, password string, uid uint32, includeBody bool) (*IMAPMessage, error)
 }

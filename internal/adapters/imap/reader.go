@@ -22,7 +22,7 @@ func NewReader() *Reader {
 	return &Reader{}
 }
 
-func (r *Reader) ListMessages(ctx context.Context, host string, port int, username string, password string, limit int, unreadOnly bool) ([]ports.IMAPMessage, error) {
+func (r *Reader) ListMessages(ctx context.Context, host string, port int, username string, password string, limit int, unreadOnly bool, includeBody bool) ([]ports.IMAPMessage, error) {
 	c, err := r.connectAndLogin(host, port, username, password)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func (r *Reader) ListMessages(ctx context.Context, host string, port int, userna
 		uids = uids[len(uids)-limit:]
 	}
 
-	results, err := fetchByUIDs(ctx, c, uids)
+	results, err := fetchByUIDs(ctx, c, uids, includeBody)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +58,7 @@ func (r *Reader) ListMessages(ctx context.Context, host string, port int, userna
 	return results, nil
 }
 
-func (r *Reader) GetMessageByUID(ctx context.Context, host string, port int, username string, password string, uid uint32) (*ports.IMAPMessage, error) {
+func (r *Reader) GetMessageByUID(ctx context.Context, host string, port int, username string, password string, uid uint32, includeBody bool) (*ports.IMAPMessage, error) {
 	c, err := r.connectAndLogin(host, port, username, password)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (r *Reader) GetMessageByUID(ctx context.Context, host string, port int, use
 		return nil, err
 	}
 
-	messages, err := fetchByUIDs(ctx, c, []uint32{uid})
+	messages, err := fetchByUIDs(ctx, c, []uint32{uid}, includeBody)
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +105,7 @@ func (r *Reader) connectAndLogin(host string, port int, username string, passwor
 	return c, nil
 }
 
-func fetchByUIDs(ctx context.Context, c *client.Client, uids []uint32) ([]ports.IMAPMessage, error) {
+func fetchByUIDs(ctx context.Context, c *client.Client, uids []uint32, includeBody bool) ([]ports.IMAPMessage, error) {
 	if len(uids) == 0 {
 		return []ports.IMAPMessage{}, nil
 	}
@@ -116,7 +116,10 @@ func fetchByUIDs(ctx context.Context, c *client.Client, uids []uint32) ([]ports.
 	}
 
 	bodySection := &imap.BodySectionName{BodyPartName: imap.BodyPartName{Specifier: imap.TextSpecifier}, Peek: true}
-	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate, bodySection.FetchItem()}
+	items := []imap.FetchItem{imap.FetchUid, imap.FetchEnvelope, imap.FetchInternalDate}
+	if includeBody {
+		items = append(items, bodySection.FetchItem())
+	}
 	messages := make(chan *imap.Message, len(uids))
 	done := make(chan error, 1)
 
@@ -147,9 +150,11 @@ func fetchByUIDs(ctx context.Context, c *client.Client, uids []uint32) ([]ports.
 					entry.From = fmt.Sprintf("%s@%s", a.MailboxName, a.HostName)
 				}
 			}
-			if bodyReader := msg.GetBody(bodySection); bodyReader != nil {
-				if bodyBytes, readErr := io.ReadAll(bodyReader); readErr == nil {
-					entry.Body = strings.TrimSpace(string(bodyBytes))
+			if includeBody {
+				if bodyReader := msg.GetBody(bodySection); bodyReader != nil {
+					if bodyBytes, readErr := io.ReadAll(bodyReader); readErr == nil {
+						entry.Body = strings.TrimSpace(string(bodyBytes))
+					}
 				}
 			}
 			results = append(results, entry)

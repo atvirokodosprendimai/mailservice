@@ -242,7 +242,7 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 	}, nil
 }
 
-func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken string, limit int, unreadOnly bool) ([]ports.IMAPMessage, error) {
+func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken string, limit int, unreadOnly bool, includeBody bool) ([]ports.IMAPMessage, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -290,10 +290,10 @@ func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken st
 		return []ports.IMAPMessage{}, nil
 	}
 
-	return s.mailReader.ListMessages(ctx, mailbox.IMAPHost, mailbox.IMAPPort, mailbox.IMAPUsername, mailbox.IMAPPassword, limit, unreadOnly)
+	return s.mailReader.ListMessages(ctx, mailbox.IMAPHost, mailbox.IMAPPort, mailbox.IMAPUsername, mailbox.IMAPPassword, limit, unreadOnly, includeBody)
 }
 
-func (s *MailboxService) GetMessageByUIDToken(ctx context.Context, accessToken string, uid uint32) (*ports.IMAPMessage, error) {
+func (s *MailboxService) GetMessageByUIDToken(ctx context.Context, accessToken string, uid uint32, includeBody bool) (*ports.IMAPMessage, error) {
 	mailbox, err := s.repo.GetByAccessToken(ctx, accessToken)
 	if err != nil {
 		return nil, err
@@ -334,7 +334,7 @@ func (s *MailboxService) GetMessageByUIDToken(ctx context.Context, accessToken s
 		return nil, ports.ErrMailboxNotFound
 	}
 
-	message, err := s.mailReader.GetMessageByUID(ctx, mailbox.IMAPHost, mailbox.IMAPPort, mailbox.IMAPUsername, mailbox.IMAPPassword, uid)
+	message, err := s.mailReader.GetMessageByUID(ctx, mailbox.IMAPHost, mailbox.IMAPPort, mailbox.IMAPUsername, mailbox.IMAPPassword, uid, includeBody)
 	if err != nil {
 		return nil, err
 	}

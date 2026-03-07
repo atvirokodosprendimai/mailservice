@@ -68,8 +68,11 @@ curl -X POST http://localhost:8080/v1/imap/resolve \
 curl -X POST http://localhost:8080/v1/imap/messages \
   -H 'Content-Type: application/json' \
   -H 'X-API-Token: <api-token>' \
-  -d '{"access_token":"<mailbox-access-token>","unread_only":true,"limit":20}'
+  -d '{"access_token":"<mailbox-access-token>","unread_only":true,"limit":20,"include_body":false}'
 ```
+
+- `unread_only` defaults to `true`.
+- `include_body` defaults to `false` for list endpoint.
 
 9. Fetch a single message by UID:
 
@@ -77,8 +80,10 @@ curl -X POST http://localhost:8080/v1/imap/messages \
 curl -X POST http://localhost:8080/v1/imap/messages/get \
   -H 'Content-Type: application/json' \
   -H 'X-API-Token: <api-token>' \
-  -d '{"access_token":"<mailbox-access-token>","uid":1}'
+  -d '{"access_token":"<mailbox-access-token>","uid":1,"include_body":true}'
 ```
+
+- `include_body` defaults to `true` for get-by-uid endpoint.
 
 Human-only fallback:
 - If both tokens are lost, owner can run email recovery endpoints:
