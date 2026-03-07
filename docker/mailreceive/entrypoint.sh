@@ -11,6 +11,7 @@ MAIL_DEBUG="${MAIL_DEBUG:-0}"
 
 mkdir -p /var/lib/mail /var/mail/vhosts /var/spool/postfix /run/dovecot
 chown -R vmail:vmail /var/mail/vhosts
+chmod 2770 /var/mail/vhosts || true
 
 ln -sf "${MAIL_DB_PATH}" "${POSTFIX_SQLITE_DB}"
 
