@@ -17,5 +17,9 @@ message_size_limit = 52428800
 mailbox_size_limit = 0
 recipient_delimiter = +
 
+# Some distro builds can start master in debug mode; ensure this is defined
+# so startup does not fail with "no debugger_command variable set up".
+debugger_command = /bin/true
+
 # Keep normal Postfix logging. Do not set debug_peer_* here because
 # debug_peer_level requires debugger_command and can break startup.
