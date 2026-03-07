@@ -13,6 +13,11 @@ chown -R vmail:vmail /var/mail/vhosts
 
 ln -sf "${MAIL_DB_PATH}" "${POSTFIX_SQLITE_DB}"
 
+# Apply runtime Postfix identity from env (avoid hardcoded mail.local).
+postconf -e "myhostname=${MAIL_DOMAIN}"
+postconf -e "mydomain=${MAIL_DOMAIN}"
+postconf -e 'myorigin=$myhostname'
+
 sqlite3 "${MAIL_DB_PATH}" <<SQL
 CREATE TABLE IF NOT EXISTS mail_domains (
   domain TEXT PRIMARY KEY
