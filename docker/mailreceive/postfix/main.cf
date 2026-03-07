@@ -7,7 +7,14 @@ inet_interfaces = all
 inet_protocols = ipv4
 
 smtpd_tls_security_level = none
-smtpd_relay_restrictions = permit_mynetworks, reject_unauth_destination
+
+# Receive-only mode:
+# - no authenticated submission configured
+# - relay disabled for everyone
+smtpd_relay_restrictions = reject_unauth_destination
+mynetworks = 127.0.0.0/8 [::1]/128
+default_transport = error:outbound_mail_disabled
+relay_transport = error:outbound_mail_disabled
 
 virtual_mailbox_domains = sqlite:/etc/postfix/sqlite-domains.cf
 virtual_mailbox_maps = sqlite:/etc/postfix/sqlite-mailboxes.cf
