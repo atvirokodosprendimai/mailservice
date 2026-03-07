@@ -57,10 +57,12 @@ docker run --rm -p 25:25 -p 143:143 \
 The receive container can share the same SQLite DB used by the API (`/data/mailservice.db`).
 API writes mailbox provisioning records into `mail_domains` and `mail_users` on payment activation.
 
-One-command local stack:
+One-command local stack from GHCR images:
 
 ```bash
-docker compose up --build
+cp compose.yml.example compose.yml
+docker compose pull
+docker compose up -d
 ```
 
 The service auto-loads `.env` from the project root (via `godotenv`).
