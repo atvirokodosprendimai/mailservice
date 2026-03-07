@@ -24,6 +24,7 @@ services:
     environment:
       MAIL_DB_PATH: /data/mailservice.db
       MAIL_DOMAIN: mail.local
+      MAIL_DEBUG: "1"
       MAILBOX_USER: ""
       MAILBOX_PASSWORD: ""
     volumes:

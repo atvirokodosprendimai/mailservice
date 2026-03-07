@@ -20,6 +20,7 @@ COPY docker/mailreceive/dovecot/dovecot.conf /etc/dovecot/dovecot.conf
 COPY docker/mailreceive/dovecot/dovecot-sql.conf.ext /etc/dovecot/dovecot-sql.conf.ext
 COPY docker/mailreceive/dovecot/conf.d/10-auth.conf /etc/dovecot/conf.d/10-auth.conf
 COPY docker/mailreceive/dovecot/conf.d/auth-sql.conf.ext /etc/dovecot/conf.d/auth-sql.conf.ext
+COPY docker/mailreceive/dovecot/conf.d/10-logging.conf /etc/dovecot/conf.d/10-logging.conf
 COPY docker/mailreceive/dovecot/conf.d/10-mail.conf /etc/dovecot/conf.d/10-mail.conf
 COPY docker/mailreceive/dovecot/conf.d/10-master.conf /etc/dovecot/conf.d/10-master.conf
 

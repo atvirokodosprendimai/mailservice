@@ -63,6 +63,7 @@ One-command local stack from GHCR images:
 cp compose.yml.example compose.yml
 docker compose pull
 docker compose up -d
+docker compose logs -f mailreceive
 ```
 
 The service auto-loads `.env` from the project root (via `godotenv`).

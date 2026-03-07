@@ -7,6 +7,7 @@ POSTFIX_SQLITE_DB="/var/lib/mail/shared-mailservice.db"
 MAIL_DOMAIN="${MAIL_DOMAIN:-mail.local}"
 MAILBOX_USER="${MAILBOX_USER:-}"
 MAILBOX_PASSWORD="${MAILBOX_PASSWORD:-}"
+MAIL_DEBUG="${MAIL_DEBUG:-0}"
 
 mkdir -p /var/lib/mail /var/mail/vhosts /var/spool/postfix /run/dovecot
 chown -R vmail:vmail /var/mail/vhosts
@@ -48,4 +49,12 @@ if [ -n "${MAILBOX_USER}" ] && [ -n "${MAILBOX_PASSWORD}" ]; then
 fi
 
 postfix start
+
+echo "mailreceive started: domain=${MAIL_DOMAIN} db=${MAIL_DB_PATH} debug=${MAIL_DEBUG}"
+postconf myhostname mydomain myorigin maillog_file debug_peer_level || true
+
+if [ "${MAIL_DEBUG}" = "1" ]; then
+  exec dovecot -F -D
+fi
+
 exec dovecot -F
