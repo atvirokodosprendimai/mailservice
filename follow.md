@@ -2,7 +2,7 @@
 
 Use this flow for bot integration.
 
-1. Start account access by owner email (works for both new registration and token recovery):
+1. Register account once and get machine credentials:
 
 ```bash
 curl -X POST http://localhost:8080/v1/accounts \
@@ -10,19 +10,21 @@ curl -X POST http://localhost:8080/v1/accounts \
   -d '{"owner_email":"owner@example.com"}'
 ```
 
-- API returns `202` with generic status.
-- Service sends one-time code to owner email.
-- Rate limit: max 1 code request per owner email per minute (`429` if exceeded).
+Response includes:
+- `api_token`
+- `refresh_token`
 
-2. Bot reads owner mailbox and completes access to get API token:
+2. Use `api_token` for regular bot API calls.
+
+3. When token expires/rotates, refresh autonomously (no owner inbox needed):
 
 ```bash
-curl -X POST http://localhost:8080/v1/accounts/recovery/complete \
+curl -X POST http://localhost:8080/v1/auth/refresh \
   -H 'Content-Type: application/json' \
-  -d '{"owner_email":"owner@example.com","code":"<recovery-code>"}'
+  -d '{"refresh_token":"<refresh-token>"}'
 ```
 
-3. Use returned `api_token` for all bot requests (`X-API-Token` or `Authorization: Bearer`).
+Store returned new `api_token` and new `refresh_token`.
 
 4. List existing mailboxes:
 
@@ -67,3 +69,8 @@ curl -X POST http://localhost:8080/v1/imap/messages \
   -H 'X-API-Token: <api-token>' \
   -d '{"access_token":"<mailbox-access-token>"}'
 ```
+
+Human-only fallback:
+- If both tokens are lost, owner can run email recovery endpoints:
+  - `POST /v1/accounts/recovery/start`
+  - `POST /v1/accounts/recovery/complete`

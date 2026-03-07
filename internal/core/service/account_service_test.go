@@ -15,9 +15,9 @@ func TestCreateAccountFailsWhenAlreadyExists(t *testing.T) {
 			"owner@example.com": {ID: "acc-1", OwnerEmail: "owner@example.com", APIToken: "token-1"},
 		},
 	}
-	service := NewAccountService(accounts, &fakeRecoveryRepo{}, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-token"}})
+	service := NewAccountService(accounts, &fakeRecoveryRepo{}, &fakeRefreshTokenRepo{}, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-token"}})
 
-	_, err := service.CreateAccount(context.Background(), "owner@example.com")
+	_, _, err := service.CreateAccount(context.Background(), "owner@example.com")
 	if err == nil {
 		t.Fatalf("expected account exists error")
 	}
@@ -39,7 +39,7 @@ func TestStartRecoveryRateLimited(t *testing.T) {
 			CreatedAt: time.Now().UTC(),
 		},
 	}
-	service := NewAccountService(accounts, recoveries, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"recover-code"}})
+	service := NewAccountService(accounts, recoveries, &fakeRefreshTokenRepo{}, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"recover-code"}})
 
 	err := service.StartRecovery(context.Background(), "owner@example.com")
 	if err == nil {
@@ -58,7 +58,7 @@ func TestStartRecoveryCreatesCodeAndSendsNotification(t *testing.T) {
 	}
 	recoveries := &fakeRecoveryRepo{}
 	notifier := &fakeAccountNotifier{}
-	service := NewAccountService(accounts, recoveries, notifier, &fakeTokenGenerator{tokens: []string{"recover-code"}})
+	service := NewAccountService(accounts, recoveries, &fakeRefreshTokenRepo{}, notifier, &fakeTokenGenerator{tokens: []string{"recover-code"}})
 
 	err := service.StartRecovery(context.Background(), "owner@example.com")
 	if err != nil {
@@ -75,21 +75,23 @@ func TestStartRecoveryCreatesCodeAndSendsNotification(t *testing.T) {
 	}
 }
 
-func TestStartAccountAccessCreatesAccountWithoutEnumeration(t *testing.T) {
+func TestCreateAccountReturnsRefreshToken(t *testing.T) {
 	accounts := &fakeAccountRepo{}
-	recoveries := &fakeRecoveryRepo{}
-	notifier := &fakeAccountNotifier{}
-	service := NewAccountService(accounts, recoveries, notifier, &fakeTokenGenerator{tokens: []string{"new-api-token", "recover-code"}})
+	refresh := &fakeRefreshTokenRepo{}
+	service := NewAccountService(accounts, &fakeRecoveryRepo{}, refresh, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api-token", "new-refresh"}})
 
-	err := service.StartAccountAccess(context.Background(), "owner@example.com")
+	account, tokens, err := service.CreateAccount(context.Background(), "owner@example.com")
 	if err != nil {
-		t.Fatalf("StartAccountAccess failed: %v", err)
+		t.Fatalf("CreateAccount failed: %v", err)
 	}
-	if accounts.byOwner["owner@example.com"] == nil {
-		t.Fatalf("expected account to be created")
+	if account.APIToken != "new-api-token" {
+		t.Fatalf("expected api token, got %q", account.APIToken)
 	}
-	if notifier.recoveryCalls != 1 {
-		t.Fatalf("expected recovery code send")
+	if tokens.RefreshToken != "new-refresh" {
+		t.Fatalf("expected refresh token, got %q", tokens.RefreshToken)
+	}
+	if refresh.lastCreated == nil {
+		t.Fatalf("expected refresh token to be stored")
 	}
 }
 
@@ -107,9 +109,10 @@ func TestCompleteRecoveryRotatesToken(t *testing.T) {
 			ExpiresAt: time.Now().UTC().Add(5 * time.Minute),
 		},
 	}
-	service := NewAccountService(accounts, recoveries, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api-token"}})
+	refresh := &fakeRefreshTokenRepo{}
+	service := NewAccountService(accounts, recoveries, refresh, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api-token", "new-refresh"}})
 
-	account, err := service.CompleteRecovery(context.Background(), "owner@example.com", "recover-code")
+	account, tokens, err := service.CompleteRecovery(context.Background(), "owner@example.com", "recover-code")
 	if err != nil {
 		t.Fatalf("CompleteRecovery failed: %v", err)
 	}
@@ -121,6 +124,48 @@ func TestCompleteRecoveryRotatesToken(t *testing.T) {
 	}
 	if recoveries.markedUsedID != "rec-1" {
 		t.Fatalf("expected recovery marked as used")
+	}
+	if tokens.RefreshToken != "new-refresh" {
+		t.Fatalf("expected refresh token, got %q", tokens.RefreshToken)
+	}
+	if refresh.lastCreated == nil {
+		t.Fatalf("expected refresh token stored")
+	}
+}
+
+func TestRefreshAccessRotatesTokens(t *testing.T) {
+	accounts := &fakeAccountRepo{
+		byOwner: map[string]*domain.Account{
+			"owner@example.com": {ID: "acc-1", OwnerEmail: "owner@example.com", APIToken: "old-api"},
+		},
+		byToken: map[string]*domain.Account{
+			"old-api": {ID: "acc-1", OwnerEmail: "owner@example.com", APIToken: "old-api"},
+		},
+	}
+	refresh := &fakeRefreshTokenRepo{
+		activeByHash: map[string]*domain.RefreshToken{
+			hashToken("old-refresh"): {
+				ID:        "rt-1",
+				AccountID: "acc-1",
+				TokenHash: hashToken("old-refresh"),
+				ExpiresAt: time.Now().UTC().Add(time.Hour),
+			},
+		},
+	}
+	service := NewAccountService(accounts, &fakeRecoveryRepo{}, refresh, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api", "new-refresh"}})
+
+	_, tokens, err := service.RefreshAccess(context.Background(), "old-refresh")
+	if err != nil {
+		t.Fatalf("RefreshAccess failed: %v", err)
+	}
+	if accounts.lastUpdatedToken != "new-api" {
+		t.Fatalf("expected api token rotation")
+	}
+	if refresh.markedUsedID != "rt-1" {
+		t.Fatalf("expected old refresh token used")
+	}
+	if tokens.RefreshToken != "new-refresh" {
+		t.Fatalf("expected new refresh token")
 	}
 }
 
@@ -159,7 +204,11 @@ func (f *fakeAccountRepo) GetByAPIToken(_ context.Context, apiToken string) (*do
 func (f *fakeAccountRepo) UpdateAPIToken(_ context.Context, accountID string, apiToken string) error {
 	for _, item := range f.byOwner {
 		if item.ID == accountID {
+			if f.byToken == nil {
+				f.byToken = map[string]*domain.Account{}
+			}
 			item.APIToken = apiToken
+			f.byToken[apiToken] = item
 			f.lastUpdatedToken = apiToken
 			return nil
 		}
@@ -170,6 +219,39 @@ func (f *fakeAccountRepo) UpdateAPIToken(_ context.Context, accountID string, ap
 type fakeRecoveryRepo struct {
 	latest       *domain.AccountRecovery
 	markedUsedID string
+}
+
+type fakeRefreshTokenRepo struct {
+	activeByHash map[string]*domain.RefreshToken
+	lastCreated  *domain.RefreshToken
+	markedUsedID string
+}
+
+func (f *fakeRefreshTokenRepo) Create(_ context.Context, token *domain.RefreshToken) error {
+	f.lastCreated = token
+	if f.activeByHash == nil {
+		f.activeByHash = map[string]*domain.RefreshToken{}
+	}
+	f.activeByHash[token.TokenHash] = token
+	return nil
+}
+
+func (f *fakeRefreshTokenRepo) GetActiveByTokenHash(_ context.Context, tokenHash string) (*domain.RefreshToken, error) {
+	if item, ok := f.activeByHash[tokenHash]; ok && item.UsedAt == nil {
+		return item, nil
+	}
+	return nil, ports.ErrRefreshNotFound
+}
+
+func (f *fakeRefreshTokenRepo) MarkUsed(_ context.Context, tokenID string, usedAt time.Time) error {
+	f.markedUsedID = tokenID
+	for _, item := range f.activeByHash {
+		if item.ID == tokenID {
+			item.UsedAt = &usedAt
+			break
+		}
+	}
+	return nil
 }
 
 func (f *fakeRecoveryRepo) Create(_ context.Context, recovery *domain.AccountRecovery) error {

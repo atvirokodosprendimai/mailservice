@@ -29,12 +29,26 @@ type accountRecoveryModel struct {
 	UpdatedAt time.Time
 }
 
+type refreshTokenModel struct {
+	ID        string `gorm:"primaryKey;type:text"`
+	AccountID string `gorm:"not null;index"`
+	TokenHash string `gorm:"not null;uniqueIndex"`
+	ExpiresAt time.Time
+	UsedAt    *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 func (accountModel) TableName() string {
 	return "accounts"
 }
 
 func (accountRecoveryModel) TableName() string {
 	return "account_recoveries"
+}
+
+func (refreshTokenModel) TableName() string {
+	return "refresh_tokens"
 }
 
 func toAccountDomain(m *accountModel) *domain.Account {
@@ -74,6 +88,28 @@ func toAccountRecoveryModel(r *domain.AccountRecovery) *accountRecoveryModel {
 		CodeHash:  r.CodeHash,
 		ExpiresAt: r.ExpiresAt,
 		UsedAt:    r.UsedAt,
+	}
+}
+
+func toRefreshTokenDomain(m *refreshTokenModel) *domain.RefreshToken {
+	return &domain.RefreshToken{
+		ID:        m.ID,
+		AccountID: m.AccountID,
+		TokenHash: m.TokenHash,
+		ExpiresAt: m.ExpiresAt,
+		UsedAt:    m.UsedAt,
+		CreatedAt: m.CreatedAt,
+		UpdatedAt: m.UpdatedAt,
+	}
+}
+
+func toRefreshTokenModel(t *domain.RefreshToken) *refreshTokenModel {
+	return &refreshTokenModel{
+		ID:        t.ID,
+		AccountID: t.AccountID,
+		TokenHash: t.TokenHash,
+		ExpiresAt: t.ExpiresAt,
+		UsedAt:    t.UsedAt,
 	}
 }
 
@@ -168,5 +204,36 @@ func (r *AccountRecoveryRepository) GetLatestActiveByAccountID(ctx context.Conte
 func (r *AccountRecoveryRepository) MarkUsed(ctx context.Context, recoveryID string, usedAt time.Time) error {
 	return r.db.WithContext(ctx).Model(&accountRecoveryModel{}).
 		Where("id = ?", recoveryID).
+		Updates(map[string]any{"used_at": usedAt.UTC(), "updated_at": usedAt.UTC()}).Error
+}
+
+type RefreshTokenRepository struct {
+	db *gorm.DB
+}
+
+func NewRefreshTokenRepository(db *gorm.DB) *RefreshTokenRepository {
+	return &RefreshTokenRepository{db: db}
+}
+
+func (r *RefreshTokenRepository) Create(ctx context.Context, token *domain.RefreshToken) error {
+	return r.db.WithContext(ctx).Create(toRefreshTokenModel(token)).Error
+}
+
+func (r *RefreshTokenRepository) GetActiveByTokenHash(ctx context.Context, tokenHash string) (*domain.RefreshToken, error) {
+	var model refreshTokenModel
+	err := r.db.WithContext(ctx).
+		First(&model, "token_hash = ? AND used_at IS NULL", tokenHash).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrRefreshNotFound
+		}
+		return nil, err
+	}
+	return toRefreshTokenDomain(&model), nil
+}
+
+func (r *RefreshTokenRepository) MarkUsed(ctx context.Context, tokenID string, usedAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&refreshTokenModel{}).
+		Where("id = ?", tokenID).
 		Updates(map[string]any{"used_at": usedAt.UTC(), "updated_at": usedAt.UTC()}).Error
 }

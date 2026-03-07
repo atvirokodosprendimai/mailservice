@@ -54,6 +54,7 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", h.handleHealth)
 	mux.HandleFunc("POST /v1/accounts", h.handleCreateAccount)
+	mux.HandleFunc("POST /v1/auth/refresh", h.handleRefreshAuth)
 	mux.HandleFunc("POST /v1/accounts/recovery/start", h.handleStartRecovery)
 	mux.HandleFunc("POST /v1/accounts/recovery/complete", h.handleCompleteRecovery)
 	mux.HandleFunc("GET /v1/mailboxes", h.withAccountToken(h.handleListMailboxes))
@@ -79,9 +80,10 @@ type createAccountRequest struct {
 }
 
 type accountView struct {
-	ID         string `json:"id"`
-	OwnerEmail string `json:"owner_email"`
-	APIToken   string `json:"api_token"`
+	ID           string `json:"id"`
+	OwnerEmail   string `json:"owner_email"`
+	APIToken     string `json:"api_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
 func (h *Handler) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
@@ -91,17 +93,58 @@ func (h *Handler) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.accountService.StartAccountAccess(r.Context(), req.OwnerEmail)
+	account, tokens, err := h.accountService.CreateAccount(r.Context(), req.OwnerEmail)
 	if err != nil {
+		if errors.Is(err, ports.ErrAccountExists) {
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "email_sent_if_exists"})
+			return
+		}
 		if errors.Is(err, ports.ErrRateLimitReached) {
 			writeError(w, http.StatusTooManyRequests, err)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err)
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "email_sent_if_exists"})
+	writeJSON(w, http.StatusCreated, accountView{
+		ID:           account.ID,
+		OwnerEmail:   account.OwnerEmail,
+		APIToken:     tokens.APIToken,
+		RefreshToken: tokens.RefreshToken,
+	})
+}
+
+type refreshAuthRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+func (h *Handler) handleRefreshAuth(w http.ResponseWriter, r *http.Request) {
+	var req refreshAuthRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	account, tokens, err := h.accountService.RefreshAccess(r.Context(), req.RefreshToken)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrRefreshNotFound):
+			writeError(w, http.StatusUnauthorized, err)
+		case errors.Is(err, ports.ErrRefreshExpired):
+			writeError(w, http.StatusUnauthorized, err)
+		default:
+			writeError(w, http.StatusInternalServerError, err)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, accountView{
+		ID:           account.ID,
+		OwnerEmail:   account.OwnerEmail,
+		APIToken:     tokens.APIToken,
+		RefreshToken: tokens.RefreshToken,
+	})
 }
 
 type accountRecoveryRequest struct {
@@ -139,7 +182,7 @@ func (h *Handler) handleCompleteRecovery(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	account, err := h.accountService.CompleteRecovery(r.Context(), req.OwnerEmail, req.Code)
+	account, tokens, err := h.accountService.CompleteRecovery(r.Context(), req.OwnerEmail, req.Code)
 	if err != nil {
 		switch {
 		case errors.Is(err, ports.ErrRecoveryInvalid):
@@ -153,9 +196,10 @@ func (h *Handler) handleCompleteRecovery(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, accountView{
-		ID:         account.ID,
-		OwnerEmail: account.OwnerEmail,
-		APIToken:   account.APIToken,
+		ID:           account.ID,
+		OwnerEmail:   account.OwnerEmail,
+		APIToken:     tokens.APIToken,
+		RefreshToken: tokens.RefreshToken,
 	})
 }
 

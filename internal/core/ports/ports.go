@@ -18,6 +18,8 @@ var (
 	ErrRecoveryInvalid  = errors.New("recovery code invalid")
 	ErrRecoveryExpired  = errors.New("recovery code expired")
 	ErrRateLimitReached = errors.New("rate limit reached")
+	ErrRefreshNotFound  = errors.New("refresh token not found")
+	ErrRefreshExpired   = errors.New("refresh token expired")
 )
 
 type MailboxRepository interface {
@@ -43,6 +45,12 @@ type AccountRecoveryRepository interface {
 	GetLatestByAccountID(ctx context.Context, accountID string) (*domain.AccountRecovery, error)
 	GetLatestActiveByAccountID(ctx context.Context, accountID string) (*domain.AccountRecovery, error)
 	MarkUsed(ctx context.Context, recoveryID string, usedAt time.Time) error
+}
+
+type RefreshTokenRepository interface {
+	Create(ctx context.Context, token *domain.RefreshToken) error
+	GetActiveByTokenHash(ctx context.Context, tokenHash string) (*domain.RefreshToken, error)
+	MarkUsed(ctx context.Context, tokenID string, usedAt time.Time) error
 }
 
 type PaymentLinkRequest struct {

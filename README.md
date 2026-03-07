@@ -3,9 +3,9 @@
 Tiny hexagonal Go API for paid mailbox provisioning.
 
 Flow:
-1. OpenClaw starts account access flow (`POST /v1/accounts`) for owner email.
-2. Service sends one-time access code to owner email (new registration and token recovery use the same flow).
-3. OpenClaw reads owner inbox and completes access (`POST /v1/accounts/recovery/complete`) to receive API token.
+1. OpenClaw creates account (`POST /v1/accounts`) once and gets `api_token` + `refresh_token`.
+2. OpenClaw refreshes credentials autonomously via `POST /v1/auth/refresh`.
+3. Owner email recovery remains human-only fallback when all bot credentials are lost.
 4. OpenClaw lists mailboxes (`GET /v1/mailboxes`).
 5. OpenClaw creates mailbox (`POST /v1/mailboxes`).
 6. Service creates Stripe Checkout link and sends it to owner email (currently logged by notifier adapter).
@@ -46,7 +46,7 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 
 ## API examples
 
-Start account access (always generic response):
+Create account:
 
 ```bash
 curl -X POST http://localhost:8080/v1/accounts \
@@ -54,11 +54,17 @@ curl -X POST http://localhost:8080/v1/accounts \
   -d '{"owner_email":"owner@example.com"}'
 ```
 
-If this request is repeated in less than one minute for the same owner email, API returns `429`.
+Refresh machine credentials:
+
+```bash
+curl -X POST http://localhost:8080/v1/auth/refresh \
+  -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"<refresh-token>"}'
+```
 
 If global concurrency limit is reached, API returns `503` with `retry_after_seconds` random value in range `3..100`.
 
-Optional explicit recovery start endpoint:
+Human-only recovery start endpoint:
 
 ```bash
 curl -X POST http://localhost:8080/v1/accounts/recovery/start \

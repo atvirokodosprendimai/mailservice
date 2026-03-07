@@ -34,6 +34,7 @@ func main() {
 	mailboxRepo := repository.NewMailboxRepository(db)
 	accountRepo := repository.NewAccountRepository(db)
 	accountRecoveryRepo := repository.NewAccountRecoveryRepository(db)
+	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
 	tokenGen := token.NewSecureGenerator()
 	notifier := notify.NewLogNotifier(log.Default())
 
@@ -52,7 +53,7 @@ func main() {
 	}
 
 	mailboxService := service.NewMailboxService(mailboxRepo, paymentGateway, notifier, tokenGen)
-	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, notifier, tokenGen)
+	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen)
 
 	handler := httpapi.NewHandler(httpapi.Config{
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
