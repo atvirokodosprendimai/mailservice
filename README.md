@@ -12,7 +12,7 @@ Flow:
 7. Owner pays.
 8. Stripe webhook extends account subscription by 1 month; all account mailboxes inherit entitlement.
 9. OpenClaw polls mailbox status (`GET /v1/mailboxes/{id}`) and receives `access_token` once usable.
-10. OpenClaw resolves token to IMAP login (`POST /v1/imap/resolve`) or fetches messages (`POST /v1/imap/messages`).
+10. OpenClaw resolves token to IMAP login (`POST /v1/imap/resolve`), lists unread messages (`POST /v1/imap/messages`), and fetches by UID (`POST /v1/imap/messages/get`).
 
 ## Stack
 
@@ -164,13 +164,22 @@ curl -X POST http://localhost:8080/v1/imap/resolve \
   -d '{"access_token":"<access-token>"}'
 ```
 
-Fetch messages by access token (placeholder endpoint):
+Fetch unread messages by access token:
 
 ```bash
 curl -X POST http://localhost:8080/v1/imap/messages \
   -H 'Content-Type: application/json' \
   -H 'X-API-Token: <api-token>' \
-  -d '{"access_token":"<access-token>"}'
+  -d '{"access_token":"<access-token>","unread_only":true,"limit":20}'
+```
+
+Fetch a single message by UID:
+
+```bash
+curl -X POST http://localhost:8080/v1/imap/messages/get \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Token: <api-token>' \
+  -d '{"access_token":"<access-token>","uid":1}'
 ```
 
 Mock payment (only when Stripe key is not configured):

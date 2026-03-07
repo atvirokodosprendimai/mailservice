@@ -62,13 +62,22 @@ curl -X POST http://localhost:8080/v1/imap/resolve \
 
 - If not paid yet, API returns `409` with `{ "status": "waiting_payment" }`.
 
-8. Fetch mails via API proxy endpoint (placeholder):
+8. Fetch unread mails via API endpoint:
 
 ```bash
 curl -X POST http://localhost:8080/v1/imap/messages \
   -H 'Content-Type: application/json' \
   -H 'X-API-Token: <api-token>' \
-  -d '{"access_token":"<mailbox-access-token>"}'
+  -d '{"access_token":"<mailbox-access-token>","unread_only":true,"limit":20}'
+```
+
+9. Fetch a single message by UID:
+
+```bash
+curl -X POST http://localhost:8080/v1/imap/messages/get \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Token: <api-token>' \
+  -d '{"access_token":"<mailbox-access-token>","uid":1}'
 ```
 
 Human-only fallback:

@@ -20,6 +20,7 @@ var (
 	ErrRateLimitReached = errors.New("rate limit reached")
 	ErrRefreshNotFound  = errors.New("refresh token not found")
 	ErrRefreshExpired   = errors.New("refresh token expired")
+	ErrMessageNotFound  = errors.New("message not found")
 )
 
 type MailboxRepository interface {
@@ -88,8 +89,10 @@ type IMAPMessage struct {
 	Subject string
 	From    string
 	Date    time.Time
+	Body    string
 }
 
 type MailReader interface {
-	ListMessages(ctx context.Context, host string, port int, username string, password string, limit int) ([]IMAPMessage, error)
+	ListMessages(ctx context.Context, host string, port int, username string, password string, limit int, unreadOnly bool) ([]IMAPMessage, error)
+	GetMessageByUID(ctx context.Context, host string, port int, username string, password string, uid uint32) (*IMAPMessage, error)
 }

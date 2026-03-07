@@ -64,6 +64,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
 	mux.HandleFunc("POST /v1/imap/resolve", h.withAccountToken(h.handleResolveIMAP))
 	mux.HandleFunc("POST /v1/imap/messages", h.withAccountToken(h.handleListIMAPMessages))
+	mux.HandleFunc("POST /v1/imap/messages/get", h.withAccountToken(h.handleGetIMAPMessageByUID))
 	mux.HandleFunc("POST /v1/webhooks/stripe", h.handleStripeWebhook)
 	mux.HandleFunc("GET /mock/pay/{sessionID}", h.handleMockPay)
 	handler := http.Handler(mux)
@@ -344,6 +345,7 @@ func (h *Handler) handleResolveIMAP(w http.ResponseWriter, r *http.Request) {
 type listMessagesRequest struct {
 	AccessToken string `json:"access_token"`
 	Limit       int    `json:"limit,omitempty"`
+	UnreadOnly  *bool  `json:"unread_only,omitempty"`
 }
 
 func (h *Handler) handleListIMAPMessages(w http.ResponseWriter, r *http.Request) {
@@ -353,7 +355,12 @@ func (h *Handler) handleListIMAPMessages(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	messages, err := h.mailboxService.ListMessagesByToken(r.Context(), req.AccessToken, req.Limit)
+	unreadOnly := true
+	if req.UnreadOnly != nil {
+		unreadOnly = *req.UnreadOnly
+	}
+
+	messages, err := h.mailboxService.ListMessagesByToken(r.Context(), req.AccessToken, req.Limit, unreadOnly)
 	if err != nil {
 		switch {
 		case errors.Is(err, ports.ErrMailboxNotFound):
@@ -370,6 +377,45 @@ func (h *Handler) handleListIMAPMessages(w http.ResponseWriter, r *http.Request)
 		"status":   "ok",
 		"provider": "imap",
 		"messages": messages,
+	})
+}
+
+type getMessageByUIDRequest struct {
+	AccessToken string `json:"access_token"`
+	UID         uint32 `json:"uid"`
+}
+
+func (h *Handler) handleGetIMAPMessageByUID(w http.ResponseWriter, r *http.Request) {
+	var req getMessageByUIDRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if req.UID == 0 {
+		writeError(w, http.StatusBadRequest, errors.New("uid must be > 0"))
+		return
+	}
+
+	message, err := h.mailboxService.GetMessageByUIDToken(r.Context(), req.AccessToken, req.UID)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrMailboxNotFound):
+			writeError(w, http.StatusNotFound, err)
+		case errors.Is(err, ports.ErrMessageNotFound):
+			writeError(w, http.StatusNotFound, err)
+		case errors.Is(err, ports.ErrMailboxNotUsable):
+			writeJSON(w, http.StatusConflict, map[string]string{"status": "waiting_payment"})
+		default:
+			writeError(w, http.StatusInternalServerError, err)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":   "ok",
+		"provider": "imap",
+		"message":  message,
 	})
 }
 

@@ -13,6 +13,12 @@ mkdir -p /var/lib/mail /var/mail/vhosts /var/spool/postfix /run/dovecot
 chown -R vmail:vmail /var/mail/vhosts
 chmod 2770 /var/mail/vhosts || true
 
+# Existing persisted maildirs may have been created with restrictive perms
+# by older configs (e.g. 0700 on domain dirs). Normalize recursively so
+# dovecot (uid/gid vmail) can traverse and read/write mailboxes.
+find /var/mail/vhosts -type d -exec chown vmail:vmail {} \; -exec chmod 2770 {} \; 2>/dev/null || true
+find /var/mail/vhosts -type f -exec chown vmail:vmail {} \; -exec chmod 0660 {} \; 2>/dev/null || true
+
 ln -sf "${MAIL_DB_PATH}" "${POSTFIX_SQLITE_DB}"
 
 # Apply runtime Postfix identity from env (avoid hardcoded mail.local).

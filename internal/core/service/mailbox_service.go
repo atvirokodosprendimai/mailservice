@@ -242,7 +242,7 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 	}, nil
 }
 
-func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken string, limit int) ([]ports.IMAPMessage, error) {
+func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken string, limit int, unreadOnly bool) ([]ports.IMAPMessage, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -290,7 +290,58 @@ func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken st
 		return []ports.IMAPMessage{}, nil
 	}
 
-	return s.mailReader.ListMessages(ctx, mailbox.IMAPHost, mailbox.IMAPPort, mailbox.IMAPUsername, mailbox.IMAPPassword, limit)
+	return s.mailReader.ListMessages(ctx, mailbox.IMAPHost, mailbox.IMAPPort, mailbox.IMAPUsername, mailbox.IMAPPassword, limit, unreadOnly)
+}
+
+func (s *MailboxService) GetMessageByUIDToken(ctx context.Context, accessToken string, uid uint32) (*ports.IMAPMessage, error) {
+	mailbox, err := s.repo.GetByAccessToken(ctx, accessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
+	if err != nil {
+		return nil, err
+	}
+
+	if !account.SubscriptionActive(time.Now().UTC()) {
+		if mailbox.Status == domain.MailboxStatusActive {
+			mailbox.Status = domain.MailboxStatusExpired
+			_ = s.repo.Update(ctx, mailbox)
+		}
+		return nil, ports.ErrMailboxNotUsable
+	}
+
+	if mailbox.Status != domain.MailboxStatusActive {
+		mailbox.Status = domain.MailboxStatusActive
+		mailbox.ExpiresAt = account.SubscriptionExpiresAt
+		_ = s.repo.Update(ctx, mailbox)
+	}
+
+	if s.shouldRewriteLegacyIMAPHost(mailbox.IMAPHost) || mailbox.IMAPPort <= 0 {
+		mailbox.IMAPHost = s.imapHost
+		mailbox.IMAPPort = s.imapPort
+		_ = s.repo.Update(ctx, mailbox)
+	}
+
+	if s.provisioner != nil {
+		if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+			return nil, err
+		}
+	}
+
+	if s.mailReader == nil {
+		return nil, ports.ErrMailboxNotFound
+	}
+
+	message, err := s.mailReader.GetMessageByUID(ctx, mailbox.IMAPHost, mailbox.IMAPPort, mailbox.IMAPUsername, mailbox.IMAPPassword, uid)
+	if err != nil {
+		return nil, err
+	}
+	if message == nil {
+		return nil, ports.ErrMessageNotFound
+	}
+	return message, nil
 }
 
 func (s *MailboxService) shouldRewriteLegacyIMAPHost(value string) bool {
