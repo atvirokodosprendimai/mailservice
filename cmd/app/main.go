@@ -38,11 +38,14 @@ func main() {
 	tokenGen := token.NewSecureGenerator()
 
 	var notifier ports.Notifier = notify.NewLogNotifier(log.Default())
-	if cfg.SendGridAPIKey != "" && cfg.SendGridFromEmail != "" {
+	if cfg.ResendAPIKey != "" && cfg.ResendFromEmail != "" {
+		notifier = notify.NewResendNotifier(cfg.ResendAPIKey, cfg.ResendFromEmail, cfg.ResendFromName)
+		log.Printf("resend notifier enabled")
+	} else if cfg.SendGridAPIKey != "" && cfg.SendGridFromEmail != "" {
 		notifier = notify.NewSendGridNotifier(cfg.SendGridAPIKey, cfg.SendGridFromEmail, cfg.SendGridFromName)
 		log.Printf("sendgrid notifier enabled")
 	} else {
-		log.Printf("sendgrid notifier disabled, using log notifier")
+		log.Printf("email providers disabled, using log notifier")
 	}
 
 	var paymentGateway ports.PaymentGateway = payment.NewMockGateway(cfg.PublicBaseURL)

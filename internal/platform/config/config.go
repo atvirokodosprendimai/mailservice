@@ -15,6 +15,9 @@ type Config struct {
 	SendGridAPIKey      string
 	SendGridFromEmail   string
 	SendGridFromName    string
+	ResendAPIKey        string
+	ResendFromEmail     string
+	ResendFromName      string
 	StripeSecretKey     string
 	StripeWebhookSecret string
 	StripeSuccessURL    string
@@ -36,6 +39,9 @@ func Load() (*Config, error) {
 		SendGridAPIKey:      os.Getenv("SENDGRID_API_KEY"),
 		SendGridFromEmail:   getEnv("SENDGRID_FROM_EMAIL", ""),
 		SendGridFromName:    getEnv("SENDGRID_FROM_NAME", "MailService"),
+		ResendAPIKey:        os.Getenv("RESEND_API_KEY"),
+		ResendFromEmail:     getEnv("RESEND_FROM_EMAIL", ""),
+		ResendFromName:      getEnv("RESEND_FROM_NAME", "MailService"),
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		StripeSuccessURL:    getEnv("STRIPE_SUCCESS_URL", "http://localhost:8080/payment/success"),

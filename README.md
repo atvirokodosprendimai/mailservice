@@ -8,7 +8,7 @@ Flow:
 3. Owner email recovery remains human-only fallback when all bot credentials are lost.
 4. OpenClaw lists mailboxes (`GET /v1/mailboxes`).
 5. OpenClaw creates mailbox (`POST /v1/mailboxes`).
-6. Service creates Stripe Checkout link and sends it to owner email (SendGrid when configured, log fallback otherwise).
+6. Service creates Stripe Checkout link and sends it to owner email (Resend or SendGrid when configured, log fallback otherwise).
 7. Owner pays.
 8. Stripe webhook marks mailbox active.
 9. OpenClaw polls mailbox status (`GET /v1/mailboxes/{id}`) and receives `access_token` once usable.
@@ -46,6 +46,11 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 - `SENDGRID_API_KEY` (optional; enable SendGrid notifier)
 - `SENDGRID_FROM_EMAIL` (required when SendGrid is enabled)
 - `SENDGRID_FROM_NAME` (optional, default `MailService`)
+- `RESEND_API_KEY` (optional; enable Resend notifier)
+- `RESEND_FROM_EMAIL` (required when Resend is enabled)
+- `RESEND_FROM_NAME` (optional, default `MailService`)
+
+When both providers are configured, Resend takes precedence.
 
 ## API examples
 
