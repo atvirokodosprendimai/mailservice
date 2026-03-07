@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/stripe/stripe-go/v83"
 	"github.com/stripe/stripe-go/v83/webhook"
@@ -81,10 +82,11 @@ type createAccountRequest struct {
 }
 
 type accountView struct {
-	ID           string `json:"id"`
-	OwnerEmail   string `json:"owner_email"`
-	APIToken     string `json:"api_token"`
-	RefreshToken string `json:"refresh_token,omitempty"`
+	ID                    string  `json:"id"`
+	OwnerEmail            string  `json:"owner_email"`
+	APIToken              string  `json:"api_token"`
+	RefreshToken          string  `json:"refresh_token,omitempty"`
+	SubscriptionExpiresAt *string `json:"subscription_expires_at,omitempty"`
 }
 
 func (h *Handler) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
@@ -104,12 +106,17 @@ func (h *Handler) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, accountView{
+	view := accountView{
 		ID:           account.ID,
 		OwnerEmail:   account.OwnerEmail,
 		APIToken:     tokens.APIToken,
 		RefreshToken: tokens.RefreshToken,
-	})
+	}
+	if account.SubscriptionExpiresAt != nil {
+		v := account.SubscriptionExpiresAt.Format(time.RFC3339)
+		view.SubscriptionExpiresAt = &v
+	}
+	writeJSON(w, http.StatusCreated, view)
 }
 
 type refreshAuthRequest struct {
@@ -136,12 +143,17 @@ func (h *Handler) handleRefreshAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, accountView{
+	view := accountView{
 		ID:           account.ID,
 		OwnerEmail:   account.OwnerEmail,
 		APIToken:     tokens.APIToken,
 		RefreshToken: tokens.RefreshToken,
-	})
+	}
+	if account.SubscriptionExpiresAt != nil {
+		v := account.SubscriptionExpiresAt.Format(time.RFC3339)
+		view.SubscriptionExpiresAt = &v
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 type accountRecoveryRequest struct {
@@ -191,12 +203,17 @@ func (h *Handler) handleCompleteRecovery(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, accountView{
+	view := accountView{
 		ID:           account.ID,
 		OwnerEmail:   account.OwnerEmail,
 		APIToken:     tokens.APIToken,
 		RefreshToken: tokens.RefreshToken,
-	})
+	}
+	if account.SubscriptionExpiresAt != nil {
+		v := account.SubscriptionExpiresAt.Format(time.RFC3339)
+		view.SubscriptionExpiresAt = &v
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (h *Handler) handleCompleteRecoveryByLink(w http.ResponseWriter, r *http.Request) {
@@ -463,6 +480,7 @@ type mailboxView struct {
 	Status      domain.MailboxStatus `json:"status"`
 	Usable      bool                 `json:"usable"`
 	PaymentURL  string               `json:"payment_url"`
+	ExpiresAt   *string              `json:"expires_at,omitempty"`
 	AccessToken string               `json:"access_token,omitempty"`
 }
 
@@ -472,6 +490,10 @@ func mailboxResponse(mailbox *domain.Mailbox) mailboxView {
 		Status:     mailbox.Status,
 		Usable:     mailbox.Usable(),
 		PaymentURL: mailbox.PaymentURL,
+	}
+	if mailbox.ExpiresAt != nil {
+		expires := mailbox.ExpiresAt.Format(time.RFC3339)
+		resp.ExpiresAt = &expires
 	}
 	if mailbox.Usable() {
 		resp.AccessToken = mailbox.AccessToken

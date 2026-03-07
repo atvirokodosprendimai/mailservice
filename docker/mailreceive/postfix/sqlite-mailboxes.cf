@@ -1,0 +1,2 @@
+dbpath = /var/lib/mail/shared-mailservice.db
+query = SELECT maildir FROM mail_users WHERE email='%s' AND enabled=1

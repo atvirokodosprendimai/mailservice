@@ -34,9 +34,11 @@ type MailboxRepository interface {
 
 type AccountRepository interface {
 	Create(ctx context.Context, account *domain.Account) error
+	GetByID(ctx context.Context, accountID string) (*domain.Account, error)
 	GetByOwnerEmail(ctx context.Context, ownerEmail string) (*domain.Account, error)
 	GetByAPIToken(ctx context.Context, apiToken string) (*domain.Account, error)
 	UpdateAPIToken(ctx context.Context, accountID string, apiToken string) error
+	UpdateSubscriptionExpiresAt(ctx context.Context, accountID string, expiresAt time.Time) error
 }
 
 type AccountRecoveryRepository interface {
@@ -75,4 +77,8 @@ type Notifier interface {
 
 type TokenGenerator interface {
 	NewToken(size int) (string, error)
+}
+
+type MailRuntimeProvisioner interface {
+	EnsureMailbox(ctx context.Context, mailbox *domain.Mailbox) error
 }

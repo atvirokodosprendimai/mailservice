@@ -32,6 +32,7 @@ func main() {
 	}
 
 	mailboxRepo := repository.NewMailboxRepository(db)
+	mailRuntimeProvisioner := repository.NewMailRuntimeProvisioner(db, cfg.MailDomain)
 	accountRepo := repository.NewAccountRepository(db)
 	accountRecoveryRepo := repository.NewAccountRecoveryRepository(db)
 	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
@@ -62,7 +63,7 @@ func main() {
 		log.Printf("stripe disabled, using mock payment links")
 	}
 
-	mailboxService := service.NewMailboxService(mailboxRepo, paymentGateway, notifier, tokenGen)
+	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner)
 	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen, cfg.PublicBaseURL)
 
 	handler := httpapi.NewHandler(httpapi.Config{

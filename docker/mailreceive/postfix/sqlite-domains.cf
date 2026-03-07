@@ -1,0 +1,2 @@
+dbpath = /var/lib/mail/shared-mailservice.db
+query = SELECT 1 FROM mail_domains WHERE domain='%s'

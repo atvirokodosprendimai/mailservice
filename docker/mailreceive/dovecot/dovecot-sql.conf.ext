@@ -1,0 +1,4 @@
+driver = sqlite
+connect = /var/lib/mail/shared-mailservice.db
+default_pass_scheme = PLAIN
+password_query = SELECT login AS user, password FROM mail_users WHERE login='%u' AND enabled=1

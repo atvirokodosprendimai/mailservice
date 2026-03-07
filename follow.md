@@ -42,6 +42,7 @@ curl -X POST http://localhost:8080/v1/mailboxes \
 
 - If there is no pending mailbox, service creates one, sends payment link to owner email, and returns `201`.
 - If a pending mailbox already exists, service returns it with `200` and status `pending_payment`.
+- After successful payment, account subscription is extended for 1 month; all mailboxes in that account inherit access (`expires_at` is included in mailbox response).
 
 6. Poll mailbox status:
 

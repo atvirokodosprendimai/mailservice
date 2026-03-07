@@ -7,6 +7,7 @@ type MailboxStatus string
 const (
 	MailboxStatusPendingPayment MailboxStatus = "pending_payment"
 	MailboxStatusActive         MailboxStatus = "active"
+	MailboxStatusExpired        MailboxStatus = "expired"
 )
 
 type Mailbox struct {
@@ -22,10 +23,17 @@ type Mailbox struct {
 	PaymentURL      string
 	Status          MailboxStatus
 	PaidAt          *time.Time
+	ExpiresAt       *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
 
 func (m Mailbox) Usable() bool {
-	return m.Status == MailboxStatusActive && m.PaidAt != nil
+	if m.Status != MailboxStatusActive || m.PaidAt == nil {
+		return false
+	}
+	if m.ExpiresAt == nil {
+		return true
+	}
+	return m.ExpiresAt.After(time.Now().UTC())
 }

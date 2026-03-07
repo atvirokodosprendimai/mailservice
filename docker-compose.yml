@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mailservice-api:latest
+    environment:
+      HTTP_ADDR: ":8080"
+      DATABASE_DSN: /data/mailservice.db
+      PUBLIC_BASE_URL: http://localhost:8080
+      MAIL_DOMAIN: mail.local
+      MAX_CONCURRENT_REQUESTS: "100"
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+      STRIPE_SUCCESS_URL: http://localhost:8080/payment/success
+      STRIPE_CANCEL_URL: http://localhost:8080/payment/cancel
+      STRIPE_CURRENCY: usd
+      MAILBOX_PRICE_CENTS: "299"
+    volumes:
+      - shared_db:/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  mailreceive:
+    build:
+      context: .
+      dockerfile: docker/mailreceive/Dockerfile
+    image: mailservice-receive:latest
+    environment:
+      MAIL_DB_PATH: /data/mailservice.db
+      MAIL_DOMAIN: mail.local
+      MAILBOX_USER: ""
+      MAILBOX_PASSWORD: ""
+    volumes:
+      - shared_db:/data
+      - mail_vhosts:/var/mail/vhosts
+    ports:
+      - "25:25"
+      - "143:143"
+    restart: unless-stopped
+
+volumes:
+  shared_db:
+  mail_vhosts:

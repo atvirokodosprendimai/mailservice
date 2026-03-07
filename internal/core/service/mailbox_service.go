@@ -14,18 +14,22 @@ import (
 )
 
 type MailboxService struct {
-	repo     ports.MailboxRepository
-	payment  ports.PaymentGateway
-	notifier ports.Notifier
-	tokenGen ports.TokenGenerator
+	repo        ports.MailboxRepository
+	accounts    ports.AccountRepository
+	payment     ports.PaymentGateway
+	notifier    ports.Notifier
+	tokenGen    ports.TokenGenerator
+	provisioner ports.MailRuntimeProvisioner
 }
 
-func NewMailboxService(repo ports.MailboxRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator) *MailboxService {
+func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner) *MailboxService {
 	return &MailboxService{
-		repo:     repo,
-		payment:  payment,
-		notifier: notifier,
-		tokenGen: tokenGen,
+		repo:        repo,
+		accounts:    accounts,
+		payment:     payment,
+		notifier:    notifier,
+		tokenGen:    tokenGen,
+		provisioner: provisioner,
 	}
 }
 
@@ -45,14 +49,18 @@ func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxReq
 	if req.Account == nil {
 		return nil, false, errors.New("account is required")
 	}
+	now := time.Now().UTC()
 	ownerEmail := strings.TrimSpace(strings.ToLower(req.Account.OwnerEmail))
+	accountHasActiveSubscription := req.Account.SubscriptionActive(now)
 
-	pending, err := s.repo.GetPendingByAccountID(ctx, req.Account.ID)
-	if err == nil {
-		return pending, false, nil
-	}
-	if !errors.Is(err, ports.ErrMailboxNotFound) {
-		return nil, false, err
+	if !accountHasActiveSubscription {
+		pending, err := s.repo.GetPendingByAccountID(ctx, req.Account.ID)
+		if err == nil {
+			return pending, false, nil
+		}
+		if !errors.Is(err, ports.ErrMailboxNotFound) {
+			return nil, false, err
+		}
 	}
 
 	id := uuid.NewString()
@@ -70,30 +78,45 @@ func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxReq
 		AccountID:    req.Account.ID,
 		OwnerEmail:   ownerEmail,
 		IMAPHost:     "imap.mailservice.local",
-		IMAPPort:     993,
+		IMAPPort:     143,
 		IMAPUsername: "mbx_" + strings.ReplaceAll(id[:12], "-", ""),
 		IMAPPassword: imapPassword,
 		AccessToken:  accessToken,
 		Status:       domain.MailboxStatusPendingPayment,
 	}
-
-	paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
-		MailboxID:  id,
-		OwnerEmail: ownerEmail,
-	})
-	if err != nil {
-		return nil, false, fmt.Errorf("create payment link: %w", err)
+	if accountHasActiveSubscription {
+		mailbox.Status = domain.MailboxStatusActive
+		mailbox.PaidAt = &now
+		mailbox.ExpiresAt = req.Account.SubscriptionExpiresAt
 	}
 
-	mailbox.StripeSessionID = paymentLink.SessionID
-	mailbox.PaymentURL = paymentLink.URL
+	if !accountHasActiveSubscription {
+		paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
+			MailboxID:  id,
+			OwnerEmail: ownerEmail,
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("create payment link: %w", err)
+		}
+
+		mailbox.StripeSessionID = paymentLink.SessionID
+		mailbox.PaymentURL = paymentLink.URL
+	}
 
 	if err := s.repo.Create(ctx, mailbox); err != nil {
 		return nil, false, fmt.Errorf("create mailbox: %w", err)
 	}
 
-	if err := s.notifier.SendPaymentLink(ctx, mailbox.OwnerEmail, mailbox.PaymentURL, mailbox.ID); err != nil {
-		return nil, false, fmt.Errorf("send payment link: %w", err)
+	if !accountHasActiveSubscription {
+		if err := s.notifier.SendPaymentLink(ctx, mailbox.OwnerEmail, mailbox.PaymentURL, mailbox.ID); err != nil {
+			return nil, false, fmt.Errorf("send payment link: %w", err)
+		}
+	}
+
+	if accountHasActiveSubscription && s.provisioner != nil {
+		if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+			return nil, false, err
+		}
 	}
 
 	return mailbox, true, nil
@@ -124,15 +147,40 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, stripeSessionID st
 		return nil, err
 	}
 
-	if mailbox.Usable() {
+	if mailbox.Status == domain.MailboxStatusActive {
+		if s.provisioner != nil {
+			if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+				return nil, err
+			}
+		}
 		return mailbox, nil
 	}
 
 	now := time.Now().UTC()
+	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	base := now
+	if account.SubscriptionExpiresAt != nil && account.SubscriptionExpiresAt.After(base) {
+		base = *account.SubscriptionExpiresAt
+	}
+	nextExpiry := base.AddDate(0, 1, 0)
+	if err := s.accounts.UpdateSubscriptionExpiresAt(ctx, account.ID, nextExpiry); err != nil {
+		return nil, err
+	}
+
 	mailbox.Status = domain.MailboxStatusActive
 	mailbox.PaidAt = &now
+	mailbox.ExpiresAt = &nextExpiry
 	if err := s.repo.Update(ctx, mailbox); err != nil {
 		return nil, err
+	}
+
+	if s.provisioner != nil {
+		if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+			return nil, err
+		}
 	}
 
 	return mailbox, nil
@@ -143,9 +191,28 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 	if err != nil {
 		return nil, err
 	}
+	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
+	if err != nil {
+		return nil, err
+	}
 
-	if !mailbox.Usable() {
+	if !account.SubscriptionActive(time.Now().UTC()) {
+		if mailbox.Status == domain.MailboxStatusActive {
+			mailbox.Status = domain.MailboxStatusExpired
+			_ = s.repo.Update(ctx, mailbox)
+		}
 		return nil, ports.ErrMailboxNotUsable
+	}
+
+	if mailbox.Status != domain.MailboxStatusActive {
+		mailbox.Status = domain.MailboxStatusActive
+		mailbox.ExpiresAt = account.SubscriptionExpiresAt
+		_ = s.repo.Update(ctx, mailbox)
+	}
+	if s.provisioner != nil {
+		if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+			return nil, err
+		}
 	}
 
 	return &ResolveIMAPResult{

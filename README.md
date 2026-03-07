@@ -10,7 +10,7 @@ Flow:
 5. OpenClaw creates mailbox (`POST /v1/mailboxes`).
 6. Service creates Stripe Checkout link and sends it to owner email (Resend or SendGrid when configured, log fallback otherwise).
 7. Owner pays.
-8. Stripe webhook marks mailbox active.
+8. Stripe webhook extends account subscription by 1 month; all account mailboxes inherit entitlement.
 9. OpenClaw polls mailbox status (`GET /v1/mailboxes/{id}`) and receives `access_token` once usable.
 10. OpenClaw resolves token to IMAP login (`POST /v1/imap/resolve`) or fetches messages (`POST /v1/imap/messages`).
 
@@ -27,6 +27,40 @@ Flow:
 
 ```bash
 go run ./cmd/app
+```
+
+## Docker
+
+Build API service image:
+
+```bash
+docker build -t mailservice-api:latest -f Dockerfile .
+```
+
+Build receive-only mail service image (Postfix + Dovecot + SQLite):
+
+```bash
+docker build -t mailservice-receive:latest -f docker/mailreceive/Dockerfile .
+```
+
+Run receive-only mail service:
+
+```bash
+docker run --rm -p 25:25 -p 143:143 \
+  -v "$(pwd)/mailservice.db:/data/mailservice.db" \
+  -e MAIL_DOMAIN=mail.local \
+  -e MAILBOX_USER=test \
+  -e MAILBOX_PASSWORD=secret \
+  mailservice-receive:latest
+```
+
+The receive container can share the same SQLite DB used by the API (`/data/mailservice.db`).
+API writes mailbox provisioning records into `mail_domains` and `mail_users` on payment activation.
+
+One-command local stack:
+
+```bash
+docker compose up --build
 ```
 
 The service auto-loads `.env` from the project root (via `godotenv`).

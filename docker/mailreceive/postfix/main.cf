@@ -1,0 +1,18 @@
+compatibility_level = 3.6
+
+myhostname = mail.local
+myorigin = $myhostname
+mydestination =
+inet_interfaces = all
+inet_protocols = ipv4
+
+smtpd_tls_security_level = none
+smtpd_relay_restrictions = permit_mynetworks, reject_unauth_destination
+
+virtual_mailbox_domains = sqlite:/etc/postfix/sqlite-domains.cf
+virtual_mailbox_maps = sqlite:/etc/postfix/sqlite-mailboxes.cf
+virtual_transport = lmtp:unix:private/dovecot-lmtp
+
+message_size_limit = 52428800
+mailbox_size_limit = 0
+recipient_delimiter = +

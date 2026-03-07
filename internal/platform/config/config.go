@@ -12,6 +12,7 @@ type Config struct {
 	DatabaseDSN         string
 	MaxConcurrentReqs   int
 	PublicBaseURL       string
+	MailDomain          string
 	SendGridAPIKey      string
 	SendGridFromEmail   string
 	SendGridFromName    string
@@ -36,6 +37,7 @@ func Load() (*Config, error) {
 		DatabaseDSN:         getEnv("DATABASE_DSN", "mailservice.db"),
 		MaxConcurrentReqs:   getEnvInt("MAX_CONCURRENT_REQUESTS", 100),
 		PublicBaseURL:       getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
+		MailDomain:          getEnv("MAIL_DOMAIN", "mail.local"),
 		SendGridAPIKey:      os.Getenv("SENDGRID_API_KEY"),
 		SendGridFromEmail:   getEnv("SENDGRID_FROM_EMAIL", ""),
 		SendGridFromName:    getEnv("SENDGRID_FROM_NAME", "MailService"),

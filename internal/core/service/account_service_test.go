@@ -194,6 +194,15 @@ func (f *fakeAccountRepo) GetByOwnerEmail(_ context.Context, ownerEmail string) 
 	return nil, ports.ErrAccountNotFound
 }
 
+func (f *fakeAccountRepo) GetByID(_ context.Context, accountID string) (*domain.Account, error) {
+	for _, item := range f.byOwner {
+		if item.ID == accountID {
+			return item, nil
+		}
+	}
+	return nil, ports.ErrAccountNotFound
+}
+
 func (f *fakeAccountRepo) GetByAPIToken(_ context.Context, apiToken string) (*domain.Account, error) {
 	if item, ok := f.byToken[apiToken]; ok {
 		return item, nil
@@ -210,6 +219,16 @@ func (f *fakeAccountRepo) UpdateAPIToken(_ context.Context, accountID string, ap
 			item.APIToken = apiToken
 			f.byToken[apiToken] = item
 			f.lastUpdatedToken = apiToken
+			return nil
+		}
+	}
+	return ports.ErrAccountNotFound
+}
+
+func (f *fakeAccountRepo) UpdateSubscriptionExpiresAt(_ context.Context, accountID string, expiresAt time.Time) error {
+	for _, item := range f.byOwner {
+		if item.ID == accountID {
+			item.SubscriptionExpiresAt = &expiresAt
 			return nil
 		}
 	}

@@ -12,11 +12,12 @@ import (
 )
 
 type accountModel struct {
-	ID         string `gorm:"primaryKey;type:text"`
-	OwnerEmail string `gorm:"not null;uniqueIndex"`
-	APIToken   string `gorm:"not null;uniqueIndex"`
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID                    string `gorm:"primaryKey;type:text"`
+	OwnerEmail            string `gorm:"not null;uniqueIndex"`
+	APIToken              string `gorm:"not null;uniqueIndex"`
+	SubscriptionExpiresAt *time.Time
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 type accountRecoveryModel struct {
@@ -53,19 +54,21 @@ func (refreshTokenModel) TableName() string {
 
 func toAccountDomain(m *accountModel) *domain.Account {
 	return &domain.Account{
-		ID:         m.ID,
-		OwnerEmail: m.OwnerEmail,
-		APIToken:   m.APIToken,
-		CreatedAt:  m.CreatedAt,
-		UpdatedAt:  m.UpdatedAt,
+		ID:                    m.ID,
+		OwnerEmail:            m.OwnerEmail,
+		APIToken:              m.APIToken,
+		SubscriptionExpiresAt: m.SubscriptionExpiresAt,
+		CreatedAt:             m.CreatedAt,
+		UpdatedAt:             m.UpdatedAt,
 	}
 }
 
 func toAccountModel(a *domain.Account) *accountModel {
 	return &accountModel{
-		ID:         a.ID,
-		OwnerEmail: a.OwnerEmail,
-		APIToken:   a.APIToken,
+		ID:                    a.ID,
+		OwnerEmail:            a.OwnerEmail,
+		APIToken:              a.APIToken,
+		SubscriptionExpiresAt: a.SubscriptionExpiresAt,
 	}
 }
 
@@ -137,6 +140,18 @@ func (r *AccountRepository) GetByOwnerEmail(ctx context.Context, ownerEmail stri
 	return toAccountDomain(&model), nil
 }
 
+func (r *AccountRepository) GetByID(ctx context.Context, accountID string) (*domain.Account, error) {
+	var model accountModel
+	err := r.db.WithContext(ctx).First(&model, "id = ?", accountID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrAccountNotFound
+		}
+		return nil, err
+	}
+	return toAccountDomain(&model), nil
+}
+
 func (r *AccountRepository) GetByAPIToken(ctx context.Context, apiToken string) (*domain.Account, error) {
 	var model accountModel
 	err := r.db.WithContext(ctx).First(&model, "api_token = ?", apiToken).Error
@@ -153,6 +168,12 @@ func (r *AccountRepository) UpdateAPIToken(ctx context.Context, accountID string
 	return r.db.WithContext(ctx).Model(&accountModel{}).
 		Where("id = ?", accountID).
 		Updates(map[string]any{"api_token": apiToken, "updated_at": time.Now().UTC()}).Error
+}
+
+func (r *AccountRepository) UpdateSubscriptionExpiresAt(ctx context.Context, accountID string, expiresAt time.Time) error {
+	return r.db.WithContext(ctx).Model(&accountModel{}).
+		Where("id = ?", accountID).
+		Updates(map[string]any{"subscription_expires_at": expiresAt.UTC(), "updated_at": time.Now().UTC()}).Error
 }
 
 type AccountRecoveryRepository struct {

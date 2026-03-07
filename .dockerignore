@@ -1,0 +1,7 @@
+.git
+.env
+mailservice.db
+*.db
+*.sqlite
+bin
+dist
