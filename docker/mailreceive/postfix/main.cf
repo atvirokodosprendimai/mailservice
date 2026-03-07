@@ -18,8 +18,8 @@ mailbox_size_limit = 0
 recipient_delimiter = +
 
 # Emit Postfix logs to container stdout for debugging.
-maillog_file = /dev/stdout
-maillog_file_prefixes = /var,/dev
+maillog_file = /var/log/maillog
+maillog_file_prefixes = /var
 
 # Verbose protocol debug for inbound SMTP peers.
 debug_peer_list = 0.0.0.0/0
