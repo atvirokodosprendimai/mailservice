@@ -31,15 +31,17 @@ type AccountService struct {
 	refreshTokens ports.RefreshTokenRepository
 	notifier      ports.Notifier
 	tokenGen      ports.TokenGenerator
+	publicBaseURL string
 }
 
-func NewAccountService(accounts ports.AccountRepository, recoveries ports.AccountRecoveryRepository, refreshTokens ports.RefreshTokenRepository, notifier ports.Notifier, tokenGen ports.TokenGenerator) *AccountService {
+func NewAccountService(accounts ports.AccountRepository, recoveries ports.AccountRecoveryRepository, refreshTokens ports.RefreshTokenRepository, notifier ports.Notifier, tokenGen ports.TokenGenerator, publicBaseURL string) *AccountService {
 	return &AccountService{
 		accounts:      accounts,
 		recoveries:    recoveries,
 		refreshTokens: refreshTokens,
 		notifier:      notifier,
 		tokenGen:      tokenGen,
+		publicBaseURL: strings.TrimRight(publicBaseURL, "/"),
 	}
 }
 
@@ -145,22 +147,13 @@ func (s *AccountService) StartRecovery(ctx context.Context, ownerEmail string) e
 	return s.createAndSendRecoveryCode(ctx, account, ownerEmail, now)
 }
 
-func (s *AccountService) CompleteRecovery(ctx context.Context, ownerEmail string, code string) (*domain.Account, *AuthTokens, error) {
-	ownerEmail = normalizeEmail(ownerEmail)
-	code = strings.TrimSpace(code)
-	if ownerEmail == "" || code == "" {
+func (s *AccountService) CompleteRecoveryByToken(ctx context.Context, token string) (*domain.Account, *AuthTokens, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
 		return nil, nil, ports.ErrRecoveryInvalid
 	}
 
-	account, err := s.accounts.GetByOwnerEmail(ctx, ownerEmail)
-	if err != nil {
-		if errors.Is(err, ports.ErrAccountNotFound) {
-			return nil, nil, ports.ErrRecoveryInvalid
-		}
-		return nil, nil, err
-	}
-
-	recovery, err := s.recoveries.GetLatestActiveByAccountID(ctx, account.ID)
+	recovery, err := s.recoveries.GetActiveByCodeHash(ctx, hashToken(token))
 	if err != nil {
 		if errors.Is(err, ports.ErrRecoveryNotFound) {
 			return nil, nil, ports.ErrRecoveryInvalid
@@ -173,10 +166,6 @@ func (s *AccountService) CompleteRecovery(ctx context.Context, ownerEmail string
 		return nil, nil, ports.ErrRecoveryExpired
 	}
 
-	if !tokenHashEqual(recovery.CodeHash, hashToken(code)) {
-		return nil, nil, ports.ErrRecoveryInvalid
-	}
-
 	if err := s.recoveries.MarkUsed(ctx, recovery.ID, now); err != nil {
 		return nil, nil, err
 	}
@@ -185,16 +174,20 @@ func (s *AccountService) CompleteRecovery(ctx context.Context, ownerEmail string
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate api token: %w", err)
 	}
-	if err := s.accounts.UpdateAPIToken(ctx, account.ID, newAPIToken); err != nil {
+	if err := s.accounts.UpdateAPIToken(ctx, recovery.AccountID, newAPIToken); err != nil {
 		return nil, nil, err
 	}
 
-	newRefreshToken, err := s.issueRefreshToken(ctx, account.ID, now)
+	newRefreshToken, err := s.issueRefreshToken(ctx, recovery.AccountID, now)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	account.APIToken = newAPIToken
+	account, err := s.accounts.GetByAPIToken(ctx, newAPIToken)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	return account, &AuthTokens{APIToken: newAPIToken, RefreshToken: newRefreshToken}, nil
 }
 
@@ -241,7 +234,8 @@ func (s *AccountService) createAndSendRecoveryCode(ctx context.Context, account 
 		return err
 	}
 
-	if err := s.notifier.SendRecoveryCode(ctx, ownerEmail, code); err != nil {
+	recoveryURL := s.publicBaseURL + "/v1/accounts/recovery/complete?token=" + code
+	if err := s.notifier.SendRecoveryLink(ctx, ownerEmail, recoveryURL); err != nil {
 		return err
 	}
 	return nil

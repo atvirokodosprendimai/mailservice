@@ -57,6 +57,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/auth/refresh", h.handleRefreshAuth)
 	mux.HandleFunc("POST /v1/accounts/recovery/start", h.handleStartRecovery)
 	mux.HandleFunc("POST /v1/accounts/recovery/complete", h.handleCompleteRecovery)
+	mux.HandleFunc("GET /v1/accounts/recovery/complete", h.handleCompleteRecoveryByLink)
 	mux.HandleFunc("GET /v1/mailboxes", h.withAccountToken(h.handleListMailboxes))
 	mux.HandleFunc("POST /v1/mailboxes", h.withAccountToken(h.handleCreateMailbox))
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
@@ -171,8 +172,7 @@ func (h *Handler) handleStartRecovery(w http.ResponseWriter, r *http.Request) {
 }
 
 type completeRecoveryRequest struct {
-	OwnerEmail string `json:"owner_email"`
-	Code       string `json:"code"`
+	Token string `json:"token"`
 }
 
 func (h *Handler) handleCompleteRecovery(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +182,7 @@ func (h *Handler) handleCompleteRecovery(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	account, tokens, err := h.accountService.CompleteRecovery(r.Context(), req.OwnerEmail, req.Code)
+	account, tokens, err := h.accountService.CompleteRecoveryByToken(r.Context(), req.Token)
 	if err != nil {
 		switch {
 		case errors.Is(err, ports.ErrRecoveryInvalid):
@@ -201,6 +201,37 @@ func (h *Handler) handleCompleteRecovery(w http.ResponseWriter, r *http.Request)
 		APIToken:     tokens.APIToken,
 		RefreshToken: tokens.RefreshToken,
 	})
+}
+
+func (h *Handler) handleCompleteRecoveryByLink(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" {
+		writeError(w, http.StatusBadRequest, errors.New("missing token"))
+		return
+	}
+
+	account, tokens, err := h.accountService.CompleteRecoveryByToken(r.Context(), token)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrRecoveryInvalid):
+			writeError(w, http.StatusUnauthorized, err)
+		case errors.Is(err, ports.ErrRecoveryExpired):
+			writeError(w, http.StatusUnauthorized, err)
+		default:
+			writeError(w, http.StatusInternalServerError, err)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(
+		"Recovery completed. Save these credentials securely:\n" +
+			"account_id=" + account.ID + "\n" +
+			"owner_email=" + account.OwnerEmail + "\n" +
+			"api_token=" + tokens.APIToken + "\n" +
+			"refresh_token=" + tokens.RefreshToken + "\n",
+	))
 }
 
 func (h *Handler) handleCreateMailbox(w http.ResponseWriter, r *http.Request) {

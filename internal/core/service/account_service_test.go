@@ -15,7 +15,7 @@ func TestCreateAccountFailsWhenAlreadyExists(t *testing.T) {
 			"owner@example.com": {ID: "acc-1", OwnerEmail: "owner@example.com", APIToken: "token-1"},
 		},
 	}
-	service := NewAccountService(accounts, &fakeRecoveryRepo{}, &fakeRefreshTokenRepo{}, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-token"}})
+	service := NewAccountService(accounts, &fakeRecoveryRepo{}, &fakeRefreshTokenRepo{}, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-token"}}, "http://localhost:8080")
 
 	_, _, err := service.CreateAccount(context.Background(), "owner@example.com")
 	if err == nil {
@@ -39,7 +39,7 @@ func TestStartRecoveryRateLimited(t *testing.T) {
 			CreatedAt: time.Now().UTC(),
 		},
 	}
-	service := NewAccountService(accounts, recoveries, &fakeRefreshTokenRepo{}, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"recover-code"}})
+	service := NewAccountService(accounts, recoveries, &fakeRefreshTokenRepo{}, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"recover-code"}}, "http://localhost:8080")
 
 	err := service.StartRecovery(context.Background(), "owner@example.com")
 	if err == nil {
@@ -58,7 +58,7 @@ func TestStartRecoveryCreatesCodeAndSendsNotification(t *testing.T) {
 	}
 	recoveries := &fakeRecoveryRepo{}
 	notifier := &fakeAccountNotifier{}
-	service := NewAccountService(accounts, recoveries, &fakeRefreshTokenRepo{}, notifier, &fakeTokenGenerator{tokens: []string{"recover-code"}})
+	service := NewAccountService(accounts, recoveries, &fakeRefreshTokenRepo{}, notifier, &fakeTokenGenerator{tokens: []string{"recover-code"}}, "http://localhost:8080")
 
 	err := service.StartRecovery(context.Background(), "owner@example.com")
 	if err != nil {
@@ -67,8 +67,8 @@ func TestStartRecoveryCreatesCodeAndSendsNotification(t *testing.T) {
 	if notifier.recoveryCalls != 1 {
 		t.Fatalf("expected one recovery notification, got %d", notifier.recoveryCalls)
 	}
-	if notifier.lastRecoveryCode != "recover-code" {
-		t.Fatalf("expected recovery code to be sent")
+	if notifier.lastRecoveryURL == "" {
+		t.Fatalf("expected recovery link to be sent")
 	}
 	if recoveries.latest == nil {
 		t.Fatalf("expected recovery record created")
@@ -78,7 +78,7 @@ func TestStartRecoveryCreatesCodeAndSendsNotification(t *testing.T) {
 func TestCreateAccountReturnsRefreshToken(t *testing.T) {
 	accounts := &fakeAccountRepo{}
 	refresh := &fakeRefreshTokenRepo{}
-	service := NewAccountService(accounts, &fakeRecoveryRepo{}, refresh, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api-token", "new-refresh"}})
+	service := NewAccountService(accounts, &fakeRecoveryRepo{}, refresh, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api-token", "new-refresh"}}, "http://localhost:8080")
 
 	account, tokens, err := service.CreateAccount(context.Background(), "owner@example.com")
 	if err != nil {
@@ -110,9 +110,9 @@ func TestCompleteRecoveryRotatesToken(t *testing.T) {
 		},
 	}
 	refresh := &fakeRefreshTokenRepo{}
-	service := NewAccountService(accounts, recoveries, refresh, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api-token", "new-refresh"}})
+	service := NewAccountService(accounts, recoveries, refresh, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api-token", "new-refresh"}}, "http://localhost:8080")
 
-	account, tokens, err := service.CompleteRecovery(context.Background(), "owner@example.com", "recover-code")
+	account, tokens, err := service.CompleteRecoveryByToken(context.Background(), "recover-code")
 	if err != nil {
 		t.Fatalf("CompleteRecovery failed: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestRefreshAccessRotatesTokens(t *testing.T) {
 			},
 		},
 	}
-	service := NewAccountService(accounts, &fakeRecoveryRepo{}, refresh, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api", "new-refresh"}})
+	service := NewAccountService(accounts, &fakeRecoveryRepo{}, refresh, &fakeAccountNotifier{}, &fakeTokenGenerator{tokens: []string{"new-api", "new-refresh"}}, "http://localhost:8080")
 
 	_, tokens, err := service.RefreshAccess(context.Background(), "old-refresh")
 	if err != nil {
@@ -280,6 +280,13 @@ func (f *fakeRecoveryRepo) GetLatestActiveByAccountID(_ context.Context, account
 	return nil, ports.ErrRecoveryNotFound
 }
 
+func (f *fakeRecoveryRepo) GetActiveByCodeHash(_ context.Context, codeHash string) (*domain.AccountRecovery, error) {
+	if f.latest != nil && f.latest.CodeHash == codeHash && f.latest.UsedAt == nil {
+		return f.latest, nil
+	}
+	return nil, ports.ErrRecoveryNotFound
+}
+
 func (f *fakeRecoveryRepo) MarkUsed(_ context.Context, recoveryID string, usedAt time.Time) error {
 	f.markedUsedID = recoveryID
 	if f.latest != nil && f.latest.ID == recoveryID {
@@ -302,16 +309,16 @@ func (f *fakeTokenGenerator) NewToken(_ int) (string, error) {
 }
 
 type fakeAccountNotifier struct {
-	recoveryCalls    int
-	lastRecoveryCode string
+	recoveryCalls   int
+	lastRecoveryURL string
 }
 
 func (f *fakeAccountNotifier) SendPaymentLink(_ context.Context, _ string, _ string, _ string) error {
 	return nil
 }
 
-func (f *fakeAccountNotifier) SendRecoveryCode(_ context.Context, _ string, code string) error {
+func (f *fakeAccountNotifier) SendRecoveryLink(_ context.Context, _ string, recoveryURL string) error {
 	f.recoveryCalls++
-	f.lastRecoveryCode = code
+	f.lastRecoveryURL = recoveryURL
 	return nil
 }

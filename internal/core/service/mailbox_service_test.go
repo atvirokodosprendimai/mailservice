@@ -106,6 +106,6 @@ func (f *fakeMailboxNotifier) SendPaymentLink(_ context.Context, _ string, _ str
 	return nil
 }
 
-func (f *fakeMailboxNotifier) SendRecoveryCode(_ context.Context, _ string, _ string) error {
+func (f *fakeMailboxNotifier) SendRecoveryLink(_ context.Context, _ string, _ string) error {
 	return nil
 }

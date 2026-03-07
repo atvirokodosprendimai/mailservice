@@ -72,6 +72,12 @@ curl -X POST http://localhost:8080/v1/accounts/recovery/start \
   -d '{"owner_email":"owner@example.com"}'
 ```
 
+Human recovery complete by URL token (browser friendly):
+
+```bash
+open "http://localhost:8080/v1/accounts/recovery/complete?token=<one-time-token>"
+```
+
 Complete token recovery with one-time code from owner inbox:
 
 ```bash

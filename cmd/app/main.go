@@ -53,7 +53,7 @@ func main() {
 	}
 
 	mailboxService := service.NewMailboxService(mailboxRepo, paymentGateway, notifier, tokenGen)
-	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen)
+	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen, cfg.PublicBaseURL)
 
 	handler := httpapi.NewHandler(httpapi.Config{
 		StripeWebhookSecret: cfg.StripeWebhookSecret,

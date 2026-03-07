@@ -201,6 +201,19 @@ func (r *AccountRecoveryRepository) GetLatestActiveByAccountID(ctx context.Conte
 	return toAccountRecoveryDomain(&model), nil
 }
 
+func (r *AccountRecoveryRepository) GetActiveByCodeHash(ctx context.Context, codeHash string) (*domain.AccountRecovery, error) {
+	var model accountRecoveryModel
+	err := r.db.WithContext(ctx).
+		First(&model, "code_hash = ? AND used_at IS NULL", codeHash).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrRecoveryNotFound
+		}
+		return nil, err
+	}
+	return toAccountRecoveryDomain(&model), nil
+}
+
 func (r *AccountRecoveryRepository) MarkUsed(ctx context.Context, recoveryID string, usedAt time.Time) error {
 	return r.db.WithContext(ctx).Model(&accountRecoveryModel{}).
 		Where("id = ?", recoveryID).

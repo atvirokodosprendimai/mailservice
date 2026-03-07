@@ -18,7 +18,7 @@ func (n *LogNotifier) SendPaymentLink(_ context.Context, ownerEmail string, paym
 	return nil
 }
 
-func (n *LogNotifier) SendRecoveryCode(_ context.Context, ownerEmail string, code string) error {
-	n.logger.Printf("send owner recovery code owner=%s code=%s", ownerEmail, code)
+func (n *LogNotifier) SendRecoveryLink(_ context.Context, ownerEmail string, recoveryURL string) error {
+	n.logger.Printf("send owner recovery link owner=%s recovery_url=%s", ownerEmail, recoveryURL)
 	return nil
 }

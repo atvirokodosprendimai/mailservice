@@ -74,3 +74,7 @@ Human-only fallback:
 - If both tokens are lost, owner can run email recovery endpoints:
   - `POST /v1/accounts/recovery/start`
   - `POST /v1/accounts/recovery/complete`
+
+Recovery for humans uses URL with token included:
+- Email contains link like `/v1/accounts/recovery/complete?token=<one-time-token>`
+- Opening link returns plain text credentials for manual re-linking.

@@ -44,6 +44,7 @@ type AccountRecoveryRepository interface {
 	DeleteActiveByAccountID(ctx context.Context, accountID string) error
 	GetLatestByAccountID(ctx context.Context, accountID string) (*domain.AccountRecovery, error)
 	GetLatestActiveByAccountID(ctx context.Context, accountID string) (*domain.AccountRecovery, error)
+	GetActiveByCodeHash(ctx context.Context, codeHash string) (*domain.AccountRecovery, error)
 	MarkUsed(ctx context.Context, recoveryID string, usedAt time.Time) error
 }
 
@@ -69,7 +70,7 @@ type PaymentGateway interface {
 
 type Notifier interface {
 	SendPaymentLink(ctx context.Context, ownerEmail string, paymentURL string, mailboxID string) error
-	SendRecoveryCode(ctx context.Context, ownerEmail string, code string) error
+	SendRecoveryLink(ctx context.Context, ownerEmail string, recoveryURL string) error
 }
 
 type TokenGenerator interface {
