@@ -8,7 +8,8 @@ RUN apk add --no-cache \
     sqlite \
     ca-certificates
 
-RUN addgroup -g 5000 vmail && adduser -D -H -u 5000 -G vmail vmail
+RUN if ! grep -q '^vmail:' /etc/group; then addgroup -g 5000 vmail; fi && \
+    if ! grep -q '^vmail:' /etc/passwd; then adduser -D -H -u 5000 -G vmail vmail; fi
 
 COPY docker/mailreceive/postfix/main.cf /etc/postfix/main.cf
 COPY docker/mailreceive/postfix/sqlite-domains.cf /etc/postfix/sqlite-domains.cf
