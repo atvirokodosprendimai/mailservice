@@ -28,6 +28,7 @@ Further reading:
 - [Migration plan](docs/migration-plan.md)
 - [Future access design](docs/future-access.md)
 - [Hetzner CI/CD](docs/hetzner-cicd.md)
+- [Local workflow validation](docs/local-workflow-validation.md)
 
 ## Stack
 

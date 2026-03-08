@@ -91,3 +91,4 @@ Rollback expectations:
 - production apply is gated behind a separate plan stage and uploaded plan artifact
 - provider-specific payment/runtime secrets remain separate from infra secrets
 - this design uses OpenTofu, not Terraform
+- before pushing workflow or OpenTofu changes, use the local checklist in `docs/local-workflow-validation.md`
