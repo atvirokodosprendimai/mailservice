@@ -46,6 +46,27 @@ func TestCreateMailboxReturnsExistingPendingMailbox(t *testing.T) {
 	}
 }
 
+func TestNewMailboxServiceDefaultsIMAPHostToMailDomain(t *testing.T) {
+	t.Parallel()
+
+	service := NewMailboxService(
+		&fakeMailboxRepo{},
+		&fakeMailboxAccountRepo{},
+		&fakePaymentGateway{},
+		&fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"},
+		&fakeMailRuntimeProvisioner{},
+		&fakeMailReader{},
+		" MX.Example.com ",
+		"  ",
+		143,
+	)
+
+	if service.imapHost != "mx.example.com" {
+		t.Fatalf("expected imapHost to default to normalized mailDomain, got %q", service.imapHost)
+	}
+}
+
 func TestCreateMailboxActiveSubscriptionSkipsPaymentAndProvisioned(t *testing.T) {
 	now := time.Now().UTC().Add(24 * time.Hour)
 	repo := &fakeMailboxRepo{}
@@ -347,6 +368,17 @@ func (f *fakeMailboxRepo) GetByAccessToken(_ context.Context, accessToken string
 	if f.byAccessToken != nil {
 		if item, ok := f.byAccessToken[accessToken]; ok {
 			return item, nil
+		}
+	}
+	return nil, ports.ErrMailboxNotFound
+}
+
+func (f *fakeMailboxRepo) GetByKeyFingerprint(_ context.Context, keyFingerprint string) (*domain.Mailbox, error) {
+	if f.byAccessToken != nil {
+		for _, item := range f.byAccessToken {
+			if item.KeyFingerprint == keyFingerprint {
+				return item, nil
+			}
 		}
 	}
 	return nil, ports.ErrMailboxNotFound

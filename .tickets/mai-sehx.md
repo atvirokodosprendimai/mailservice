@@ -15,5 +15,6 @@ Implement the key-bound inbound mailbox model described in docs/key-bound-mailbo
 
 ## Acceptance Criteria
 
-Spec accepted as implementation baseline\nKey-bound mailbox identity replaces account token as primary access model\nInbound-only scope remains explicit across API and docs
-
+- Spec accepted as implementation baseline
+- Key-bound mailbox identity replaces account token as primary access model
+- Inbound-only scope remains explicit across API and docs

@@ -31,8 +31,11 @@ func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepos
 	if mailDomain == "" {
 		mailDomain = "mail.local"
 	}
-	if strings.TrimSpace(imapHost) == "" {
-		imapHost = "mail.local"
+	trimmedIMAPHost := strings.TrimSpace(strings.ToLower(imapHost))
+	if trimmedIMAPHost == "" {
+		imapHost = mailDomain
+	} else {
+		imapHost = trimmedIMAPHost
 	}
 	if imapPort <= 0 {
 		imapPort = 143
