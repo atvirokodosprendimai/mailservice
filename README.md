@@ -1,18 +1,25 @@
 # Mail Service API
 
-Tiny hexagonal Go API for paid mailbox provisioning.
+Tiny hexagonal Go API for paid inbound mailbox provisioning.
 
-Flow:
-1. OpenClaw creates account (`POST /v1/accounts`) once and gets `api_token` + `refresh_token`.
-2. OpenClaw refreshes credentials autonomously via `POST /v1/auth/refresh`.
-3. Owner email recovery remains human-only fallback when all bot credentials are lost.
-4. OpenClaw lists mailboxes (`GET /v1/mailboxes`).
-5. OpenClaw creates mailbox (`POST /v1/mailboxes`).
-6. Service creates Stripe Checkout link and sends it to owner email (Resend or SendGrid when configured, log fallback otherwise).
-7. Owner pays.
-8. Stripe webhook extends account subscription by 1 month; all account mailboxes inherit entitlement.
-9. OpenClaw polls mailbox status (`GET /v1/mailboxes/{id}`) and receives `access_token` once usable.
-10. OpenClaw resolves token to IMAP login (`POST /v1/imap/resolve`), lists unread messages (`POST /v1/imap/messages`), and fetches by UID (`POST /v1/imap/messages/get`).
+Current preferred flow:
+1. Agent presents `billing_email` plus key proof to `POST /v1/mailboxes/claim`.
+2. Service reuses the same mailbox for the same key, or creates a new pending mailbox for a new key.
+3. Service sends payment link to `billing_email`.
+4. After payment, mailbox becomes active for one month.
+5. Agent presents the same key proof to `POST /v1/access/resolve` to obtain IMAP access details.
+
+Legacy flow remains available during migration:
+- account creation via `POST /v1/accounts`
+- account token refresh via `POST /v1/auth/refresh`
+- mailbox creation via `POST /v1/mailboxes`
+- IMAP resolve via `POST /v1/imap/resolve`
+
+Product scope:
+- inbound mailbox access only
+- IMAP today
+- POP3 / HTTP read API later
+- no SMTP submission or outbound sending
 
 ## Stack
 
@@ -21,7 +28,8 @@ Flow:
 - SQLite (pure Go, no CGO) via `github.com/glebarez/sqlite`
 - GORM ORM
 - Goose SQL migrations
-- Stripe Checkout + webhooks
+- Stripe Checkout + webhooks today
+- mock payment links for local development
 
 ## Run
 
@@ -94,6 +102,26 @@ When both providers are configured, Resend takes precedence.
 
 ## API examples
 
+Preferred key-bound claim flow:
+
+```bash
+curl -X POST http://localhost:8080/v1/mailboxes/claim \
+  -H 'Content-Type: application/json' \
+  -d '{"billing_email":"billing@example.com","edproof":"<proof>"}'
+```
+
+Resolve IMAP credentials by key proof:
+
+```bash
+curl -X POST http://localhost:8080/v1/access/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{"protocol":"imap","edproof":"<proof>"}'
+```
+
+If global concurrency limit is reached, API returns `503` with `retry_after_seconds` random value in range `3..100`.
+
+Legacy account flow:
+
 Create account:
 
 ```bash
@@ -109,8 +137,6 @@ curl -X POST http://localhost:8080/v1/auth/refresh \
   -H 'Content-Type: application/json' \
   -d '{"refresh_token":"<refresh-token>"}'
 ```
-
-If global concurrency limit is reached, API returns `503` with `retry_after_seconds` random value in range `3..100`.
 
 Human-only recovery start endpoint:
 
@@ -191,3 +217,10 @@ Mock payment (only when Stripe key is not configured):
 ```bash
 curl http://localhost:8080/mock/pay/<session-id>
 ```
+
+## Notes
+
+- The same key always maps to the same mailbox.
+- A different key gets a different mailbox.
+- `billing_email` is only the address used for invoice/payment delivery.
+- Who actually pays is outside the service model.

@@ -1,6 +1,6 @@
 ---
 id: mai-3uex
-status: open
+status: closed
 deps: []
 links: [mai-jheu, mai-br0j, mai-sehx]
 created: 2026-03-08T09:47:08Z

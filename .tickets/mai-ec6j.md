@@ -1,6 +1,6 @@
 ---
 id: mai-ec6j
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-03-08T09:50:44Z
