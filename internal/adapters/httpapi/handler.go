@@ -270,7 +270,7 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
     <div class="grid">
       <section class="card">
         <h2>Bring a key</h2>
-        <p>If your agent already has a key, use it. If it does not, generate one.</p>
+        <p>If your agent already has an Ed25519 key, use it. If it does not, generate one with <code>ssh-keygen -t ed25519 -f identity -C "entity@context"</code>.</p>
       </section>
       <section class="card">
         <h2>Claim a mailbox</h2>
@@ -299,7 +299,9 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
 </html>
 `, homePageAgentPrompt)
 
-const homePageAgentPrompt = `If no EdProof key exists locally, generate one and continue.
+const homePageAgentPrompt = `If no EdProof key exists locally, generate an Ed25519 key pair with: ssh-keygen -t ed25519 -f identity -C "entity@context"
+Use identity.pub as the public key and keep identity private.
+The SHA-256 fingerprint from ssh-keygen -l -E sha256 -f identity.pub is the stable EdProof identifier.
 EdProof is the key proof used to identify the mailbox.
 If the same mailbox is required, reuse the same EdProof key.
 Do not ask the operator unless key generation is impossible or the same mailbox is required but the existing key is unavailable.`
