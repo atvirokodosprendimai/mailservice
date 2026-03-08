@@ -11,6 +11,11 @@ Initial target:
 - firewall allowing SSH, HTTP, HTTPS, SMTP receive, and IMAP
 - Docker-based app deployment on the host
 
+Alternate migration target:
+- one Hetzner Cloud server created from a prebuilt NixOS/custom image or snapshot
+- `bootstrap_mode=none` so OpenTofu creates the VM but does not inject the Ubuntu Docker bootstrap
+- NixOps / NixOS configuration takes over after provisioning
+
 This is intentionally small. Scale-out can come later.
 
 ## OpenTofu State
@@ -77,6 +82,14 @@ Run:
 12. workflow runs compose on the host against those exact image tags
 13. workflow checks the host-local API health endpoint with bounded retries
 
+For a NixOS migration host:
+1. run the same workflow with:
+   - `image=<nixos snapshot or image id>`
+   - `bootstrap_mode=none`
+2. OpenTofu will create the server, firewall, and SSH key only
+3. the Ubuntu compose deploy job is skipped
+4. complete the host configuration via the NixOps migration path
+
 ## Rollout
 
 Recommended rollout:
@@ -110,3 +123,4 @@ Rollback expectations:
 - host-side deploy uses `compose.tunnel.yml.example` plus a generated `production.env`
 - the tunnel compose file reads runtime values from `production.env`; it is not meant to hard-code production secrets
 - production deploy uses immutable GHCR tags of the form `sha-<commit>` rather than relying on `latest`
+- for a NixOS/custom image host, set `bootstrap_mode=none` so the workflow provisions the VM without assuming Ubuntu packages or Docker bootstrap

@@ -28,6 +28,17 @@ variable "image" {
   default     = "ubuntu-24.04"
 }
 
+variable "bootstrap_mode" {
+  description = "Host bootstrap mode. Use ubuntu-docker for the current Docker-based host, or none for a prebuilt NixOS/custom image path."
+  type        = string
+  default     = "ubuntu-docker"
+
+  validation {
+    condition     = contains(["ubuntu-docker", "none"], var.bootstrap_mode)
+    error_message = "bootstrap_mode must be one of: ubuntu-docker, none."
+  }
+}
+
 variable "ssh_public_key" {
   description = "SSH public key material for server access."
   type        = string

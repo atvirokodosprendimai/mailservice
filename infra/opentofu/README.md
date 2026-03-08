@@ -8,7 +8,7 @@ Files:
 - `versions.tf` provider and OpenTofu requirements
 - `variables.tf` input variables
 - `main.tf` server, firewall, and SSH key resources
-- `cloud-init.tftpl` base host bootstrap
+- `cloud-init.tftpl` Ubuntu Docker host bootstrap
 
 Recommended backend:
 - remote S3-compatible backend configured in CI from secrets
@@ -28,3 +28,17 @@ Set:
 - `public_base_url=https://truevipaccess.com`
 
 Then use the `server_ipv4` output as the DNS `A` record target.
+
+## Bootstrap Modes
+
+Default path:
+- `image=ubuntu-24.04`
+- `bootstrap_mode=ubuntu-docker`
+- renders `cloud-init.tftpl`
+- suitable for the current Docker/Compose production host
+
+NixOS/custom image path:
+- set `image` to a Hetzner image/snapshot id for the NixOS host
+- set `bootstrap_mode=none`
+- OpenTofu will create the VM, SSH key, and firewall without injecting the Ubuntu bootstrap
+- complete the host rollout through the NixOps path documented in `docs/nixops-migration-plan.md`
