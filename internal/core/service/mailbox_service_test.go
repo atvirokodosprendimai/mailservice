@@ -46,6 +46,76 @@ func TestCreateMailboxReturnsExistingPendingMailbox(t *testing.T) {
 	}
 }
 
+func TestClaimMailboxReturnsExistingByKeyFingerprint(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:             "mbx-1",
+				BillingEmail:   "billing@example.com",
+				KeyFingerprint: "edproof:key-1",
+				Status:         domain.MailboxStatusPendingPayment,
+				PaymentURL:     "http://pay/1",
+			},
+		},
+	}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-1",
+		Algorithm:   "ed25519",
+	})
+	if err != nil {
+		t.Fatalf("ClaimMailbox failed: %v", err)
+	}
+	if created {
+		t.Fatalf("expected existing mailbox reuse, got created=true")
+	}
+	if mailbox.ID != "mbx-1" {
+		t.Fatalf("expected existing mailbox id, got %q", mailbox.ID)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment link creation, got %d", payment.calls)
+	}
+	if notifier.calls != 0 {
+		t.Fatalf("expected no notifier call, got %d", notifier.calls)
+	}
+}
+
+func TestClaimMailboxCreatesPendingMailboxForNewKey(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-2",
+		Algorithm:   "ed25519",
+	})
+	if err != nil {
+		t.Fatalf("ClaimMailbox failed: %v", err)
+	}
+	if !created {
+		t.Fatalf("expected new mailbox to be created")
+	}
+	if mailbox.BillingEmail != "billing@example.com" {
+		t.Fatalf("expected billing email, got %q", mailbox.BillingEmail)
+	}
+	if mailbox.KeyFingerprint != "edproof:key-2" {
+		t.Fatalf("expected key fingerprint, got %q", mailbox.KeyFingerprint)
+	}
+	if mailbox.Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected pending status, got %s", mailbox.Status)
+	}
+	if payment.calls != 1 {
+		t.Fatalf("expected one payment link creation, got %d", payment.calls)
+	}
+	if notifier.calls != 1 {
+		t.Fatalf("expected one notifier call, got %d", notifier.calls)
+	}
+}
+
 func TestNewMailboxServiceDefaultsIMAPHostToMailDomain(t *testing.T) {
 	t.Parallel()
 
@@ -288,6 +358,7 @@ type fakeMailboxRepo struct {
 	created          []*domain.Mailbox
 	byStripeSession  map[string]*domain.Mailbox
 	byAccessToken    map[string]*domain.Mailbox
+	byKeyFingerprint map[string]*domain.Mailbox
 }
 
 type fakeMailboxAccountRepo struct {
@@ -333,6 +404,12 @@ func (f *fakeMailboxAccountRepo) UpdateSubscriptionExpiresAt(_ context.Context, 
 
 func (f *fakeMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) error {
 	f.created = append(f.created, mailbox)
+	if f.byKeyFingerprint == nil {
+		f.byKeyFingerprint = map[string]*domain.Mailbox{}
+	}
+	if mailbox.KeyFingerprint != "" {
+		f.byKeyFingerprint[mailbox.KeyFingerprint] = mailbox
+	}
 	return nil
 }
 
@@ -374,11 +451,9 @@ func (f *fakeMailboxRepo) GetByAccessToken(_ context.Context, accessToken string
 }
 
 func (f *fakeMailboxRepo) GetByKeyFingerprint(_ context.Context, keyFingerprint string) (*domain.Mailbox, error) {
-	if f.byAccessToken != nil {
-		for _, item := range f.byAccessToken {
-			if item.KeyFingerprint == keyFingerprint {
-				return item, nil
-			}
+	if f.byKeyFingerprint != nil {
+		if item, ok := f.byKeyFingerprint[keyFingerprint]; ok {
+			return item, nil
 		}
 	}
 	return nil, ports.ErrMailboxNotFound

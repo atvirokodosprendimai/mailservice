@@ -21,6 +21,7 @@ import (
 type Config struct {
 	StripeWebhookSecret string
 	MaxConcurrentReqs   int
+	KeyProofVerifier    ports.KeyProofVerifier
 	MailboxService      *service.MailboxService
 	AccountService      *service.AccountService
 	Logger              *log.Logger
@@ -29,6 +30,7 @@ type Config struct {
 type Handler struct {
 	stripeWebhookSecret string
 	concurrencySem      chan struct{}
+	keyProofVerifier    ports.KeyProofVerifier
 	mailboxService      *service.MailboxService
 	accountService      *service.AccountService
 	logger              *log.Logger
@@ -45,6 +47,7 @@ func NewHandler(cfg Config) *Handler {
 	return &Handler{
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
 		concurrencySem:      sem,
+		keyProofVerifier:    cfg.KeyProofVerifier,
 		mailboxService:      cfg.MailboxService,
 		accountService:      cfg.AccountService,
 		logger:              cfg.Logger,
@@ -61,6 +64,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/accounts/recovery/complete", h.handleCompleteRecoveryByLink)
 	mux.HandleFunc("GET /v1/mailboxes", h.withAccountToken(h.handleListMailboxes))
 	mux.HandleFunc("POST /v1/mailboxes", h.withAccountToken(h.handleCreateMailbox))
+	mux.HandleFunc("POST /v1/mailboxes/claim", h.handleClaimMailbox)
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
 	mux.HandleFunc("POST /v1/imap/resolve", h.withAccountToken(h.handleResolveIMAP))
 	mux.HandleFunc("POST /v1/imap/messages", h.withAccountToken(h.handleListIMAPMessages))
@@ -266,6 +270,51 @@ func (h *Handler) handleCreateMailbox(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusCreated
 	}
 
+	writeJSON(w, status, mailboxResponse(mailbox))
+}
+
+type claimMailboxRequest struct {
+	BillingEmail string `json:"billing_email"`
+	EDProof      string `json:"edproof"`
+}
+
+func (h *Handler) handleClaimMailbox(w http.ResponseWriter, r *http.Request) {
+	var req claimMailboxRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if h.keyProofVerifier == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("key proof verifier not configured"))
+		return
+	}
+
+	key, err := h.keyProofVerifier.Verify(r.Context(), req.EDProof)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrInvalidKeyProof):
+			writeError(w, http.StatusUnauthorized, err)
+		default:
+			writeError(w, http.StatusServiceUnavailable, err)
+		}
+		return
+	}
+
+	mailbox, created, err := h.mailboxService.ClaimMailbox(r.Context(), req.BillingEmail, *key)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrInvalidKeyProof):
+			writeError(w, http.StatusUnauthorized, err)
+		default:
+			writeError(w, http.StatusBadRequest, err)
+		}
+		return
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
 	writeJSON(w, status, mailboxResponse(mailbox))
 }
 

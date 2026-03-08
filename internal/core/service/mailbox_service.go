@@ -68,6 +68,68 @@ type ResolveIMAPResult struct {
 	Email     string
 }
 
+func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, key ports.VerifiedKey) (*domain.Mailbox, bool, error) {
+	billingEmail = strings.TrimSpace(strings.ToLower(billingEmail))
+	if billingEmail == "" || !strings.Contains(billingEmail, "@") {
+		return nil, false, errors.New("billing_email must be a valid email")
+	}
+	key.Fingerprint = strings.TrimSpace(strings.ToLower(key.Fingerprint))
+	key.Algorithm = strings.TrimSpace(strings.ToLower(key.Algorithm))
+	if key.Fingerprint == "" || key.Algorithm == "" {
+		return nil, false, ports.ErrInvalidKeyProof
+	}
+
+	existing, err := s.repo.GetByKeyFingerprint(ctx, key.Fingerprint)
+	if err == nil {
+		return existing, false, nil
+	}
+	if !errors.Is(err, ports.ErrMailboxNotFound) {
+		return nil, false, err
+	}
+
+	id := uuid.NewString()
+	imapPassword, err := s.tokenGen.NewToken(24)
+	if err != nil {
+		return nil, false, fmt.Errorf("generate imap password: %w", err)
+	}
+	accessToken, err := s.tokenGen.NewToken(32)
+	if err != nil {
+		return nil, false, fmt.Errorf("generate access token: %w", err)
+	}
+
+	paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
+		MailboxID:  id,
+		OwnerEmail: billingEmail,
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("create payment link: %w", err)
+	}
+
+	mailbox := &domain.Mailbox{
+		ID:              id,
+		OwnerEmail:      billingEmail,
+		BillingEmail:    billingEmail,
+		KeyFingerprint:  key.Fingerprint,
+		IMAPHost:        s.imapHost,
+		IMAPPort:        s.imapPort,
+		IMAPUsername:    "mbx_" + strings.ReplaceAll(id[:12], "-", ""),
+		IMAPPassword:    imapPassword,
+		AccessToken:     accessToken,
+		StripeSessionID: paymentLink.SessionID,
+		PaymentURL:      paymentLink.URL,
+		Status:          domain.MailboxStatusPendingPayment,
+	}
+
+	if err := s.repo.Create(ctx, mailbox); err != nil {
+		return nil, false, fmt.Errorf("create mailbox: %w", err)
+	}
+	if err := s.notifier.SendPaymentLink(ctx, mailbox.BillingEmail, mailbox.PaymentURL, mailbox.ID); err != nil {
+		return nil, false, fmt.Errorf("send payment link: %w", err)
+	}
+
+	return mailbox, true, nil
+}
+
 func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxRequest) (*domain.Mailbox, bool, error) {
 	if req.Account == nil {
 		return nil, false, errors.New("account is required")
