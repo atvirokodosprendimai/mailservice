@@ -104,6 +104,11 @@ docker compose -f compose.tunnel.yml up -d
 
 The service auto-loads `.env` from the project root (via `godotenv`).
 
+Production delivery:
+- merges to `main` build immutable GHCR images automatically
+- `Deploy Production App` rolls those exact images to production automatically
+- `Hetzner OpenTofu` remains the manual workflow for infrastructure changes
+
 Live smoke test helper:
 
 ```bash
