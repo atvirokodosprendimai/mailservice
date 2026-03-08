@@ -25,6 +25,10 @@ on:
         description: "Hetzner server image or snapshot id"
         required: true
         default: "ubuntu-24.04"
+      name:
+        description: "Deployment name prefix"
+        required: true
+        default: "mailservice"
       bootstrap_mode:
         description: "Host bootstrap mode"
         required: true
@@ -69,6 +73,7 @@ jobs:
           TF_VAR_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKplaceholder mailservice@example"
           TF_VAR_public_base_url: "https://example.invalid"
           TF_VAR_image: "ubuntu-24.04"
+          TF_VAR_name: "mailservice"
           TF_VAR_bootstrap_mode: "ubuntu-docker"
         run: tofu validate
 
@@ -130,6 +135,7 @@ jobs:
       - name: OpenTofu plan
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
+          TF_VAR_name: ${{ github.event.inputs.name }}
           TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
           TF_VAR_image: ${{ github.event.inputs.image }}
@@ -214,6 +220,7 @@ jobs:
       - name: OpenTofu apply
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
+          TF_VAR_name: ${{ github.event.inputs.name }}
           TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
           TF_VAR_image: ${{ github.event.inputs.image }}
