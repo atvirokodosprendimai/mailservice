@@ -398,7 +398,7 @@ func (h *Handler) handleResolveIMAP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, resolveAccessResponse(result))
 }
 
 func (h *Handler) handleResolveAccess(w http.ResponseWriter, r *http.Request) {
@@ -442,7 +442,7 @@ func (h *Handler) handleResolveAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, resolveAccessResponse(result))
 }
 
 type listMessagesRequest struct {
@@ -637,7 +637,10 @@ func (h *Handler) handlePolarSuccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, mailboxResponse(mailbox))
+	writeJSON(w, http.StatusOK, polarSuccessView{
+		Status:    "ok",
+		MailboxID: mailbox.ID,
+	})
 }
 
 func (h *Handler) withAccountToken(next http.HandlerFunc) http.HandlerFunc {
@@ -682,6 +685,20 @@ type mailboxView struct {
 	AccessToken string               `json:"access_token,omitempty"`
 }
 
+type resolveAccessView struct {
+	MailboxID string `json:"mailbox_id"`
+	Host      string `json:"host"`
+	Port      int    `json:"port"`
+	Username  string `json:"username"`
+	Password  string `json:"password"`
+	Email     string `json:"email"`
+}
+
+type polarSuccessView struct {
+	Status    string `json:"status"`
+	MailboxID string `json:"mailbox_id"`
+}
+
 func mailboxResponse(mailbox *domain.Mailbox) mailboxView {
 	resp := mailboxView{
 		ID:         mailbox.ID,
@@ -697,6 +714,17 @@ func mailboxResponse(mailbox *domain.Mailbox) mailboxView {
 		resp.AccessToken = mailbox.AccessToken
 	}
 	return resp
+}
+
+func resolveAccessResponse(result *service.ResolveAccessResult) resolveAccessView {
+	return resolveAccessView{
+		MailboxID: result.MailboxID,
+		Host:      result.Host,
+		Port:      result.Port,
+		Username:  result.Username,
+		Password:  result.Password,
+		Email:     result.Email,
+	}
 }
 
 func decodeJSON(r *http.Request, into any) error {

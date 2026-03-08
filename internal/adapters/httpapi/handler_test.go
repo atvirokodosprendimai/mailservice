@@ -262,6 +262,22 @@ func TestHandlePolarSuccessActivatesMailboxAfterVerifiedCheckout(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["status"] != "ok" {
+		t.Fatalf("expected ok status, got %#v", resp["status"])
+	}
+	if resp["mailbox_id"] != "mbx-1" {
+		t.Fatalf("expected mailbox_id, got %#v", resp["mailbox_id"])
+	}
+	if _, ok := resp["access_token"]; ok {
+		t.Fatalf("expected no access_token in response")
+	}
+	if _, ok := resp["payment_url"]; ok {
+		t.Fatalf("expected no payment_url in response")
+	}
 	if repo.byPaymentSession["polar_1"].Status != domain.MailboxStatusActive {
 		t.Fatalf("expected mailbox activation")
 	}

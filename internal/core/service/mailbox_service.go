@@ -60,12 +60,12 @@ type CreateMailboxRequest struct {
 }
 
 type ResolveIMAPResult struct {
-	MailboxID string `json:"mailbox_id"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	Email     string `json:"email"`
+	MailboxID string
+	Host      string
+	Port      int
+	Username  string
+	Password  string
+	Email     string
 }
 
 type ResolveAccessResult = ResolveIMAPResult

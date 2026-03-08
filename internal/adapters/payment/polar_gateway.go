@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 )
@@ -17,6 +18,7 @@ type PolarConfig struct {
 	PriceID    string
 	SuccessURL string
 	ReturnURL  string
+	Client     *http.Client
 }
 
 type PolarGateway struct {
@@ -33,13 +35,17 @@ func NewPolarGateway(cfg PolarConfig) *PolarGateway {
 	if serverURL == "" {
 		serverURL = "https://api.polar.sh"
 	}
+	client := cfg.Client
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
 	return &PolarGateway{
 		serverURL:  serverURL,
 		token:      strings.TrimSpace(cfg.Token),
 		priceID:    strings.TrimSpace(cfg.PriceID),
 		successURL: strings.TrimSpace(cfg.SuccessURL),
 		returnURL:  strings.TrimSpace(cfg.ReturnURL),
-		client:     http.DefaultClient,
+		client:     client,
 	}
 }
 
