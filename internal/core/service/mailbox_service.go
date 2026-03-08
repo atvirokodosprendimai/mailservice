@@ -68,6 +68,8 @@ type ResolveIMAPResult struct {
 	Email     string
 }
 
+type ResolveAccessResult = ResolveIMAPResult
+
 func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, key ports.VerifiedKey) (*domain.Mailbox, bool, error) {
 	billingEmail = strings.TrimSpace(strings.ToLower(billingEmail))
 	if billingEmail == "" || !strings.Contains(billingEmail, "@") {
@@ -81,6 +83,29 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 
 	existing, err := s.repo.GetByKeyFingerprint(ctx, key.Fingerprint)
 	if err == nil {
+		if existing.Usable() {
+			return existing, false, nil
+		}
+
+		paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
+			MailboxID:  existing.ID,
+			OwnerEmail: billingEmail,
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("create payment link: %w", err)
+		}
+
+		existing.OwnerEmail = billingEmail
+		existing.BillingEmail = billingEmail
+		existing.PaymentSessionID = paymentLink.SessionID
+		existing.PaymentURL = paymentLink.URL
+		existing.Status = domain.MailboxStatusPendingPayment
+		if err := s.repo.Update(ctx, existing); err != nil {
+			return nil, false, fmt.Errorf("update mailbox payment link: %w", err)
+		}
+		if err := s.notifier.SendPaymentLink(ctx, existing.BillingEmail, existing.PaymentURL, existing.ID); err != nil {
+			return nil, false, fmt.Errorf("send payment link: %w", err)
+		}
 		return existing, false, nil
 	}
 	if !errors.Is(err, ports.ErrMailboxNotFound) {
@@ -106,18 +131,18 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	}
 
 	mailbox := &domain.Mailbox{
-		ID:              id,
-		OwnerEmail:      billingEmail,
-		BillingEmail:    billingEmail,
-		KeyFingerprint:  key.Fingerprint,
-		IMAPHost:        s.imapHost,
-		IMAPPort:        s.imapPort,
-		IMAPUsername:    "mbx_" + strings.ReplaceAll(id[:12], "-", ""),
-		IMAPPassword:    imapPassword,
-		AccessToken:     accessToken,
-		StripeSessionID: paymentLink.SessionID,
-		PaymentURL:      paymentLink.URL,
-		Status:          domain.MailboxStatusPendingPayment,
+		ID:               id,
+		OwnerEmail:       billingEmail,
+		BillingEmail:     billingEmail,
+		KeyFingerprint:   key.Fingerprint,
+		IMAPHost:         s.imapHost,
+		IMAPPort:         s.imapPort,
+		IMAPUsername:     "mbx_" + strings.ReplaceAll(id[:12], "-", ""),
+		IMAPPassword:     imapPassword,
+		AccessToken:      accessToken,
+		PaymentSessionID: paymentLink.SessionID,
+		PaymentURL:       paymentLink.URL,
+		Status:           domain.MailboxStatusPendingPayment,
 	}
 
 	if err := s.repo.Create(ctx, mailbox); err != nil {
@@ -184,7 +209,7 @@ func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxReq
 			return nil, false, fmt.Errorf("create payment link: %w", err)
 		}
 
-		mailbox.StripeSessionID = paymentLink.SessionID
+		mailbox.PaymentSessionID = paymentLink.SessionID
 		mailbox.PaymentURL = paymentLink.URL
 	}
 
@@ -226,8 +251,8 @@ func (s *MailboxService) ListMailboxesForAccount(ctx context.Context, accountID 
 	return s.repo.ListByAccountID(ctx, accountID)
 }
 
-func (s *MailboxService) MarkMailboxPaid(ctx context.Context, stripeSessionID string) (*domain.Mailbox, error) {
-	mailbox, err := s.repo.GetByStripeSessionID(ctx, stripeSessionID)
+func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID string) (*domain.Mailbox, error) {
+	mailbox, err := s.repo.GetByPaymentSessionID(ctx, paymentSessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -242,6 +267,27 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, stripeSessionID st
 	}
 
 	now := time.Now().UTC()
+	if strings.TrimSpace(mailbox.AccountID) == "" {
+		base := now
+		if mailbox.ExpiresAt != nil && mailbox.ExpiresAt.After(base) {
+			base = *mailbox.ExpiresAt
+		}
+		nextExpiry := base.AddDate(0, 1, 0)
+
+		mailbox.Status = domain.MailboxStatusActive
+		mailbox.PaidAt = &now
+		mailbox.ExpiresAt = &nextExpiry
+		if err := s.repo.Update(ctx, mailbox); err != nil {
+			return nil, err
+		}
+		if s.provisioner != nil {
+			if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+				return nil, err
+			}
+		}
+		return mailbox, nil
+	}
+
 	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
 	if err != nil {
 		return nil, err
@@ -271,7 +317,10 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, stripeSessionID st
 	return mailbox, nil
 }
 
-func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken string) (*ResolveIMAPResult, error) {
+func (s *MailboxService) ResolveAccessByToken(ctx context.Context, accessToken string, protocol string) (*ResolveAccessResult, error) {
+	if !supportsProtocol(protocol) {
+		return nil, errors.New("unsupported protocol")
+	}
 	mailbox, err := s.repo.GetByAccessToken(ctx, accessToken)
 	if err != nil {
 		return nil, err
@@ -305,17 +354,17 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 		}
 	}
 
-	return &ResolveIMAPResult{
-		MailboxID: mailbox.ID,
-		Host:      mailbox.IMAPHost,
-		Port:      mailbox.IMAPPort,
-		Username:  mailbox.IMAPUsername,
-		Password:  mailbox.IMAPPassword,
-		Email:     mailbox.IMAPUsername + "@" + s.mailDomain,
-	}, nil
+	return s.resolveAccessResult(mailbox), nil
 }
 
-func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.VerifiedKey) (*ResolveIMAPResult, error) {
+func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken string) (*ResolveIMAPResult, error) {
+	return s.ResolveAccessByToken(ctx, accessToken, "imap")
+}
+
+func (s *MailboxService) ResolveAccessByKey(ctx context.Context, key ports.VerifiedKey, protocol string) (*ResolveAccessResult, error) {
+	if !supportsProtocol(protocol) {
+		return nil, errors.New("unsupported protocol")
+	}
 	key.Fingerprint = strings.TrimSpace(strings.ToLower(key.Fingerprint))
 	key.Algorithm = strings.TrimSpace(strings.ToLower(key.Algorithm))
 	if key.Fingerprint == "" || key.Algorithm == "" {
@@ -347,6 +396,14 @@ func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.Verifie
 		}
 	}
 
+	return s.resolveAccessResult(mailbox), nil
+}
+
+func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.VerifiedKey) (*ResolveIMAPResult, error) {
+	return s.ResolveAccessByKey(ctx, key, "imap")
+}
+
+func (s *MailboxService) resolveAccessResult(mailbox *domain.Mailbox) *ResolveAccessResult {
 	return &ResolveIMAPResult{
 		MailboxID: mailbox.ID,
 		Host:      mailbox.IMAPHost,
@@ -354,7 +411,7 @@ func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.Verifie
 		Username:  mailbox.IMAPUsername,
 		Password:  mailbox.IMAPPassword,
 		Email:     mailbox.IMAPUsername + "@" + s.mailDomain,
-	}, nil
+	}
 }
 
 func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken string, limit int, unreadOnly bool, includeBody bool) ([]ports.IMAPMessage, error) {
@@ -465,4 +522,8 @@ func (s *MailboxService) shouldRewriteLegacyIMAPHost(value string) bool {
 		return true
 	}
 	return host == "imap.mailservice.local"
+}
+
+func supportsProtocol(protocol string) bool {
+	return strings.TrimSpace(strings.ToLower(protocol)) == "imap"
 }

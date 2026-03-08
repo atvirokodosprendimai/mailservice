@@ -30,7 +30,7 @@ type MailboxRepository interface {
 	GetByID(ctx context.Context, id string) (*domain.Mailbox, error)
 	ListByAccountID(ctx context.Context, accountID string) ([]domain.Mailbox, error)
 	GetPendingByAccountID(ctx context.Context, accountID string) (*domain.Mailbox, error)
-	GetByStripeSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
+	GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
 	GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error)
 	GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error)
 }
@@ -69,8 +69,25 @@ type PaymentLink struct {
 	URL       string
 }
 
+type PaymentSessionStatus string
+
+const (
+	PaymentSessionStatusOpen      PaymentSessionStatus = "open"
+	PaymentSessionStatusConfirmed PaymentSessionStatus = "confirmed"
+	PaymentSessionStatusSucceeded PaymentSessionStatus = "succeeded"
+	PaymentSessionStatusExpired   PaymentSessionStatus = "expired"
+	PaymentSessionStatusFailed    PaymentSessionStatus = "failed"
+)
+
+type PaymentSession struct {
+	SessionID string
+	Status    PaymentSessionStatus
+	URL       string
+}
+
 type PaymentGateway interface {
 	CreatePaymentLink(ctx context.Context, req PaymentLinkRequest) (*PaymentLink, error)
+	GetPaymentSession(ctx context.Context, sessionID string) (*PaymentSession, error)
 }
 
 type Notifier interface {

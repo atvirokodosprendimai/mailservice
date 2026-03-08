@@ -1,6 +1,36 @@
 # OpenClaw flow
 
-Use this flow for bot integration.
+Preferred key-bound flow:
+
+1. Claim mailbox with billing email and key proof:
+
+```bash
+curl -X POST http://localhost:8080/v1/mailboxes/claim \
+  -H 'Content-Type: application/json' \
+  -d '{"billing_email":"billing@example.com","edproof":"<proof>"}'
+```
+
+- Same key returns the same mailbox.
+- Different key returns a different mailbox.
+- Service sends payment link to `billing_email`.
+
+2. Complete payment and then resolve IMAP details with the same key:
+
+If using Polar checkout, confirm the redirected checkout before resolving access:
+
+```bash
+curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
+```
+
+```bash
+curl -X POST http://localhost:8080/v1/access/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{"protocol":"imap","edproof":"<proof>"}'
+```
+
+- If not paid yet, API returns `409` with `{ "status": "waiting_payment" }`.
+
+Legacy account/token flow remains available during migration:
 
 1. Register account once and get machine credentials:
 

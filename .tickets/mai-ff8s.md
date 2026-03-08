@@ -1,6 +1,6 @@
 ---
 id: mai-ff8s
-status: open
+status: closed
 deps: [mai-3uex]
 links: []
 created: 2026-03-08T09:50:58Z

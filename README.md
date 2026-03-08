@@ -1,18 +1,35 @@
 # Mail Service API
 
-Tiny hexagonal Go API for paid mailbox provisioning.
+Tiny hexagonal Go API for paid inbound mailbox provisioning.
 
-Flow:
-1. OpenClaw creates account (`POST /v1/accounts`) once and gets `api_token` + `refresh_token`.
-2. OpenClaw refreshes credentials autonomously via `POST /v1/auth/refresh`.
-3. Owner email recovery remains human-only fallback when all bot credentials are lost.
-4. OpenClaw lists mailboxes (`GET /v1/mailboxes`).
-5. OpenClaw creates mailbox (`POST /v1/mailboxes`).
-6. Service creates Stripe Checkout link and sends it to owner email (Resend or SendGrid when configured, log fallback otherwise).
-7. Owner pays.
-8. Stripe webhook extends account subscription by 1 month; all account mailboxes inherit entitlement.
-9. OpenClaw polls mailbox status (`GET /v1/mailboxes/{id}`) and receives `access_token` once usable.
-10. OpenClaw resolves token to IMAP login (`POST /v1/imap/resolve`), lists unread messages (`POST /v1/imap/messages`), and fetches by UID (`POST /v1/imap/messages/get`).
+Current preferred flow:
+1. Agent presents `billing_email` plus key proof to `POST /v1/mailboxes/claim`.
+2. Service reuses the same mailbox for the same key, or creates a new pending mailbox for a new key.
+3. Service sends payment link to `billing_email`.
+4. After payment, mailbox becomes active for one month.
+5. Agent presents the same key proof to `POST /v1/access/resolve` to obtain IMAP access details.
+
+Legacy flow remains available during migration:
+- account creation via `POST /v1/accounts`
+- account token refresh via `POST /v1/auth/refresh`
+- mailbox creation via `POST /v1/mailboxes`
+- IMAP resolve via `POST /v1/imap/resolve`
+
+Product scope:
+- inbound mailbox access only
+- IMAP today
+- POP3 / HTTP read API later
+- no SMTP submission or outbound sending
+
+Further reading:
+- [Key-bound mailbox spec](docs/key-bound-mailbox-spec.md)
+- [Use cases](docs/use-cases.md)
+- [Website copy](docs/website-copy.md)
+- [Migration plan](docs/migration-plan.md)
+- [Future access design](docs/future-access.md)
+- [Hetzner CI/CD](docs/hetzner-cicd.md)
+- [Local workflow validation](docs/local-workflow-validation.md)
+- [truevipaccess.com deployment](docs/truevipaccess-deploy.md)
 
 ## Stack
 
@@ -21,7 +38,9 @@ Flow:
 - SQLite (pure Go, no CGO) via `github.com/glebarez/sqlite`
 - GORM ORM
 - Goose SQL migrations
-- Stripe Checkout + webhooks
+- Polar checkout for the preferred key-bound flow
+- Stripe Checkout + webhooks kept as legacy fallback
+- mock payment links for local development
 
 ## Run
 
@@ -78,10 +97,15 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 - `IMAP_HOST` (default `MAIL_DOMAIN`)
 - `IMAP_PORT` (default `143`)
 - `MAILBOX_PRICE_CENTS` (default `299`)
+- `POLAR_TOKEN` (optional; enable Polar for the preferred key-bound flow)
+- `POLAR_PRICE_ID` (required when Polar is enabled)
+- `POLAR_SERVER_URL` (default `https://api.polar.sh`)
+- `POLAR_SUCCESS_URL` (default `PUBLIC_BASE_URL/v1/payments/polar/success?checkout_id={CHECKOUT_ID}`)
+- `POLAR_RETURN_URL` (default `PUBLIC_BASE_URL`)
 - `STRIPE_CURRENCY` (default `usd`)
 - `STRIPE_SUCCESS_URL` (default `http://localhost:8080/payment/success`)
 - `STRIPE_CANCEL_URL` (default `http://localhost:8080/payment/cancel`)
-- `STRIPE_SECRET_KEY` (optional; if empty, mock payment links are used)
+- `STRIPE_SECRET_KEY` (optional legacy fallback; if no real provider is configured, mock payment links are used)
 - `STRIPE_WEBHOOK_SECRET` (required only for real Stripe webhook verification)
 - `SENDGRID_API_KEY` (optional; enable SendGrid notifier)
 - `SENDGRID_FROM_EMAIL` (required when SendGrid is enabled)
@@ -93,6 +117,32 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 When both providers are configured, Resend takes precedence.
 
 ## API examples
+
+Preferred key-bound claim flow:
+
+```bash
+curl -X POST http://localhost:8080/v1/mailboxes/claim \
+  -H 'Content-Type: application/json' \
+  -d '{"billing_email":"billing@example.com","edproof":"<proof>"}'
+```
+
+Confirm Polar payment after redirect:
+
+```bash
+curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
+```
+
+Resolve IMAP credentials by key proof:
+
+```bash
+curl -X POST http://localhost:8080/v1/access/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{"protocol":"imap","edproof":"<proof>"}'
+```
+
+If global concurrency limit is reached, API returns `503` with `retry_after_seconds` random value in range `3..100`.
+
+Legacy account flow:
 
 Create account:
 
@@ -109,8 +159,6 @@ curl -X POST http://localhost:8080/v1/auth/refresh \
   -H 'Content-Type: application/json' \
   -d '{"refresh_token":"<refresh-token>"}'
 ```
-
-If global concurrency limit is reached, API returns `503` with `retry_after_seconds` random value in range `3..100`.
 
 Human-only recovery start endpoint:
 
@@ -191,3 +239,10 @@ Mock payment (only when Stripe key is not configured):
 ```bash
 curl http://localhost:8080/mock/pay/<session-id>
 ```
+
+## Notes
+
+- The same key always maps to the same mailbox.
+- A different key gets a different mailbox.
+- `billing_email` is only the address used for invoice/payment delivery.
+- Who actually pays is outside the service model.

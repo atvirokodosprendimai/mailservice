@@ -13,23 +13,23 @@ import (
 )
 
 type mailboxModel struct {
-	ID              string `gorm:"primaryKey;type:text"`
-	AccountID       string `gorm:"not null;index"`
-	OwnerEmail      string `gorm:"not null"`
-	BillingEmail    string `gorm:"not null"`
-	KeyFingerprint  string
-	IMAPHost        string `gorm:"not null"`
-	IMAPPort        int    `gorm:"not null"`
-	IMAPUsername    string `gorm:"not null;uniqueIndex"`
-	IMAPPassword    string `gorm:"not null"`
-	AccessToken     string `gorm:"not null;uniqueIndex"`
-	StripeSessionID string `gorm:"not null;uniqueIndex"`
-	PaymentURL      string `gorm:"not null"`
-	Status          string `gorm:"not null;index"`
-	PaidAt          *time.Time
-	ExpiresAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID               string `gorm:"primaryKey;type:text"`
+	AccountID        string `gorm:"not null;index"`
+	OwnerEmail       string `gorm:"not null"`
+	BillingEmail     string `gorm:"not null"`
+	KeyFingerprint   string
+	IMAPHost         string `gorm:"not null"`
+	IMAPPort         int    `gorm:"not null"`
+	IMAPUsername     string `gorm:"not null;uniqueIndex"`
+	IMAPPassword     string `gorm:"not null"`
+	AccessToken      string `gorm:"not null;uniqueIndex"`
+	PaymentSessionID string `gorm:"column:stripe_session_id;not null;uniqueIndex"`
+	PaymentURL       string `gorm:"not null"`
+	Status           string `gorm:"not null;index"`
+	PaidAt           *time.Time
+	ExpiresAt        *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 func (mailboxModel) TableName() string {
@@ -38,23 +38,23 @@ func (mailboxModel) TableName() string {
 
 func toDomain(model *mailboxModel) *domain.Mailbox {
 	return &domain.Mailbox{
-		ID:              model.ID,
-		AccountID:       model.AccountID,
-		OwnerEmail:      model.OwnerEmail,
-		BillingEmail:    firstNonEmpty(model.BillingEmail, model.OwnerEmail),
-		KeyFingerprint:  strings.TrimSpace(strings.ToLower(model.KeyFingerprint)),
-		IMAPHost:        model.IMAPHost,
-		IMAPPort:        model.IMAPPort,
-		IMAPUsername:    model.IMAPUsername,
-		IMAPPassword:    model.IMAPPassword,
-		AccessToken:     model.AccessToken,
-		StripeSessionID: model.StripeSessionID,
-		PaymentURL:      model.PaymentURL,
-		Status:          domain.MailboxStatus(model.Status),
-		PaidAt:          model.PaidAt,
-		ExpiresAt:       model.ExpiresAt,
-		CreatedAt:       model.CreatedAt,
-		UpdatedAt:       model.UpdatedAt,
+		ID:               model.ID,
+		AccountID:        model.AccountID,
+		OwnerEmail:       model.OwnerEmail,
+		BillingEmail:     firstNonEmpty(model.BillingEmail, model.OwnerEmail),
+		KeyFingerprint:   strings.TrimSpace(strings.ToLower(model.KeyFingerprint)),
+		IMAPHost:         model.IMAPHost,
+		IMAPPort:         model.IMAPPort,
+		IMAPUsername:     model.IMAPUsername,
+		IMAPPassword:     model.IMAPPassword,
+		AccessToken:      model.AccessToken,
+		PaymentSessionID: model.PaymentSessionID,
+		PaymentURL:       model.PaymentURL,
+		Status:           domain.MailboxStatus(model.Status),
+		PaidAt:           model.PaidAt,
+		ExpiresAt:        model.ExpiresAt,
+		CreatedAt:        model.CreatedAt,
+		UpdatedAt:        model.UpdatedAt,
 	}
 }
 
@@ -64,21 +64,21 @@ func toModel(mailbox *domain.Mailbox) *mailboxModel {
 		strings.TrimSpace(strings.ToLower(mailbox.OwnerEmail)),
 	)
 	return &mailboxModel{
-		ID:              mailbox.ID,
-		AccountID:       mailbox.AccountID,
-		OwnerEmail:      mailbox.OwnerEmail,
-		BillingEmail:    billingEmail,
-		KeyFingerprint:  strings.TrimSpace(strings.ToLower(mailbox.KeyFingerprint)),
-		IMAPHost:        mailbox.IMAPHost,
-		IMAPPort:        mailbox.IMAPPort,
-		IMAPUsername:    mailbox.IMAPUsername,
-		IMAPPassword:    mailbox.IMAPPassword,
-		AccessToken:     mailbox.AccessToken,
-		StripeSessionID: mailbox.StripeSessionID,
-		PaymentURL:      mailbox.PaymentURL,
-		Status:          string(mailbox.Status),
-		PaidAt:          mailbox.PaidAt,
-		ExpiresAt:       mailbox.ExpiresAt,
+		ID:               mailbox.ID,
+		AccountID:        mailbox.AccountID,
+		OwnerEmail:       mailbox.OwnerEmail,
+		BillingEmail:     billingEmail,
+		KeyFingerprint:   strings.TrimSpace(strings.ToLower(mailbox.KeyFingerprint)),
+		IMAPHost:         mailbox.IMAPHost,
+		IMAPPort:         mailbox.IMAPPort,
+		IMAPUsername:     mailbox.IMAPUsername,
+		IMAPPassword:     mailbox.IMAPPassword,
+		AccessToken:      mailbox.AccessToken,
+		PaymentSessionID: mailbox.PaymentSessionID,
+		PaymentURL:       mailbox.PaymentURL,
+		Status:           string(mailbox.Status),
+		PaidAt:           mailbox.PaidAt,
+		ExpiresAt:        mailbox.ExpiresAt,
 	}
 }
 
@@ -137,7 +137,7 @@ func (r *MailboxRepository) GetPendingByAccountID(ctx context.Context, accountID
 	return toDomain(&model), nil
 }
 
-func (r *MailboxRepository) GetByStripeSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error) {
+func (r *MailboxRepository) GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error) {
 	var model mailboxModel
 	err := r.db.WithContext(ctx).First(&model, "stripe_session_id = ?", sessionID).Error
 	if err != nil {

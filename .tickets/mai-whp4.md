@@ -1,6 +1,6 @@
 ---
 id: mai-whp4
-status: open
+status: closed
 deps: [mai-ec6j]
 links: []
 created: 2026-03-08T09:50:44Z

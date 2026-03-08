@@ -1,6 +1,6 @@
 ---
 id: mai-w6k6
-status: open
+status: closed
 deps: [mai-whp4]
 links: []
 created: 2026-03-08T09:50:58Z

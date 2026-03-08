@@ -52,7 +52,18 @@ func main() {
 	}
 
 	var paymentGateway ports.PaymentGateway = payment.NewMockGateway(cfg.PublicBaseURL)
-	if cfg.StripeSecretKey != "" {
+	if cfg.PolarToken != "" && cfg.PolarPriceID != "" {
+		paymentGateway = payment.NewPolarGateway(payment.PolarConfig{
+			ServerURL:  cfg.PolarServerURL,
+			Token:      cfg.PolarToken,
+			PriceID:    cfg.PolarPriceID,
+			SuccessURL: cfg.PolarSuccessURL,
+			ReturnURL:  cfg.PolarReturnURL,
+		})
+		log.Printf("polar enabled")
+	} else if cfg.PolarToken != "" || cfg.PolarPriceID != "" {
+		log.Printf("polar partially configured, falling back to legacy payment provider selection")
+	} else if cfg.StripeSecretKey != "" {
 		paymentGateway = payment.NewStripeGateway(payment.StripeConfig{
 			SecretKey:  cfg.StripeSecretKey,
 			PriceCents: cfg.MailboxPriceCents,
@@ -62,7 +73,7 @@ func main() {
 		})
 		log.Printf("stripe enabled")
 	} else {
-		log.Printf("stripe disabled, using mock payment links")
+		log.Printf("real payment providers disabled, using mock payment links")
 	}
 
 	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort)
@@ -71,6 +82,7 @@ func main() {
 	handler := httpapi.NewHandler(httpapi.Config{
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
 		MaxConcurrentReqs:   cfg.MaxConcurrentReqs,
+		PaymentGateway:      paymentGateway,
 		MailboxService:      mailboxService,
 		AccountService:      accountService,
 		Logger:              log.Default(),

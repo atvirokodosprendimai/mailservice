@@ -31,6 +31,7 @@ func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
 		KeyProofVerifier: fakeKeyProofVerifier{
 			key: &ports.VerifiedKey{Fingerprint: "edproof:key-1", Algorithm: "ed25519"},
 		},
+		PaymentGateway: &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -70,6 +71,7 @@ func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
 func TestHandleClaimMailboxRejectsInvalidProof(t *testing.T) {
 	handler := NewHandler(Config{
 		KeyProofVerifier: fakeKeyProofVerifier{err: ports.ErrInvalidKeyProof},
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			&httpMailboxRepo{},
 			&httpAccountRepo{},
@@ -116,6 +118,7 @@ func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
 		KeyProofVerifier: fakeKeyProofVerifier{
 			key: &ports.VerifiedKey{Fingerprint: "edproof:key-1", Algorithm: "ed25519"},
 		},
+		PaymentGateway: &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -143,8 +146,8 @@ func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp["Email"] != "mbx_abc@mail.test.local" {
-		t.Fatalf("unexpected resolved email: %#v", resp["Email"])
+	if resp["email"] != "mbx_abc@mail.test.local" {
+		t.Fatalf("unexpected resolved email: %#v", resp["email"])
 	}
 }
 
@@ -162,6 +165,7 @@ func TestHandleResolveAccessReturnsWaitingPaymentForInactiveMailbox(t *testing.T
 		KeyProofVerifier: fakeKeyProofVerifier{
 			key: &ports.VerifiedKey{Fingerprint: "edproof:key-2", Algorithm: "ed25519"},
 		},
+		PaymentGateway: &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -187,6 +191,128 @@ func TestHandleResolveAccessReturnsWaitingPaymentForInactiveMailbox(t *testing.T
 	}
 }
 
+func TestHandleResolveAccessRejectsUnsupportedProtocol(t *testing.T) {
+	handler := NewHandler(Config{
+		KeyProofVerifier: fakeKeyProofVerifier{
+			key: &ports.VerifiedKey{Fingerprint: "edproof:key-2", Algorithm: "ed25519"},
+		},
+		PaymentGateway: &httpPaymentGateway{},
+		MailboxService: service.NewMailboxService(
+			&httpMailboxRepo{},
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(`{"protocol":"pop3","edproof":"proof"}`))
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlePolarSuccessActivatesMailboxAfterVerifiedCheckout(t *testing.T) {
+	repo := &httpMailboxRepo{
+		byPaymentSession: map[string]*domain.Mailbox{
+			"polar_1": {
+				ID:               "mbx-1",
+				KeyFingerprint:   "edproof:key-1",
+				PaymentSessionID: "polar_1",
+				Status:           domain.MailboxStatusPendingPayment,
+				IMAPUsername:     "mbx_abc",
+				IMAPPassword:     "secret",
+			},
+		},
+	}
+	handler := NewHandler(Config{
+		PaymentGateway: httpPaymentGateway{
+			session: &ports.PaymentSession{SessionID: "polar_1", Status: ports.PaymentSessionStatusSucceeded},
+		},
+		MailboxService: service.NewMailboxService(
+			repo,
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("GET", "/v1/payments/polar/success?checkout_id=polar_1", nil)
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["status"] != "ok" {
+		t.Fatalf("expected ok status, got %#v", resp["status"])
+	}
+	if resp["mailbox_id"] != "mbx-1" {
+		t.Fatalf("expected mailbox_id, got %#v", resp["mailbox_id"])
+	}
+	if _, ok := resp["access_token"]; ok {
+		t.Fatalf("expected no access_token in response")
+	}
+	if _, ok := resp["payment_url"]; ok {
+		t.Fatalf("expected no payment_url in response")
+	}
+	if repo.byPaymentSession["polar_1"].Status != domain.MailboxStatusActive {
+		t.Fatalf("expected mailbox activation")
+	}
+}
+
+func TestHandlePolarSuccessRejectsUnpaidCheckout(t *testing.T) {
+	handler := NewHandler(Config{
+		PaymentGateway: httpPaymentGateway{
+			session: &ports.PaymentSession{SessionID: "polar_2", Status: ports.PaymentSessionStatusOpen},
+		},
+		MailboxService: service.NewMailboxService(
+			&httpMailboxRepo{},
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("GET", "/v1/payments/polar/success?checkout_id=polar_2", nil)
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 409 {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 type fakeKeyProofVerifier struct {
 	key *ports.VerifiedKey
 	err error
@@ -201,6 +327,7 @@ func (f fakeKeyProofVerifier) Verify(_ context.Context, _ string) (*ports.Verifi
 
 type httpMailboxRepo struct {
 	byID             map[string]*domain.Mailbox
+	byPaymentSession map[string]*domain.Mailbox
 	byKeyFingerprint map[string]*domain.Mailbox
 }
 
@@ -215,6 +342,12 @@ func (r *httpMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) err
 	if mailbox.KeyFingerprint != "" {
 		r.byKeyFingerprint[mailbox.KeyFingerprint] = mailbox
 	}
+	if r.byPaymentSession == nil {
+		r.byPaymentSession = map[string]*domain.Mailbox{}
+	}
+	if mailbox.PaymentSessionID != "" {
+		r.byPaymentSession[mailbox.PaymentSessionID] = mailbox
+	}
 	return nil
 }
 
@@ -223,6 +356,18 @@ func (r *httpMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) err
 		r.byID = map[string]*domain.Mailbox{}
 	}
 	r.byID[mailbox.ID] = mailbox
+	if r.byPaymentSession == nil {
+		r.byPaymentSession = map[string]*domain.Mailbox{}
+	}
+	if mailbox.PaymentSessionID != "" {
+		r.byPaymentSession[mailbox.PaymentSessionID] = mailbox
+	}
+	if r.byKeyFingerprint == nil {
+		r.byKeyFingerprint = map[string]*domain.Mailbox{}
+	}
+	if mailbox.KeyFingerprint != "" {
+		r.byKeyFingerprint[mailbox.KeyFingerprint] = mailbox
+	}
 	return nil
 }
 
@@ -241,7 +386,10 @@ func (r *httpMailboxRepo) GetPendingByAccountID(_ context.Context, _ string) (*d
 	return nil, ports.ErrMailboxNotFound
 }
 
-func (r *httpMailboxRepo) GetByStripeSessionID(_ context.Context, _ string) (*domain.Mailbox, error) {
+func (r *httpMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID string) (*domain.Mailbox, error) {
+	if item, ok := r.byPaymentSession[sessionID]; ok {
+		return item, nil
+	}
 	return nil, ports.ErrMailboxNotFound
 }
 
@@ -273,10 +421,19 @@ func (httpAccountRepo) UpdateSubscriptionExpiresAt(_ context.Context, _ string, 
 	return nil
 }
 
-type httpPaymentGateway struct{}
+type httpPaymentGateway struct {
+	session *ports.PaymentSession
+}
 
 func (httpPaymentGateway) CreatePaymentLink(_ context.Context, _ ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
 	return &ports.PaymentLink{SessionID: "pay-1", URL: "http://pay/1"}, nil
+}
+
+func (g httpPaymentGateway) GetPaymentSession(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+	if g.session != nil {
+		return g.session, nil
+	}
+	return &ports.PaymentSession{SessionID: sessionID, Status: ports.PaymentSessionStatusSucceeded}, nil
 }
 
 type httpNotifier struct{}

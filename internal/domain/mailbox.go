@@ -11,23 +11,23 @@ const (
 )
 
 type Mailbox struct {
-	ID              string
-	AccountID       string
-	OwnerEmail      string
-	BillingEmail    string
-	KeyFingerprint  string
-	IMAPHost        string
-	IMAPPort        int
-	IMAPUsername    string
-	IMAPPassword    string
-	AccessToken     string
-	StripeSessionID string
-	PaymentURL      string
-	Status          MailboxStatus
-	PaidAt          *time.Time
-	ExpiresAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID               string
+	AccountID        string
+	OwnerEmail       string
+	BillingEmail     string
+	KeyFingerprint   string
+	IMAPHost         string
+	IMAPPort         int
+	IMAPUsername     string
+	IMAPPassword     string
+	AccessToken      string
+	PaymentSessionID string
+	PaymentURL       string
+	Status           MailboxStatus
+	PaidAt           *time.Time
+	ExpiresAt        *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 func (m Mailbox) Usable() bool {
