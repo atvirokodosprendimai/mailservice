@@ -65,7 +65,7 @@ func main() {
 		log.Printf("stripe disabled, using mock payment links")
 	}
 
-	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.IMAPHost, cfg.IMAPPort)
+	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort)
 	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen, cfg.PublicBaseURL)
 
 	handler := httpapi.NewHandler(httpapi.Config{

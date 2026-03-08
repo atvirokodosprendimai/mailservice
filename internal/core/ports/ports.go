@@ -21,6 +21,7 @@ var (
 	ErrRefreshNotFound  = errors.New("refresh token not found")
 	ErrRefreshExpired   = errors.New("refresh token expired")
 	ErrMessageNotFound  = errors.New("message not found")
+	ErrInvalidKeyProof  = errors.New("invalid key proof")
 )
 
 type MailboxRepository interface {
@@ -31,6 +32,7 @@ type MailboxRepository interface {
 	GetPendingByAccountID(ctx context.Context, accountID string) (*domain.Mailbox, error)
 	GetByStripeSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
 	GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error)
+	GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error)
 }
 
 type AccountRepository interface {
@@ -78,6 +80,15 @@ type Notifier interface {
 
 type TokenGenerator interface {
 	NewToken(size int) (string, error)
+}
+
+type VerifiedKey struct {
+	Fingerprint string
+	Algorithm   string
+}
+
+type KeyProofVerifier interface {
+	Verify(ctx context.Context, rawProof string) (*VerifiedKey, error)
 }
 
 type MailRuntimeProvisioner interface {

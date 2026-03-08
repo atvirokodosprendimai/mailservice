@@ -21,6 +21,7 @@ import (
 type Config struct {
 	StripeWebhookSecret string
 	MaxConcurrentReqs   int
+	KeyProofVerifier    ports.KeyProofVerifier
 	MailboxService      *service.MailboxService
 	AccountService      *service.AccountService
 	Logger              *log.Logger
@@ -29,6 +30,7 @@ type Config struct {
 type Handler struct {
 	stripeWebhookSecret string
 	concurrencySem      chan struct{}
+	keyProofVerifier    ports.KeyProofVerifier
 	mailboxService      *service.MailboxService
 	accountService      *service.AccountService
 	logger              *log.Logger
@@ -45,6 +47,7 @@ func NewHandler(cfg Config) *Handler {
 	return &Handler{
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
 		concurrencySem:      sem,
+		keyProofVerifier:    cfg.KeyProofVerifier,
 		mailboxService:      cfg.MailboxService,
 		accountService:      cfg.AccountService,
 		logger:              cfg.Logger,
@@ -61,7 +64,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/accounts/recovery/complete", h.handleCompleteRecoveryByLink)
 	mux.HandleFunc("GET /v1/mailboxes", h.withAccountToken(h.handleListMailboxes))
 	mux.HandleFunc("POST /v1/mailboxes", h.withAccountToken(h.handleCreateMailbox))
+	mux.HandleFunc("POST /v1/mailboxes/claim", h.handleClaimMailbox)
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
+	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
 	mux.HandleFunc("POST /v1/imap/resolve", h.withAccountToken(h.handleResolveIMAP))
 	mux.HandleFunc("POST /v1/imap/messages", h.withAccountToken(h.handleListIMAPMessages))
 	mux.HandleFunc("POST /v1/imap/messages/get", h.withAccountToken(h.handleGetIMAPMessageByUID))
@@ -269,6 +274,51 @@ func (h *Handler) handleCreateMailbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, mailboxResponse(mailbox))
 }
 
+type claimMailboxRequest struct {
+	BillingEmail string `json:"billing_email"`
+	EDProof      string `json:"edproof"`
+}
+
+func (h *Handler) handleClaimMailbox(w http.ResponseWriter, r *http.Request) {
+	var req claimMailboxRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if h.keyProofVerifier == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("key proof verifier not configured"))
+		return
+	}
+
+	key, err := h.keyProofVerifier.Verify(r.Context(), req.EDProof)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrInvalidKeyProof):
+			writeError(w, http.StatusUnauthorized, err)
+		default:
+			writeError(w, http.StatusServiceUnavailable, err)
+		}
+		return
+	}
+
+	mailbox, created, err := h.mailboxService.ClaimMailbox(r.Context(), req.BillingEmail, *key)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrInvalidKeyProof):
+			writeError(w, http.StatusUnauthorized, err)
+		default:
+			writeError(w, http.StatusBadRequest, err)
+		}
+		return
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, mailboxResponse(mailbox))
+}
+
 func (h *Handler) handleListMailboxes(w http.ResponseWriter, r *http.Request) {
 	account, err := accountFromContext(r.Context())
 	if err != nil {
@@ -319,6 +369,11 @@ type resolveIMAPRequest struct {
 	AccessToken string `json:"access_token"`
 }
 
+type resolveAccessRequest struct {
+	Protocol string `json:"protocol"`
+	EDProof  string `json:"edproof"`
+}
+
 func (h *Handler) handleResolveIMAP(w http.ResponseWriter, r *http.Request) {
 	var req resolveIMAPRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -333,6 +388,50 @@ func (h *Handler) handleResolveIMAP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, err)
 		case errors.Is(err, ports.ErrMailboxNotUsable):
 			writeJSON(w, http.StatusConflict, map[string]string{"status": "waiting_payment"})
+		default:
+			writeError(w, http.StatusInternalServerError, err)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleResolveAccess(w http.ResponseWriter, r *http.Request) {
+	var req resolveAccessRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(strings.ToLower(req.Protocol)) != "imap" {
+		writeError(w, http.StatusBadRequest, errors.New("unsupported protocol"))
+		return
+	}
+	if h.keyProofVerifier == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("key proof verifier not configured"))
+		return
+	}
+
+	key, err := h.keyProofVerifier.Verify(r.Context(), req.EDProof)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrInvalidKeyProof):
+			writeError(w, http.StatusUnauthorized, err)
+		default:
+			writeError(w, http.StatusServiceUnavailable, err)
+		}
+		return
+	}
+
+	result, err := h.mailboxService.ResolveIMAPByKey(r.Context(), *key)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrMailboxNotFound):
+			writeError(w, http.StatusNotFound, err)
+		case errors.Is(err, ports.ErrMailboxNotUsable):
+			writeJSON(w, http.StatusConflict, map[string]string{"status": "waiting_payment"})
+		case errors.Is(err, ports.ErrInvalidKeyProof):
+			writeError(w, http.StatusUnauthorized, err)
 		default:
 			writeError(w, http.StatusInternalServerError, err)
 		}

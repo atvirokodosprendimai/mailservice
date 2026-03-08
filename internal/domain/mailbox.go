@@ -14,6 +14,8 @@ type Mailbox struct {
 	ID              string
 	AccountID       string
 	OwnerEmail      string
+	BillingEmail    string
+	KeyFingerprint  string
 	IMAPHost        string
 	IMAPPort        int
 	IMAPUsername    string
