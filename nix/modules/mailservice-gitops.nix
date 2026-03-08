@@ -13,6 +13,12 @@ in
       description = "Runtime env file for secrets and non-Git-managed values.";
     };
 
+    cloudflaredEnvironmentFile = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/secrets/cloudflared.env";
+      description = "Environment file containing TUNNEL_TOKEN for cloudflared.";
+    };
+
     apiImage = lib.mkOption {
       type = lib.types.str;
       description = "Pinned OCI image reference for the API service.";
@@ -65,7 +71,6 @@ in
         environmentFiles = [ cfg.environmentFile ];
         environment = {
           MAIL_DB_PATH = "/data/mailservice.db";
-          MAIL_DEBUG = "1";
         };
         volumes = [
           "/var/lib/mailservice/data:/data"
@@ -80,7 +85,7 @@ in
 
       mailservice-cloudflared = {
         image = cfg.cloudflaredImage;
-        environmentFiles = [ cfg.environmentFile ];
+        environmentFiles = [ cfg.cloudflaredEnvironmentFile ];
         cmd = [
           "tunnel"
           "--no-autoupdate"

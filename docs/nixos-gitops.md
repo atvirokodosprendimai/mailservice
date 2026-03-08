@@ -17,9 +17,9 @@ The reason is simple:
 
 Source of truth:
 
-- [`flake.nix`](/Users/oldroot/Repos/mailservice/flake.nix)
-- [`nix/modules/mailservice-gitops.nix`](/Users/oldroot/Repos/mailservice/nix/modules/mailservice-gitops.nix)
-- [`nix/hosts/truevipaccess/configuration.nix`](/Users/oldroot/Repos/mailservice/nix/hosts/truevipaccess/configuration.nix)
+- [`flake.nix`](../flake.nix)
+- [`nix/modules/mailservice-gitops.nix`](../nix/modules/mailservice-gitops.nix)
+- [`nix/hosts/truevipaccess/configuration.nix`](../nix/hosts/truevipaccess/configuration.nix)
 
 Runtime model:
 
@@ -27,7 +27,7 @@ Runtime model:
 - Docker backend managed declaratively through `virtualisation.oci-containers`
 - pinned API image ref in Git
 - pinned mailreceive image ref in Git
-- Cloudflare Tunnel container managed by NixOS
+- Cloudflare Tunnel container managed by NixOS using host networking; configure the tunnel origin to `http://127.0.0.1:8080`, not a Docker-internal hostname such as `http://api:8080`
 - secrets kept out of Git in `/var/lib/secrets/mailservice.env`
 
 ## What Lives In Git
@@ -50,7 +50,7 @@ Not in Git:
 ## Image Pinning
 
 Rollouts happen by changing the pinned image refs in
-[`nix/hosts/truevipaccess/configuration.nix`](/Users/oldroot/Repos/mailservice/nix/hosts/truevipaccess/configuration.nix).
+[`nix/hosts/truevipaccess/configuration.nix`](../nix/hosts/truevipaccess/configuration.nix).
 
 Example:
 
@@ -66,13 +66,14 @@ That removes the mutable-`latest` race from deployment.
 
 ## Secrets File
 
-The host expects a runtime env file at:
+The host expects runtime env files at:
 
 ```text
 /var/lib/secrets/mailservice.env
+/var/lib/secrets/cloudflared.env
 ```
 
-This file should contain values such as:
+`/var/lib/secrets/mailservice.env` should contain values such as:
 
 ```env
 PUBLIC_BASE_URL=https://truevipaccess.com
@@ -86,7 +87,12 @@ POLAR_SERVER_URL=https://api.polar.sh
 POLAR_SUCCESS_URL=https://truevipaccess.com/v1/payments/polar/success?checkout_id={CHECKOUT_ID}
 POLAR_RETURN_URL=https://truevipaccess.com
 POLAR_WEBHOOK_SECRET=...
-CLOUDFLARE_TUNNEL_TOKEN=...
+```
+
+`/var/lib/secrets/cloudflared.env` should contain:
+
+```env
+TUNNEL_TOKEN=...
 ```
 
 ## Rollout

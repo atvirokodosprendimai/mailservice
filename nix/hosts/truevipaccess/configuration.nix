@@ -12,11 +12,14 @@
   time.timeZone = "UTC";
 
   services.openssh.enable = true;
+  services.openssh.openFirewall = true;
 
-  users.users.root.openssh.authorizedKeys.keys = [
-    # Replace with the real deploy key before switching the host.
-    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFQCVB2dV5WyOd0dK8MH0tIkgmLv71OTEdcMpJ2Whet0 mailservice-deploy"
-  ];
+  users.users.root.openssh.authorizedKeys = {
+    keys = [ ];
+    keyFiles = [
+      "/var/lib/secrets/truevipaccess/root_authorized_keys"
+    ];
+  };
 
   environment.systemPackages = with pkgs; [
     curl
@@ -26,6 +29,7 @@
   services.mailserviceGitOps = {
     enable = true;
     environmentFile = "/var/lib/secrets/mailservice.env";
+    cloudflaredEnvironmentFile = "/var/lib/secrets/cloudflared.env";
 
     # Git is the source of truth for the deployed artifact.
     # Update these pinned image refs in Git for each rollout.
