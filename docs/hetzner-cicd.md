@@ -58,11 +58,13 @@ Run:
 ### Manual production deploy
 
 Run:
-1. `tofu init` with remote backend config from secrets
-2. `tofu plan`
-3. optional `tofu apply`
-4. upload runtime env file to host
-5. deploy Docker Compose stack on target host
+1. `validate` job completes first
+2. dedicated `plan` job runs `tofu init` with remote backend config from secrets
+3. `plan` job generates `tfplan` and a human-readable `tfplan.txt`
+4. plan artifact is uploaded for operator review
+5. gated `apply` job can run only after the `plan` job succeeds
+6. production environment approval can be enforced through GitHub environment protection
+7. after infra apply, deploy Docker Compose stack on target host
 
 ## Rollout
 
@@ -86,5 +88,6 @@ Rollback expectations:
 ## Notes
 
 - current repo includes the OpenTofu scaffold and GitHub Actions workflow
+- production apply is gated behind a separate plan stage and uploaded plan artifact
 - provider-specific payment/runtime secrets remain separate from infra secrets
 - this design uses OpenTofu, not Terraform

@@ -2,7 +2,7 @@
 id: mai-741t
 status: closed
 deps: []
-links: [mai-sehx]
+links: [mai-sehx, mai-fksk]
 created: 2026-03-08T09:52:42Z
 type: task
 priority: 2
