@@ -1,6 +1,6 @@
 ---
 id: mai-4vll
-status: open
+status: closed
 deps: []
 links: []
 created: 2026-03-08T12:32:12Z

@@ -43,6 +43,7 @@ Deployment/runtime:
 - `APP_ENV_PRODUCTION`
 - `CLOUDFLARE_TUNNEL_TOKEN`
 - `DEPLOY_HOST`
+- `DEPLOY_HOST_KEY`
 - `DEPLOY_USER`
 - `DEPLOY_SSH_PRIVATE_KEY`
 
@@ -65,7 +66,11 @@ Run:
 4. plan artifact is uploaded for operator review
 5. gated `apply` job can run only after the `plan` job succeeds
 6. production environment approval can be enforced through GitHub environment protection
-7. after infra apply, deploy Docker Compose stack on target host
+7. `deploy` job writes `production.env` from GitHub vars/secrets with secret-safe file permissions
+8. workflow pins the SSH host key from `DEPLOY_HOST_KEY`
+9. workflow uploads `compose.tunnel.yml.example` and `production.env` to `/opt/mailservice`
+10. workflow runs `docker compose pull` and `docker compose up -d` on the host
+11. workflow checks `${PUBLIC_BASE_URL}/healthz` with bounded retries
 
 ## Rollout
 
@@ -96,3 +101,5 @@ Rollback expectations:
 - current production hostname target is `truevipaccess.com`; see `docs/truevipaccess-deploy.md`
 - current temporary ingress path is Cloudflare Tunnel; see `docs/cloudflare-tunnel-deploy.md`
 - for the tunnel path, pass `CLOUDFLARE_TUNNEL_TOKEN` into the container as `TUNNEL_TOKEN`
+- host-side deploy uses `compose.tunnel.yml.example` plus a generated `production.env`
+- the tunnel compose file reads runtime values from `production.env`; it is not meant to hard-code production secrets

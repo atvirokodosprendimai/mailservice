@@ -32,6 +32,9 @@ Further reading:
 - [truevipaccess.com deployment](docs/truevipaccess-deploy.md)
 - [Cloudflare Tunnel deployment](docs/cloudflare-tunnel-deploy.md)
 
+Deployment runtime template:
+- [production.env.example](deploy/production.env.example)
+
 ## Stack
 
 - Go

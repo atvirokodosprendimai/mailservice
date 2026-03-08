@@ -29,6 +29,7 @@ Recommended repo/runtime secret handling:
 - store the token in GitHub Actions secrets
 - write it into the production env/runtime file on deploy
 - do not commit it into OpenTofu variables or repo files
+- keep the generated runtime file readable only by the deploy user
 
 ## Runtime Values
 
@@ -72,6 +73,7 @@ Use:
 
 - `compose.yml.example` for local development
 - `compose.tunnel.yml.example` for the tunnel-based production shape
+- `deploy/production.env.example` as the checked-in template for the host runtime file
 
 ## Cloudflare Routing
 
