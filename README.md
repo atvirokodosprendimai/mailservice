@@ -24,6 +24,7 @@ Product scope:
 Further reading:
 - [Key-bound mailbox spec](docs/key-bound-mailbox-spec.md)
 - [Use cases](docs/use-cases.md)
+- [Website copy](docs/website-copy.md)
 
 ## Stack
 
