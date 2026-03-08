@@ -1,0 +1,98 @@
+name: Hetzner OpenTofu
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/hetzner-opentofu.yml"
+      - "infra/opentofu/**"
+      - "docs/hetzner-cicd.md"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply infrastructure changes"
+        required: true
+        default: "false"
+      environment:
+        description: "Deployment environment name"
+        required: true
+        default: "production"
+
+jobs:
+  opentofu:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/opentofu
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_wrapper: false
+
+      - name: OpenTofu fmt
+        run: tofu fmt -check
+
+      - name: OpenTofu init (no backend)
+        if: github.event_name == 'pull_request'
+        run: tofu init -backend=false
+
+      - name: OpenTofu validate
+        if: github.event_name == 'pull_request'
+        env:
+          TF_VAR_hcloud_token: "placeholder"
+          TF_VAR_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKplaceholder mailservice@example"
+          TF_VAR_public_base_url: "https://example.invalid"
+        run: tofu validate
+
+      - name: Write backend config
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          cat > backend.hcl <<'EOF'
+          bucket = "${TOFU_STATE_BUCKET}"
+          key    = "mailservice/${DEPLOY_ENV}/terraform.tfstate"
+          region = "${TOFU_STATE_REGION}"
+          endpoints = {
+            s3 = "${TOFU_STATE_ENDPOINT}"
+          }
+          access_key = "${TOFU_STATE_ACCESS_KEY}"
+          secret_key = "${TOFU_STATE_SECRET_KEY}"
+          skip_credentials_validation = true
+          skip_requesting_account_id  = true
+          skip_metadata_api_check     = true
+          use_path_style              = true
+          EOF
+        env:
+          DEPLOY_ENV: ${{ github.event.inputs.environment }}
+          TOFU_STATE_BUCKET: ${{ secrets.TOFU_STATE_BUCKET }}
+          TOFU_STATE_REGION: ${{ secrets.TOFU_STATE_REGION }}
+          TOFU_STATE_ENDPOINT: ${{ secrets.TOFU_STATE_ENDPOINT }}
+          TOFU_STATE_ACCESS_KEY: ${{ secrets.TOFU_STATE_ACCESS_KEY }}
+          TOFU_STATE_SECRET_KEY: ${{ secrets.TOFU_STATE_SECRET_KEY }}
+
+      - name: OpenTofu init
+        if: github.event_name == 'workflow_dispatch'
+        run: tofu init -backend-config=backend.hcl
+
+      - name: OpenTofu plan
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
+          TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
+          TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
+        run: tofu plan -input=false -out=tfplan
+
+      - name: OpenTofu apply
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.apply == 'true'
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
+          TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
+          TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
+        run: tofu apply -input=false -auto-approve tfplan

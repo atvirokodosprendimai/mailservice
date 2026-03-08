@@ -1,6 +1,6 @@
 ---
 id: mai-741t
-status: open
+status: closed
 deps: []
 links: [mai-sehx]
 created: 2026-03-08T09:52:42Z

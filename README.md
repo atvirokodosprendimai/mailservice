@@ -25,6 +25,9 @@ Further reading:
 - [Key-bound mailbox spec](docs/key-bound-mailbox-spec.md)
 - [Use cases](docs/use-cases.md)
 - [Website copy](docs/website-copy.md)
+- [Migration plan](docs/migration-plan.md)
+- [Future access design](docs/future-access.md)
+- [Hetzner CI/CD](docs/hetzner-cicd.md)
 
 ## Stack
 
