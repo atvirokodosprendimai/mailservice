@@ -46,6 +46,8 @@ func TestHandleHomeReturnsLandingPage(t *testing.T) {
 		"Stable mailbox identity, bound to a key.",
 		"Same key, same mailbox.",
 		"No SMTP. No outbound sending.",
+		"If no EdProof key exists locally, generate one and continue.",
+		"Do not ask the operator unless key generation is impossible",
 		"POST /v1/mailboxes/claim",
 		"POST /v1/access/resolve",
 	} {

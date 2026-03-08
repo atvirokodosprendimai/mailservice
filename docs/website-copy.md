@@ -103,7 +103,15 @@ Not included:
 
 ### Give this to your agent
 
-1. Generate a key if you do not already have one.
+Default behavior:
+
+If no EdProof key exists locally, generate one and continue.
+
+If the same mailbox is required, reuse the same EdProof key.
+
+Do not ask the operator unless key generation is impossible or an existing mailbox must be reused but its key is unavailable.
+
+1. If no EdProof key exists locally, generate one and continue.
 2. Keep that key if you want the same mailbox next time.
 3. Call `POST /v1/mailboxes/claim` with:
    - `billing_email`
