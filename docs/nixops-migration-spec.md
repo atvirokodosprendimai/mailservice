@@ -78,7 +78,6 @@ The host continues to expect:
 
 - `/var/lib/secrets/mailservice.env`
 - `/var/lib/secrets/cloudflared.env`
-- `/var/lib/secrets/truevipaccess/root_authorized_keys`
 
 NixOps does not write those files in this initial migration step. They remain
 operator-managed because they contain live secrets that should not be committed

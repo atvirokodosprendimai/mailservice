@@ -1,3 +1,5 @@
+{ nixpkgs }:
+
 let
   envOr = name: fallback:
     let
@@ -5,6 +7,7 @@ let
     in if value != "" then value else fallback;
 in
 {
+  nixpkgs = nixpkgs;
   network.description = "mailservice truevipaccess";
   network.enableRollback = true;
   network.storage.legacy = {
@@ -18,9 +21,8 @@ in
         ../nix/hosts/truevipaccess/configuration.nix
       ];
 
+      nixpkgs.system = "x86_64-linux";
       deployment.targetHost = envOr "NIXOPS_TARGET_HOST" "46.62.133.191";
       deployment.targetUser = envOr "NIXOPS_TARGET_USER" "root";
-      deployment.substituteOnDestination = true;
-      deployment.tags = [ "mailservice" "truevipaccess" ];
     };
 }
