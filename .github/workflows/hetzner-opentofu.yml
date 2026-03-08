@@ -262,6 +262,9 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
       - name: Health check
-        run: curl --fail --silent --show-error "${PUBLIC_BASE_URL}/healthz"
+        run: |
+          curl --fail --silent --show-error \
+            --retry 10 --retry-delay 3 --retry-connrefused \
+            "${PUBLIC_BASE_URL}/healthz"
         env:
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
