@@ -243,8 +243,10 @@ jobs:
 
       - name: Upload runtime files
         run: |
+          chmod 600 production.env
           scp compose.tunnel.yml.example "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/compose.yml"
           scp production.env "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/production.env"
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" 'chmod 600 /opt/mailservice/production.env'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
