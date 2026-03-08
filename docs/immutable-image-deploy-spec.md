@@ -32,9 +32,15 @@ Use the existing GHCR SHA tags already produced by the Docker workflow:
 The deploy workflow must:
 
 1. derive the expected tag from `github.sha`
-2. wait until both GHCR tags exist
-3. write those image references into `production.env`
-4. let compose pull those exact immutable tags
+2. shorten it to match the Docker workflow SHA tag format
+3. wait until both GHCR tags exist
+4. write those image references into `production.env`
+5. let compose pull those exact immutable tags
+
+Specifically:
+
+- `ghcr.io/atvirokodosprendimai/mailservice-api:sha-${GITHUB_SHA:0:7}`
+- `ghcr.io/atvirokodosprendimai/mailservice-mailreceive:sha-${GITHUB_SHA:0:7}`
 
 ## Scope
 
@@ -65,10 +71,10 @@ That keeps local/dev compatibility while allowing production to inject exact tag
 Before SSH deployment:
 
 1. compute:
-   - `API_IMAGE=ghcr.io/...-api:sha-${GITHUB_SHA}`
-   - `MAILRECEIVE_IMAGE=ghcr.io/...-mailreceive:sha-${GITHUB_SHA}`
+   - `API_IMAGE=ghcr.io/...-api:sha-${GITHUB_SHA:0:7}`
+   - `MAILRECEIVE_IMAGE=ghcr.io/...-mailreceive:sha-${GITHUB_SHA:0:7}`
 2. authenticate to GHCR
-3. retry until both image manifests exist
+3. retry until both image manifests exist, using a wait window long enough to cover normal Docker build and push duration
 4. write `API_IMAGE` and `MAILRECEIVE_IMAGE` into `production.env`
 
 ### Docs
