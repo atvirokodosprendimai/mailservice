@@ -41,7 +41,16 @@ jobs:
         run: tofu fmt -check
 
       - name: OpenTofu init (no backend)
-        run: tofu init -backend=false
+        run: |
+          for attempt in 1 2 3; do
+            if tofu init -backend=false; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: OpenTofu validate
         env:
@@ -94,7 +103,16 @@ jobs:
           TOFU_STATE_SECRET_KEY: ${{ secrets.TOFU_STATE_SECRET_KEY }}
 
       - name: OpenTofu init
-        run: tofu init -backend-config=backend.hcl
+        run: |
+          for attempt in 1 2 3; do
+            if tofu init -backend-config=backend.hcl; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: OpenTofu plan
         env:
@@ -167,7 +185,16 @@ jobs:
           TOFU_STATE_SECRET_KEY: ${{ secrets.TOFU_STATE_SECRET_KEY }}
 
       - name: OpenTofu init
-        run: tofu init -backend-config=backend.hcl
+        run: |
+          for attempt in 1 2 3; do
+            if tofu init -backend-config=backend.hcl; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
 
       - name: OpenTofu apply
         env:
