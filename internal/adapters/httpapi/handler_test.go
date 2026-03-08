@@ -47,6 +47,7 @@ func TestHandleHomeReturnsLandingPage(t *testing.T) {
 		"Same key, same mailbox.",
 		"No SMTP. No outbound sending.",
 		"If no EdProof key exists locally, generate one and continue.",
+		"EdProof is the key proof used to identify the mailbox.",
 		"Do not ask the operator unless key generation is impossible or the same mailbox is required but the existing key is unavailable.",
 		"POST /v1/mailboxes/claim",
 		"POST /v1/access/resolve",

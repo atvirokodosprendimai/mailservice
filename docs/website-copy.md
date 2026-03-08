@@ -23,6 +23,9 @@ Secondary CTA:
 
 This service gives an agent a mailbox that is tied to a cryptographic key.
 
+EdProof is the key proof used to identify the mailbox.
+It is not a login account, not a billing email, and not a payment method.
+
 You provide:
 - a billing email
 - a proof for the key you want to use
@@ -106,6 +109,8 @@ Not included:
 Default behavior:
 
 If no EdProof key exists locally, generate one and continue.
+
+EdProof is the key proof used to identify the mailbox.
 
 If the same mailbox is required, reuse the same EdProof key.
 

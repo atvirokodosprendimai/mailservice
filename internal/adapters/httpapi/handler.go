@@ -249,6 +249,11 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
     <div class="rules">
       <div class="rule">
         <strong>The key is the mailbox identity.</strong>
+        EdProof is the key proof used to identify the mailbox. It is not a login account, not a billing email,
+        and not a payment method.
+      </div>
+      <div class="rule">
+        <strong>The billing email is only for billing.</strong>
         The billing email is only where the invoice goes.
       </div>
       <div class="rule">
@@ -295,6 +300,7 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
 `, homePageAgentPrompt)
 
 const homePageAgentPrompt = `If no EdProof key exists locally, generate one and continue.
+EdProof is the key proof used to identify the mailbox.
 If the same mailbox is required, reuse the same EdProof key.
 Do not ask the operator unless key generation is impossible or the same mailbox is required but the existing key is unavailable.`
 
