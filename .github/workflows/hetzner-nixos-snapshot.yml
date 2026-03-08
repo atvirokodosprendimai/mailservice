@@ -42,15 +42,18 @@ jobs:
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "${HETZNER_SSH_PUBLIC_KEY}" > ~/.ssh/mailservice-builder.pub
+          printf '%s\n' "${DEPLOY_SSH_PRIVATE_KEY}" > ~/.ssh/mailservice-builder
+          chmod 600 ~/.ssh/mailservice-builder
           chmod 600 ~/.ssh/mailservice-builder.pub
         env:
           HETZNER_SSH_PUBLIC_KEY: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
 
       - name: Build NixOS snapshot
         env:
           HCLOUD_TOKEN: ${{ secrets.HCLOUD_API }}
           PUBLIC_KEY_FILE: /home/runner/.ssh/mailservice-builder.pub
-          PRIVATE_KEY_FILE: /home/runner/.ssh/id_rsa
+          PRIVATE_KEY_FILE: /home/runner/.ssh/mailservice-builder
           LOCATION: ${{ github.event.inputs.location }}
           SERVER_TYPE: ${{ github.event.inputs.server_type }}
           NIXOS_CHANNEL: ${{ github.event.inputs.nixos_channel }}
