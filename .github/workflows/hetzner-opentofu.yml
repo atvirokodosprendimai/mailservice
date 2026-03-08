@@ -191,6 +191,7 @@ jobs:
 
       - name: Write production env
         run: |
+          umask 077
           cat > production.env <<EOF
           PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
           MAIL_DOMAIN=${MAIL_DOMAIN}
@@ -210,6 +211,7 @@ jobs:
           MAILBOX_PRICE_CENTS=${MAILBOX_PRICE_CENTS}
           CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
           EOF
+          chmod 600 production.env
         env:
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           MAIL_DOMAIN: ${{ vars.MAIL_DOMAIN }}
@@ -236,22 +238,31 @@ jobs:
 
       - name: Trust deploy host
         run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H "${DEPLOY_HOST}" >> ~/.ssh/known_hosts
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${DEPLOY_HOST_KEY}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
 
       - name: Upload runtime files
         run: |
-          scp compose.tunnel.yml.example "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/compose.yml"
-          scp production.env "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/production.env"
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            install -d -m 700 /opt/mailservice
+          '
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            compose.tunnel.yml.example "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/compose.yml"
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            production.env "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/production.env"
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            chmod 600 /opt/mailservice/production.env
+          '
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
       - name: Deploy compose stack
         run: |
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             cd /opt/mailservice
             docker compose --env-file production.env -f compose.yml pull

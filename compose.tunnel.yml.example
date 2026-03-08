@@ -1,37 +1,41 @@
 services:
   api:
     image: ghcr.io/atvirokodosprendimai/mailservice-api:latest
+    env_file:
+      - ./production.env
     environment:
-      HTTP_ADDR: ":8080"
-      DATABASE_DSN: /data/mailservice.db
-      PUBLIC_BASE_URL: https://truevipaccess.com
-      MAIL_DOMAIN: mail.local
-      IMAP_HOST: mail.local
-      IMAP_PORT: "143"
-      MAX_CONCURRENT_REQUESTS: "100"
-      POLAR_TOKEN: ""
-      POLAR_PRICE_ID: ""
-      POLAR_SERVER_URL: https://api.polar.sh
-      POLAR_SUCCESS_URL: https://truevipaccess.com/v1/payments/polar/success?checkout_id={CHECKOUT_ID}
-      POLAR_RETURN_URL: https://truevipaccess.com
-      STRIPE_SECRET_KEY: ""
-      STRIPE_WEBHOOK_SECRET: ""
-      STRIPE_SUCCESS_URL: https://truevipaccess.com/payment/success
-      STRIPE_CANCEL_URL: https://truevipaccess.com/payment/cancel
-      STRIPE_CURRENCY: usd
-      MAILBOX_PRICE_CENTS: "299"
+      HTTP_ADDR: ${HTTP_ADDR:-:8080}
+      DATABASE_DSN: ${DATABASE_DSN:-/data/mailservice.db}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      MAIL_DOMAIN: ${MAIL_DOMAIN}
+      IMAP_HOST: ${IMAP_HOST}
+      IMAP_PORT: ${IMAP_PORT}
+      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-100}
+      POLAR_TOKEN: ${POLAR_TOKEN:-}
+      POLAR_PRICE_ID: ${POLAR_PRICE_ID:-}
+      POLAR_SERVER_URL: ${POLAR_SERVER_URL:-https://api.polar.sh}
+      POLAR_SUCCESS_URL: ${POLAR_SUCCESS_URL}
+      POLAR_RETURN_URL: ${POLAR_RETURN_URL}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_SUCCESS_URL: ${STRIPE_SUCCESS_URL:-}
+      STRIPE_CANCEL_URL: ${STRIPE_CANCEL_URL:-}
+      STRIPE_CURRENCY: ${STRIPE_CURRENCY:-usd}
+      MAILBOX_PRICE_CENTS: ${MAILBOX_PRICE_CENTS:-299}
     volumes:
       - shared_db:/data
     restart: unless-stopped
 
   mailreceive:
     image: ghcr.io/atvirokodosprendimai/mailservice-mailreceive:latest
+    env_file:
+      - ./production.env
     environment:
-      MAIL_DB_PATH: /data/mailservice.db
-      MAIL_DOMAIN: mail.local
-      MAIL_DEBUG: "1"
-      MAILBOX_USER: ""
-      MAILBOX_PASSWORD: ""
+      MAIL_DB_PATH: ${MAIL_DB_PATH:-/data/mailservice.db}
+      MAIL_DOMAIN: ${MAIL_DOMAIN}
+      MAIL_DEBUG: ${MAIL_DEBUG:-1}
+      MAILBOX_USER: ${MAILBOX_USER:-}
+      MAILBOX_PASSWORD: ${MAILBOX_PASSWORD:-}
     volumes:
       - shared_db:/data
       - mail_vhosts:/var/mail/vhosts
@@ -43,6 +47,8 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:2026.2.0
     command: tunnel --no-autoupdate run
+    env_file:
+      - ./production.env
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
