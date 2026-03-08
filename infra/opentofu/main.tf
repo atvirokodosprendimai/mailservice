@@ -1,3 +1,9 @@
+locals {
+  server_user_data = var.bootstrap_mode == "ubuntu-docker" ? templatefile("${path.module}/cloud-init.tftpl", {
+    public_base_url = var.public_base_url
+  }) : null
+}
+
 resource "hcloud_ssh_key" "deploy" {
   name       = "${var.name}-deploy"
   public_key = var.ssh_public_key
@@ -51,12 +57,11 @@ resource "hcloud_server" "app" {
   firewall_ids = [hcloud_firewall.mailservice.id]
 
   labels = {
-    app = var.name
+    app            = var.name
+    bootstrap_mode = var.bootstrap_mode
   }
 
-  user_data = templatefile("${path.module}/cloud-init.tftpl", {
-    public_base_url = var.public_base_url
-  })
+  user_data = local.server_user_data
 }
 
 output "server_ipv4" {

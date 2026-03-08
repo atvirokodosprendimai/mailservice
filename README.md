@@ -29,6 +29,7 @@ Further reading:
 - [Migration plan](docs/migration-plan.md)
 - [Future access design](docs/future-access.md)
 - [Hetzner CI/CD](docs/hetzner-cicd.md)
+- [Hetzner NixOS snapshot builder](docs/hetzner-nixos-snapshot.md)
 - [NixOS GitOps on Hetzner](docs/nixos-gitops.md)
 - [NixOps migration spec](docs/nixops-migration-spec.md)
 - [NixOps migration plan](docs/nixops-migration-plan.md)
