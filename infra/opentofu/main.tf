@@ -43,11 +43,11 @@ resource "hcloud_firewall" "mailservice" {
 }
 
 resource "hcloud_server" "app" {
-  name        = var.name
-  image       = var.image
-  server_type = var.server_type
-  location    = var.location
-  ssh_keys    = [hcloud_ssh_key.deploy.id]
+  name         = var.name
+  image        = var.image
+  server_type  = var.server_type
+  location     = var.location
+  ssh_keys     = [hcloud_ssh_key.deploy.id]
   firewall_ids = [hcloud_firewall.mailservice.id]
 
   labels = {
