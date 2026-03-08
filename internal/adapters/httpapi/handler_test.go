@@ -143,8 +143,8 @@ func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp["Email"] != "mbx_abc@mail.test.local" {
-		t.Fatalf("unexpected resolved email: %#v", resp["Email"])
+	if resp["email"] != "mbx_abc@mail.test.local" {
+		t.Fatalf("unexpected resolved email: %#v", resp["email"])
 	}
 }
 
