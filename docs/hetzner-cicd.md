@@ -24,6 +24,8 @@ State handling rules:
 - generate backend config in CI from secrets
 - enable bucket versioning if supported
 - use remote state for apply, not local state
+- keep an explicit `backend "s3" {}` block in `infra/opentofu/versions.tf`
+- when using Hetzner Object Storage, use the Hetzner endpoint in `TOFU_STATE_ENDPOINT`, but set `TOFU_STATE_REGION` to a valid AWS-style region string such as `eu-central-1`
 
 OpenTofu backend reference:
 - OpenTofu `s3` backend docs: https://opentofu.org/docs/v1.9/language/settings/backends/s3/
