@@ -1,0 +1,64 @@
+name: Hetzner NixOS Snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      location:
+        description: "Hetzner location"
+        required: true
+        default: "hel1"
+      server_type:
+        description: "Hetzner server type"
+        required: true
+        default: "cpx22"
+      nixos_channel:
+        description: "NixOS channel for nixos-infect"
+        required: true
+        default: "nixos-24.11"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
+          curl -L https://github.com/hetznercloud/cli/releases/latest/download/hcloud-linux-amd64.tar.gz | tar -xz
+          sudo install hcloud /usr/local/bin/hcloud
+
+      - name: Start ssh-agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Write public key
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${HETZNER_SSH_PUBLIC_KEY}" > ~/.ssh/mailservice-builder.pub
+          chmod 600 ~/.ssh/mailservice-builder.pub
+        env:
+          HETZNER_SSH_PUBLIC_KEY: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
+
+      - name: Build NixOS snapshot
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_API }}
+          PUBLIC_KEY_FILE: /home/runner/.ssh/mailservice-builder.pub
+          PRIVATE_KEY_FILE: /home/runner/.ssh/id_rsa
+          LOCATION: ${{ github.event.inputs.location }}
+          SERVER_TYPE: ${{ github.event.inputs.server_type }}
+          NIXOS_CHANNEL: ${{ github.event.inputs.nixos_channel }}
+        run: ./ops/hetzner-nixos-image/build_snapshot.sh | tee snapshot.txt
+
+      - name: Upload snapshot result
+        uses: actions/upload-artifact@v4
+        with:
+          name: nixos-snapshot-${{ github.run_id }}
+          path: snapshot.txt
+          retention-days: 7
