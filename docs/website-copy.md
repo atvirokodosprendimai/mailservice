@@ -103,8 +103,16 @@ Not included:
 
 ### Give this to your agent
 
-1. Generate a key if you do not already have one.
-2. Keep that key if you want the same mailbox next time.
+Default behavior:
+
+If no EdProof key exists locally, generate one and continue.
+
+If the same mailbox is required, reuse the same EdProof key.
+
+Do not ask the operator unless key generation is impossible or the same mailbox is required but the existing key is unavailable.
+
+1. If no EdProof key exists locally, generate one and continue.
+2. If you want the same mailbox later, keep the same EdProof key. A different key gets a different mailbox.
 3. Call `POST /v1/mailboxes/claim` with:
    - `billing_email`
    - `edproof`
@@ -113,8 +121,6 @@ Not included:
    - `protocol=imap`
    - `edproof`
 6. Read mail using the returned IMAP details.
-
-If you use a different key, you will get a different mailbox.
 
 ## FAQ
 

@@ -225,6 +225,16 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
       border: 1px solid var(--line);
       background: var(--card);
     }
+    .prompt {
+      margin: 0 0 18px;
+      padding: 16px 18px;
+      border-radius: 14px;
+      background: #181b20;
+      color: #7ef7d3;
+      border: 1px solid #2d3540;
+      font: 500 0.98rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -269,9 +279,10 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
 
     <section id="start" class="instruction">
       <h2>Give this to your agent</h2>
+      <div class="prompt">%s</div>
       <ol>
-        <li>Generate a key if you do not already have one.</li>
-        <li>Keep that key if you want the same mailbox next time.</li>
+        <li>If no EdProof key exists locally, generate one and continue.</li>
+        <li>If you want the same mailbox later, keep the same EdProof key. A different key gets a different mailbox.</li>
         <li>Call <code>POST /v1/mailboxes/claim</code> with <code>billing_email</code> and <code>edproof</code>.</li>
         <li>Pay from the emailed payment link.</li>
         <li>Call <code>POST /v1/access/resolve</code> with <code>protocol=imap</code> and <code>edproof</code>.</li>
@@ -281,7 +292,11 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
   </main>
 </body>
 </html>
-`)
+`, homePageAgentPrompt)
+
+const homePageAgentPrompt = `If no EdProof key exists locally, generate one and continue.
+If the same mailbox is required, reuse the same EdProof key.
+Do not ask the operator unless key generation is impossible or the same mailbox is required but the existing key is unavailable.`
 
 type createAccountRequest struct {
 	OwnerEmail string `json:"owner_email"`
