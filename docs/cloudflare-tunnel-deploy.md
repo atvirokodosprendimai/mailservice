@@ -39,6 +39,7 @@ Production API values should still be:
 PUBLIC_BASE_URL=https://truevipaccess.com
 POLAR_SUCCESS_URL=https://truevipaccess.com/v1/payments/polar/success?checkout_id={CHECKOUT_ID}
 POLAR_RETURN_URL=https://truevipaccess.com
+POLAR_WEBHOOK_SECRET=<secret>
 ```
 
 Tunnel-specific runtime value:

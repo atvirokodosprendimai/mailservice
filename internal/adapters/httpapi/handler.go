@@ -20,22 +20,26 @@ import (
 
 type Config struct {
 	StripeWebhookSecret string
+	PolarWebhookSecret  string
 	MaxConcurrentReqs   int
 	KeyProofVerifier    ports.KeyProofVerifier
 	PaymentGateway      ports.PaymentGateway
 	MailboxService      *service.MailboxService
 	AccountService      *service.AccountService
 	Logger              *log.Logger
+	Now                 func() time.Time
 }
 
 type Handler struct {
 	stripeWebhookSecret string
+	polarWebhookSecret  string
 	concurrencySem      chan struct{}
 	keyProofVerifier    ports.KeyProofVerifier
 	paymentGateway      ports.PaymentGateway
 	mailboxService      *service.MailboxService
 	accountService      *service.AccountService
 	logger              *log.Logger
+	now                 func() time.Time
 }
 
 type accountContextKey struct{}
@@ -48,12 +52,14 @@ func NewHandler(cfg Config) *Handler {
 
 	return &Handler{
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
+		polarWebhookSecret:  cfg.PolarWebhookSecret,
 		concurrencySem:      sem,
 		keyProofVerifier:    cfg.KeyProofVerifier,
 		paymentGateway:      cfg.PaymentGateway,
 		mailboxService:      cfg.MailboxService,
 		accountService:      cfg.AccountService,
 		logger:              cfg.Logger,
+		now:                 coalesceNow(cfg.Now),
 	}
 }
 
@@ -71,6 +77,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
 	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
 	mux.HandleFunc("GET /v1/payments/polar/success", h.handlePolarSuccess)
+	mux.HandleFunc("POST /v1/webhooks/polar", h.handlePolarWebhook)
 	mux.HandleFunc("POST /v1/imap/resolve", h.withAccountToken(h.handleResolveIMAP))
 	mux.HandleFunc("POST /v1/imap/messages", h.withAccountToken(h.handleListIMAPMessages))
 	mux.HandleFunc("POST /v1/imap/messages/get", h.withAccountToken(h.handleGetIMAPMessageByUID))
@@ -643,6 +650,66 @@ func (h *Handler) handlePolarSuccess(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h *Handler) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
+	if h.paymentGateway == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("payment gateway not configured"))
+		return
+	}
+	if strings.TrimSpace(h.polarWebhookSecret) == "" {
+		writeError(w, http.StatusServiceUnavailable, errors.New("polar webhook secret not configured"))
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	headers := map[string]string{
+		"webhook-id":        r.Header.Get("webhook-id"),
+		"webhook-timestamp": r.Header.Get("webhook-timestamp"),
+		"webhook-signature": r.Header.Get("webhook-signature"),
+	}
+	if err := verifyPolarWebhook(h.polarWebhookSecret, headers, body, h.now()); err != nil {
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+
+	event, err := parsePolarWebhook(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	checkoutID := polarCheckoutID(event)
+	if checkoutID == "" {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+
+	session, err := h.paymentGateway.GetPaymentSession(r.Context(), checkoutID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	if !isSuccessfulPayment(session.Status) {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+
+	if _, err := h.mailboxService.MarkMailboxPaid(r.Context(), session.SessionID); err != nil {
+		if errors.Is(err, ports.ErrMailboxNotFound) {
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
+}
+
 func (h *Handler) withAccountToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("X-API-Token")
@@ -756,4 +823,13 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 
 func isSuccessfulPayment(status ports.PaymentSessionStatus) bool {
 	return status == ports.PaymentSessionStatusSucceeded || status == ports.PaymentSessionStatusConfirmed
+}
+
+func coalesceNow(now func() time.Time) func() time.Time {
+	if now != nil {
+		return now
+	}
+	return func() time.Time {
+		return time.Now().UTC()
+	}
 }

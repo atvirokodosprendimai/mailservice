@@ -46,6 +46,7 @@ Deployment/runtime:
 - `DEPLOY_HOST_KEY`
 - `DEPLOY_USER`
 - `DEPLOY_SSH_PRIVATE_KEY`
+- `POLAR_WEBHOOK_SECRET`
 
 ## Workflow Shape
 

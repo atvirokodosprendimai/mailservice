@@ -115,6 +115,7 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 - `POLAR_SERVER_URL` (default `https://api.polar.sh`)
 - `POLAR_SUCCESS_URL` (default `PUBLIC_BASE_URL/v1/payments/polar/success?checkout_id={CHECKOUT_ID}`)
 - `POLAR_RETURN_URL` (default `PUBLIC_BASE_URL`)
+- `POLAR_WEBHOOK_SECRET` (recommended for production; enables signed `POST /v1/webhooks/polar`)
 - `STRIPE_CURRENCY` (default `usd`)
 - `STRIPE_SUCCESS_URL` (default `http://localhost:8080/payment/success`)
 - `STRIPE_CANCEL_URL` (default `http://localhost:8080/payment/cancel`)
@@ -139,10 +140,20 @@ curl -X POST http://localhost:8080/v1/mailboxes/claim \
   -d '{"billing_email":"billing@example.com","edproof":"<proof>"}'
 ```
 
-Confirm Polar payment after redirect:
+Confirm Polar payment after redirect fallback:
 
 ```bash
 curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
+```
+
+Preferred production payment completion path:
+
+```bash
+curl -X POST http://localhost:8080/v1/webhooks/polar \
+  -H 'webhook-id: <message-id>' \
+  -H 'webhook-timestamp: <unix-seconds>' \
+  -H 'webhook-signature: v1,<signature>' \
+  -d '<signed-payload-from-polar>'
 ```
 
 Resolve IMAP credentials by key proof:
