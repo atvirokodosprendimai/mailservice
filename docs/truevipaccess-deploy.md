@@ -10,16 +10,28 @@ Serve the API under:
 
 Use this hostname as the public base URL for user-facing links and payment return flow.
 
+## Current Ingress
+
+Current temporary ingress choice:
+
+- Cloudflare Tunnel in front of the Hetzner-hosted runtime
+
+See:
+
+- `docs/cloudflare-tunnel-deploy.md`
+
 ## DNS
 
-Required DNS records:
+For the tunnel-based temporary path, Cloudflare manages hostname routing and a direct public `A` record to Hetzner is not required.
+
+If you switch later to direct host exposure, then:
 
 - apex `A` record:
   - `truevipaccess.com -> <Hetzner server IPv4>`
 - apex `AAAA` record:
   - optional unless IPv6 is configured on the deployed host and TLS proxy
 
-The OpenTofu output `server_ipv4` is the value to use for the initial `A` record.
+The OpenTofu output `server_ipv4` remains the fallback direct-host target.
 
 ## Runtime Configuration
 
@@ -34,6 +46,10 @@ POLAR_RETURN_URL=https://truevipaccess.com
 If this hostname is also used as the mailbox domain later, that should be a separate decision. The current HTTP deployment target does not require changing `MAIL_DOMAIN`.
 
 ## TLS
+
+For the current temporary path, TLS terminates at Cloudflare.
+
+Later direct-host option:
 
 Terminate TLS on the production host with a reverse proxy.
 
@@ -57,13 +73,13 @@ The current firewall already allows:
 - `80/tcp`
 - `443/tcp`
 
-So no firewall change is required for the HTTPS hostname itself.
+So no firewall change is required if you later switch to direct host exposure. The tunnel path does not depend on public inbound `80/443`.
 
 ## Validation Checklist
 
 Before calling the deployment complete:
 
-1. `dig truevipaccess.com A` returns the Hetzner server IP
-2. `curl -I https://truevipaccess.com/healthz` returns `200`
-3. payment return URLs use `https://truevipaccess.com`
+1. `curl -I https://truevipaccess.com/healthz` returns `200`
+2. payment return URLs use `https://truevipaccess.com`
+3. Cloudflare Tunnel points to the API runtime
 4. no user-facing links still point at localhost or a temporary host

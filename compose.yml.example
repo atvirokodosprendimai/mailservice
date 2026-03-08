@@ -4,11 +4,16 @@ services:
     environment:
       HTTP_ADDR: ":8080"
       DATABASE_DSN: /data/mailservice.db
-      PUBLIC_BASE_URL: http://localhost:8080
+      PUBLIC_BASE_URL: https://truevipaccess.com
       MAIL_DOMAIN: mail.local
       IMAP_HOST: mail.local
       IMAP_PORT: "143"
       MAX_CONCURRENT_REQUESTS: "100"
+      POLAR_TOKEN: ""
+      POLAR_PRICE_ID: ""
+      POLAR_SERVER_URL: https://api.polar.sh
+      POLAR_SUCCESS_URL: https://truevipaccess.com/v1/payments/polar/success?checkout_id={CHECKOUT_ID}
+      POLAR_RETURN_URL: https://truevipaccess.com
       STRIPE_SECRET_KEY: ""
       STRIPE_WEBHOOK_SECRET: ""
       STRIPE_SUCCESS_URL: http://localhost:8080/payment/success
@@ -35,6 +40,15 @@ services:
     ports:
       - "25:25"
       - "143:143"
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ""
+    depends_on:
+      - api
     restart: unless-stopped
 
 volumes:

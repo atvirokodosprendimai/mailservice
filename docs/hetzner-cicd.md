@@ -41,6 +41,7 @@ Infrastructure:
 
 Deployment/runtime:
 - `APP_ENV_PRODUCTION`
+- `CLOUDFLARE_TUNNEL_TOKEN`
 - `DEPLOY_HOST`
 - `DEPLOY_USER`
 - `DEPLOY_SSH_PRIVATE_KEY`
@@ -93,3 +94,4 @@ Rollback expectations:
 - this design uses OpenTofu, not Terraform
 - before pushing workflow or OpenTofu changes, use the local checklist in `docs/local-workflow-validation.md`
 - current production hostname target is `truevipaccess.com`; see `docs/truevipaccess-deploy.md`
+- current temporary ingress path is Cloudflare Tunnel; see `docs/cloudflare-tunnel-deploy.md`

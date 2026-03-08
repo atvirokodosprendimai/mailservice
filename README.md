@@ -30,6 +30,7 @@ Further reading:
 - [Hetzner CI/CD](docs/hetzner-cicd.md)
 - [Local workflow validation](docs/local-workflow-validation.md)
 - [truevipaccess.com deployment](docs/truevipaccess-deploy.md)
+- [Cloudflare Tunnel deployment](docs/cloudflare-tunnel-deploy.md)
 
 ## Stack
 
