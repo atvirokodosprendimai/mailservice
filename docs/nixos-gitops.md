@@ -97,16 +97,21 @@ TUNNEL_TOKEN=...
 
 ## Rollout
 
+Preferred future path: use NixOps to apply the host revision.
+
 1. Build and publish commit-pinned images.
 2. Update the pinned image refs in the NixOS host config.
 3. Commit that change to Git.
-4. Apply the new revision with `nixos-rebuild switch`.
+4. Apply the new revision with NixOps.
 
 Example:
 
 ```bash
-sudo nixos-rebuild switch --flake .#truevipaccess
+nix run .#nixops-deploy
 ```
+
+Manual `nixos-rebuild switch --flake .#truevipaccess` remains useful for local
+debugging on the host, but it is not the preferred multi-step rollout path.
 
 ## Rollback
 
@@ -120,5 +125,5 @@ That is the key GitOps property this path is meant to provide.
 ## Migration Note
 
 This baseline does not cut over the current Ubuntu production host by itself.
-It defines the target NixOS deployment model so the migration can be done
-deliberately instead of continuing to extend the imperative SSH workflow.
+Use the dedicated [NixOps migration plan](nixops-migration-plan.md) for the
+actual cutover sequence.

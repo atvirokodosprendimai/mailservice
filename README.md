@@ -30,6 +30,8 @@ Further reading:
 - [Future access design](docs/future-access.md)
 - [Hetzner CI/CD](docs/hetzner-cicd.md)
 - [NixOS GitOps on Hetzner](docs/nixos-gitops.md)
+- [NixOps migration spec](docs/nixops-migration-spec.md)
+- [NixOps migration plan](docs/nixops-migration-plan.md)
 - [Local workflow validation](docs/local-workflow-validation.md)
 - [truevipaccess.com deployment](docs/truevipaccess-deploy.md)
 - [Cloudflare Tunnel deployment](docs/cloudflare-tunnel-deploy.md)
