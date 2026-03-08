@@ -118,14 +118,20 @@ for attempt in $(seq 1 30); do
 done
 
 echo "Creating snapshot ${SNAPSHOT_NAME}"
-IMAGE_JSON=$(hcloud server create-image "$SERVER_NAME" --type snapshot --description "$SNAPSHOT_NAME" -o json)
-IMAGE_ID=$(printf '%s' "$IMAGE_JSON" | jq -r '.image.id // .action.resources[]? | select(.type=="image") | .id' | head -n1)
+hcloud server create-image "$SERVER_NAME" --type snapshot --description "$SNAPSHOT_NAME" >/dev/null
 
-if [ -z "$IMAGE_ID" ] || [ "$IMAGE_ID" = "null" ]; then
-  echo "Failed to determine snapshot id." >&2
-  printf '%s\n' "$IMAGE_JSON" >&2
-  exit 1
-fi
+IMAGE_ID=""
+for attempt in $(seq 1 60); do
+  IMAGE_ID=$(hcloud image list -o json | jq -r --arg desc "$SNAPSHOT_NAME" '.[] | select(.description == $desc) | .id' | head -n1)
+  if [ -n "$IMAGE_ID" ] && [ "$IMAGE_ID" != "null" ]; then
+    break
+  fi
+  if [ "$attempt" -eq 60 ]; then
+    echo "Failed to determine snapshot id." >&2
+    exit 1
+  fi
+  sleep 5
+done
 
 echo "snapshot_name=${SNAPSHOT_NAME}"
 echo "snapshot_id=${IMAGE_ID}"
