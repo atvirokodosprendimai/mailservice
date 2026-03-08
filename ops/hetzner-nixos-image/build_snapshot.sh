@@ -36,20 +36,29 @@ SERVER_NAME="${NAME_PREFIX}-builder-$(date +%s)"
 SSH_KEY_NAME="${SERVER_NAME}-ssh"
 SNAPSHOT_NAME=${SNAPSHOT_NAME:-"${NAME_PREFIX}-${CHANNEL}-$(date +%Y%m%d%H%M%S)"}
 KEEP_BUILDER=${KEEP_BUILDER:-false}
+CREATED_SSH_KEY=false
+PUBLIC_KEY_CONTENT=$(<"$PUBLIC_KEY_FILE")
 
 cleanup() {
   if [ "${KEEP_BUILDER}" != "true" ] && [ -n "${SERVER_NAME:-}" ]; then
     hcloud server delete "$SERVER_NAME" >/dev/null 2>&1 || true
   fi
-  if [ -n "${SSH_KEY_NAME:-}" ]; then
+  if [ "${CREATED_SSH_KEY}" = "true" ] && [ -n "${SSH_KEY_NAME:-}" ]; then
     hcloud ssh-key delete "$SSH_KEY_NAME" >/dev/null 2>&1 || true
   fi
 }
 
 trap cleanup EXIT
 
-echo "Creating temporary SSH key ${SSH_KEY_NAME}"
-hcloud ssh-key create --name "$SSH_KEY_NAME" --public-key-from-file "$PUBLIC_KEY_FILE" >/dev/null
+EXISTING_SSH_KEY_NAME=$(hcloud ssh-key list -o json | jq -r --arg key "$PUBLIC_KEY_CONTENT" '.[] | select(.public_key == $key) | .name' | head -n1)
+if [ -n "$EXISTING_SSH_KEY_NAME" ]; then
+  SSH_KEY_NAME="$EXISTING_SSH_KEY_NAME"
+  echo "Reusing existing SSH key ${SSH_KEY_NAME}"
+else
+  echo "Creating temporary SSH key ${SSH_KEY_NAME}"
+  hcloud ssh-key create --name "$SSH_KEY_NAME" --public-key-from-file "$PUBLIC_KEY_FILE" >/dev/null
+  CREATED_SSH_KEY=true
+fi
 
 echo "Creating temporary Ubuntu builder ${SERVER_NAME}"
 hcloud server create \
