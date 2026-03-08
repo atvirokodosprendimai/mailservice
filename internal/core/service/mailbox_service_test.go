@@ -24,7 +24,7 @@ func TestCreateMailboxReturnsExistingPendingMailbox(t *testing.T) {
 	notifier := &fakeMailboxNotifier{}
 	provisioner := &fakeMailRuntimeProvisioner{}
 	accounts := &fakeMailboxAccountRepo{}
-	service := NewMailboxService(repo, accounts, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "imap.test.local", 1143)
+	service := NewMailboxService(repo, accounts, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
 	mailbox, created, err := service.CreateMailbox(context.Background(), CreateMailboxRequest{
 		Account: &domain.Account{ID: "acc-1", OwnerEmail: "owner@example.com"},
@@ -53,7 +53,7 @@ func TestCreateMailboxActiveSubscriptionSkipsPaymentAndProvisioned(t *testing.T)
 	notifier := &fakeMailboxNotifier{}
 	provisioner := &fakeMailRuntimeProvisioner{}
 	accounts := &fakeMailboxAccountRepo{}
-	service := NewMailboxService(repo, accounts, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "imap.test.local", 1143)
+	service := NewMailboxService(repo, accounts, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
 	mailbox, created, err := service.CreateMailbox(context.Background(), CreateMailboxRequest{
 		Account: &domain.Account{ID: "acc-1", OwnerEmail: "owner@example.com", SubscriptionExpiresAt: &now},
@@ -97,7 +97,7 @@ func TestMarkMailboxPaidEnsuresRuntimeMailbox(t *testing.T) {
 		},
 	}
 	provisioner := &fakeMailRuntimeProvisioner{}
-	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "imap.test.local", 1143)
+	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
 	mailbox, err := service.MarkMailboxPaid(context.Background(), "sess-1")
 	if err != nil {
@@ -136,7 +136,7 @@ func TestResolveIMAPRejectsExpiredMailbox(t *testing.T) {
 			"acc-1": {ID: "acc-1", SubscriptionExpiresAt: ptrTime(time.Now().UTC().Add(-time.Minute))},
 		},
 	}
-	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "imap.test.local", 1143)
+	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
 	_, err := service.ResolveIMAPByToken(context.Background(), "token-1")
 	if err != ports.ErrMailboxNotUsable {
@@ -162,7 +162,7 @@ func TestResolveIMAPAllowsPendingMailboxWhenAccountSubscribed(t *testing.T) {
 	}
 	accounts := &fakeMailboxAccountRepo{byID: map[string]*domain.Account{"acc-1": {ID: "acc-1", SubscriptionExpiresAt: &future}}}
 	provisioner := &fakeMailRuntimeProvisioner{}
-	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "imap.test.local", 1143)
+	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
 	result, err := service.ResolveIMAPByToken(context.Background(), "token-1")
 	if err != nil {
@@ -173,6 +173,34 @@ func TestResolveIMAPAllowsPendingMailboxWhenAccountSubscribed(t *testing.T) {
 	}
 	if provisioner.calls != 1 {
 		t.Fatalf("expected provisioner called once")
+	}
+}
+
+func TestResolveIMAPReturnsMailboxAddressUsingMailDomain(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		byAccessToken: map[string]*domain.Mailbox{
+			"token-1": {
+				ID:           "mbx-1",
+				AccountID:    "acc-1",
+				Status:       domain.MailboxStatusActive,
+				AccessToken:  "token-1",
+				IMAPHost:     "imap.example.com",
+				IMAPPort:     143,
+				IMAPUsername: "mbx_abc",
+				IMAPPassword: "p",
+			},
+		},
+	}
+	accounts := &fakeMailboxAccountRepo{byID: map[string]*domain.Account{"acc-1": {ID: "acc-1", SubscriptionExpiresAt: &future}}}
+	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mx.example.com", "imap.example.com", 143)
+
+	result, err := service.ResolveIMAPByToken(context.Background(), "token-1")
+	if err != nil {
+		t.Fatalf("ResolveIMAPByToken failed: %v", err)
+	}
+	if result.Email != "mbx_abc@mx.example.com" {
+		t.Fatalf("expected mailbox email to use mail domain, got %q", result.Email)
 	}
 }
 
@@ -194,7 +222,7 @@ func TestListMessagesByTokenReturnsReaderMessages(t *testing.T) {
 	}
 	accounts := &fakeMailboxAccountRepo{byID: map[string]*domain.Account{"acc-1": {ID: "acc-1", SubscriptionExpiresAt: &future}}}
 	reader := &fakeMailReader{messages: []ports.IMAPMessage{{UID: 1, Subject: "hello", From: "a@b"}}}
-	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, reader, "imap.test.local", 1143)
+	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, reader, "mail.test.local", "imap.test.local", 1143)
 
 	messages, err := service.ListMessagesByToken(context.Background(), "token-1", 20, true, true)
 	if err != nil {
@@ -223,7 +251,7 @@ func TestGetMessageByUIDTokenReturnsSingleMessage(t *testing.T) {
 	}
 	accounts := &fakeMailboxAccountRepo{byID: map[string]*domain.Account{"acc-1": {ID: "acc-1", SubscriptionExpiresAt: &future}}}
 	reader := &fakeMailReader{messageByUID: map[uint32]ports.IMAPMessage{7: {UID: 7, Subject: "single"}}}
-	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, reader, "imap.test.local", 1143)
+	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, reader, "mail.test.local", "imap.test.local", 1143)
 
 	message, err := service.GetMessageByUIDToken(context.Background(), "token-1", 7, true)
 	if err != nil {

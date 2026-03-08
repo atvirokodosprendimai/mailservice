@@ -21,11 +21,16 @@ type MailboxService struct {
 	tokenGen    ports.TokenGenerator
 	provisioner ports.MailRuntimeProvisioner
 	mailReader  ports.MailReader
+	mailDomain  string
 	imapHost    string
 	imapPort    int
 }
 
-func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, imapHost string, imapPort int) *MailboxService {
+func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, mailDomain string, imapHost string, imapPort int) *MailboxService {
+	mailDomain = strings.TrimSpace(strings.ToLower(mailDomain))
+	if mailDomain == "" {
+		mailDomain = "mail.local"
+	}
 	if strings.TrimSpace(imapHost) == "" {
 		imapHost = "mail.local"
 	}
@@ -41,6 +46,7 @@ func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepos
 		tokenGen:    tokenGen,
 		provisioner: provisioner,
 		mailReader:  mailReader,
+		mailDomain:  mailDomain,
 		imapHost:    imapHost,
 		imapPort:    imapPort,
 	}
@@ -240,7 +246,7 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 		Port:      mailbox.IMAPPort,
 		Username:  mailbox.IMAPUsername,
 		Password:  mailbox.IMAPPassword,
-		Email:     mailbox.IMAPUsername + "@" + mailbox.IMAPHost,
+		Email:     mailbox.IMAPUsername + "@" + s.mailDomain,
 	}, nil
 }
 
