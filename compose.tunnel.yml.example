@@ -24,6 +24,8 @@ services:
       MAILBOX_PRICE_CENTS: ${MAILBOX_PRICE_CENTS:-299}
     volumes:
       - shared_db:/data
+    ports:
+      - "127.0.0.1:8080:8080"
     restart: unless-stopped
 
   mailreceive:
