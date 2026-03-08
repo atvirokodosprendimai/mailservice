@@ -54,7 +54,15 @@ jobs:
           LOCATION: ${{ github.event.inputs.location }}
           SERVER_TYPE: ${{ github.event.inputs.server_type }}
           NIXOS_CHANNEL: ${{ github.event.inputs.nixos_channel }}
-        run: ./ops/hetzner-nixos-image/build_snapshot.sh | tee snapshot.txt
+        run: |
+          set -o pipefail
+          bash ./ops/hetzner-nixos-image/build_snapshot.sh | tee snapshot.txt
+        shell: bash
+
+      - name: Ensure snapshot output exists
+        run: |
+          test -s snapshot.txt
+          grep -q '^snapshot_id=' snapshot.txt
 
       - name: Upload snapshot result
         uses: actions/upload-artifact@v4
