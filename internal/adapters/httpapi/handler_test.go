@@ -25,6 +25,36 @@ func TestDecodeJSONRejectsMultiplePayloads(t *testing.T) {
 	}
 }
 
+func TestHandleHomeReturnsLandingPage(t *testing.T) {
+	handler := NewHandler(Config{
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "text/html") {
+		t.Fatalf("expected text/html content type, got %q", got)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"Stable mailbox identity, bound to a key.",
+		"Same key, same mailbox.",
+		"No SMTP. No outbound sending.",
+		"POST /v1/mailboxes/claim",
+		"POST /v1/access/resolve",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected homepage to contain %q, body=%s", want, body)
+		}
+	}
+}
+
 func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
 	repo := &httpMailboxRepo{}
 	handler := NewHandler(Config{
