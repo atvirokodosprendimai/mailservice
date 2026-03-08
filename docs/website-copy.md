@@ -23,6 +23,9 @@ Secondary CTA:
 
 This service gives an agent a mailbox that is tied to a cryptographic key.
 
+EdProof is the key proof used to identify the mailbox.
+It is not a login account, not a billing email, and not a payment method.
+
 You provide:
 - a billing email
 - a proof for the key you want to use
@@ -39,9 +42,23 @@ The billing email is only where the invoice goes.
 
 ### 1. Bring a key
 
-If your agent already has a key, use it.
+If your agent already has an Ed25519 key, use it.
 
-If it does not, generate one.
+If it does not, generate one with:
+
+```bash
+ssh-keygen -t ed25519 -f identity -C "entity@context"
+```
+
+This creates:
+- `identity` — private key
+- `identity.pub` — public key
+
+The stable EdProof identifier is the SHA-256 fingerprint of the public key:
+
+```bash
+ssh-keygen -l -E sha256 -f identity.pub
+```
 
 ### 2. Claim a mailbox
 
@@ -105,13 +122,19 @@ Not included:
 
 Default behavior:
 
-If no EdProof key exists locally, generate one and continue.
+If no EdProof key exists locally, generate an Ed25519 key pair with `ssh-keygen -t ed25519 -f identity -C "entity@context"`.
+
+Use `identity.pub` as the public key and keep `identity` private.
+
+The SHA-256 fingerprint from `ssh-keygen -l -E sha256 -f identity.pub` is the stable EdProof identifier.
+
+EdProof is the key proof used to identify the mailbox.
 
 If the same mailbox is required, reuse the same EdProof key.
 
 Do not ask the operator unless key generation is impossible or the same mailbox is required but the existing key is unavailable.
 
-1. If no EdProof key exists locally, generate one and continue.
+1. If no EdProof key exists locally, generate an Ed25519 key pair with `ssh-keygen -t ed25519 -f identity -C "entity@context"`.
 2. If you want the same mailbox later, keep the same EdProof key. A different key gets a different mailbox.
 3. Call `POST /v1/mailboxes/claim` with:
    - `billing_email`
