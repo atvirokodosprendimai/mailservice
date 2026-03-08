@@ -22,8 +22,6 @@ services:
       MAILBOX_PRICE_CENTS: "299"
     volumes:
       - shared_db:/data
-    ports:
-      - "8080:8080"
     restart: unless-stopped
 
   mailreceive:
@@ -43,10 +41,10 @@ services:
     restart: unless-stopped
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.2.0
     command: tunnel --no-autoupdate run
     environment:
-      TUNNEL_TOKEN: ""
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
     depends_on:
       - api
     restart: unless-stopped

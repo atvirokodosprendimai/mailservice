@@ -46,19 +46,27 @@ Tunnel-specific runtime value:
 CLOUDFLARE_TUNNEL_TOKEN=<secret>
 ```
 
+At runtime, map it into the container as:
+
+```env
+TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+```
+
 ## Docker Compose Shape
 
 Add a `cloudflared` service that runs:
 
 ```text
-cloudflared tunnel run
+cloudflared tunnel --no-autoupdate run
 ```
 
 with:
 
-- image `cloudflare/cloudflared:latest`
+- image `cloudflare/cloudflared:2026.2.0`
 - `TUNNEL_TOKEN` from environment
+- compose maps `CLOUDFLARE_TUNNEL_TOKEN` into `TUNNEL_TOKEN`
 - dependency on the API container
+- no published API host port in the tunnel-based production shape
 
 ## Cloudflare Routing
 
