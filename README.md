@@ -21,6 +21,10 @@ Product scope:
 - POP3 / HTTP read API later
 - no SMTP submission or outbound sending
 
+Further reading:
+- [Key-bound mailbox spec](docs/key-bound-mailbox-spec.md)
+- [Use cases](docs/use-cases.md)
+
 ## Stack
 
 - Go
