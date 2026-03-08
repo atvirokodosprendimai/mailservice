@@ -13,5 +13,5 @@ fi
 
 cd "$WORK_DIR"
 
-exec nix shell nixpkgs#nixops --command \
-  nixops create "$NETWORK_FILE" -d "$DEPLOYMENT"
+exec nix shell nixpkgs#nixops_unstable_minimal --command \
+  nixops create -d "$DEPLOYMENT"

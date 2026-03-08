@@ -13,10 +13,10 @@ fi
 
 cd "$WORK_DIR"
 
-if ! info_error=$(nix shell nixpkgs#nixops --command nixops info -d "$DEPLOYMENT" 2>&1 >/dev/null); then
+if ! info_error=$(nix shell nixpkgs#nixops_unstable_minimal --command nixops info -d "$DEPLOYMENT" 2>&1 >/dev/null); then
   case "$info_error" in
     *"does not exist"*|*"could not find"*)
-      nix shell nixpkgs#nixops --command nixops create "$NETWORK_FILE" -d "$DEPLOYMENT"
+      nix shell nixpkgs#nixops_unstable_minimal --command nixops create -d "$DEPLOYMENT"
       ;;
     *)
       printf '%s\n' "$info_error" >&2
@@ -25,5 +25,5 @@ if ! info_error=$(nix shell nixpkgs#nixops --command nixops info -d "$DEPLOYMENT
   esac
 fi
 
-exec nix shell nixpkgs#nixops --command \
+exec nix shell nixpkgs#nixops_unstable_minimal --command \
   nixops deploy -d "$DEPLOYMENT" "$@"

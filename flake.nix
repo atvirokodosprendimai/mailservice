@@ -7,10 +7,20 @@
 
   outputs = { self, nixpkgs }:
     let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
+      nixosSystem = "x86_64-linux";
+      appSystems = [
+        "x86_64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+
+      forAllSystems = f:
+        nixpkgs.lib.genAttrs appSystems (system:
+          f (import nixpkgs { inherit system; })
+        );
 
       mkNixOpsApp = name:
+        pkgs:
         let
           scriptName = "${name}.sh";
         in {
@@ -20,17 +30,19 @@
           '');
         };
     in {
+      nixopsConfigurations.default = import ./nixops/default.nix { inherit nixpkgs; };
+
       nixosConfigurations.truevipaccess = nixpkgs.lib.nixosSystem {
-        inherit system;
+        system = nixosSystem;
         modules = [
           ./nix/hosts/truevipaccess/configuration.nix
         ];
       };
 
-      apps.${system} = {
-        nixops-create = mkNixOpsApp "create";
-        nixops-deploy = mkNixOpsApp "deploy";
-        nixops-rollback = mkNixOpsApp "rollback";
-      };
+      apps = forAllSystems (pkgs: {
+        nixops-create = mkNixOpsApp "create" pkgs;
+        nixops-deploy = mkNixOpsApp "deploy" pkgs;
+        nixops-rollback = mkNixOpsApp "rollback" pkgs;
+      });
     };
 }

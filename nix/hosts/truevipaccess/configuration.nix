@@ -3,6 +3,7 @@
 {
   imports = [
     ../../modules/mailservice-gitops.nix
+    ./hardware-configuration.nix
   ];
 
   system.stateVersion = "24.11";
@@ -15,9 +16,8 @@
   services.openssh.openFirewall = true;
 
   users.users.root.openssh.authorizedKeys = {
-    keys = [ ];
-    keyFiles = [
-      "/var/lib/secrets/truevipaccess/root_authorized_keys"
+    keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFQCVB2dV5WyOd0dK8MH0tIkgmLv71OTEdcMpJ2Whet0 mailservice-deploy"
     ];
   };
 
