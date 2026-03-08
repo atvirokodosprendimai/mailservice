@@ -242,6 +242,27 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, stripeSessionID st
 	}
 
 	now := time.Now().UTC()
+	if strings.TrimSpace(mailbox.AccountID) == "" {
+		base := now
+		if mailbox.ExpiresAt != nil && mailbox.ExpiresAt.After(base) {
+			base = *mailbox.ExpiresAt
+		}
+		nextExpiry := base.AddDate(0, 1, 0)
+
+		mailbox.Status = domain.MailboxStatusActive
+		mailbox.PaidAt = &now
+		mailbox.ExpiresAt = &nextExpiry
+		if err := s.repo.Update(ctx, mailbox); err != nil {
+			return nil, err
+		}
+		if s.provisioner != nil {
+			if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+				return nil, err
+			}
+		}
+		return mailbox, nil
+	}
+
 	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
 	if err != nil {
 		return nil, err

@@ -208,6 +208,36 @@ func TestMarkMailboxPaidEnsuresRuntimeMailbox(t *testing.T) {
 	}
 }
 
+func TestMarkMailboxPaidActivatesKeyBoundMailboxWithoutAccount(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byStripeSession: map[string]*domain.Mailbox{
+			"sess-key-1": {
+				ID:              "mbx-key-1",
+				IMAPUsername:    "mbx_key",
+				IMAPPassword:    "pass",
+				StripeSessionID: "sess-key-1",
+				Status:          domain.MailboxStatusPendingPayment,
+			},
+		},
+	}
+	provisioner := &fakeMailRuntimeProvisioner{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	mailbox, err := service.MarkMailboxPaid(context.Background(), "sess-key-1")
+	if err != nil {
+		t.Fatalf("MarkMailboxPaid failed: %v", err)
+	}
+	if mailbox.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected active status, got %s", mailbox.Status)
+	}
+	if mailbox.ExpiresAt == nil {
+		t.Fatalf("expected expires_at to be set")
+	}
+	if provisioner.calls != 1 {
+		t.Fatalf("expected one runtime provisioning call, got %d", provisioner.calls)
+	}
+}
+
 func TestResolveIMAPRejectsExpiredMailbox(t *testing.T) {
 	expiredAt := time.Now().UTC().Add(-time.Hour)
 	repo := &fakeMailboxRepo{
