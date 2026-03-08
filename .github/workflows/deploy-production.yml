@@ -4,9 +4,11 @@ env:
   REGISTRY: ghcr.io
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows:
+      - Docker Build and Push
+    types:
+      - completed
   workflow_dispatch:
 
 concurrency:
@@ -15,6 +17,13 @@ concurrency:
 
 jobs:
   deploy:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -25,14 +34,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Compute image refs
         id: images
         run: |
           repo_lc="${GITHUB_REPOSITORY,,}"
-          short_sha="${GITHUB_SHA:0:7}"
+          commit_sha="${DEPLOY_SHA}"
+          short_sha="${commit_sha:0:7}"
           echo "api=${{ env.REGISTRY }}/${repo_lc}-api:sha-${short_sha}" >> "$GITHUB_OUTPUT"
           echo "mailreceive=${{ env.REGISTRY }}/${repo_lc}-mailreceive:sha-${short_sha}" >> "$GITHUB_OUTPUT"
+        env:
+          DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
