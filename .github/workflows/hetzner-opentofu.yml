@@ -34,6 +34,10 @@ on:
         required: true
         default: "ubuntu-docker"
 
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 jobs:
   validate:
     runs-on: ubuntu-latest

@@ -122,7 +122,8 @@ The script:
 - prints the payment URL
 - polls `/v1/access/resolve` until payment activates the mailbox
 
-By default it sends the contents of `identity.pub` as the `edproof` payload.
+By default it sends the contents of `<work-dir>/identity.pub` as the `edproof` payload,
+or `<key-path>.pub` when a custom key path is used.
 If your verifier expects a different proof blob, pass `--edproof` or `--edproof-file`.
 
 ## Environment variables

@@ -145,11 +145,13 @@ require_cmd jq
 require_cmd ssh-keygen
 
 mkdir -p "$WORK_DIR"
+chmod 700 "$WORK_DIR"
 if [[ -z "$KEY_PATH" ]]; then
   KEY_PATH="$WORK_DIR/identity"
 fi
 
 if [[ ! -f "$KEY_PATH" || ! -f "$KEY_PATH.pub" ]]; then
+  umask 077
   rm -f "$KEY_PATH" "$KEY_PATH.pub"
   ssh-keygen -q -t ed25519 -N "" -f "$KEY_PATH" -C "mailservice-smoke@$(hostname -s 2>/dev/null || echo local)"
 fi
