@@ -173,12 +173,12 @@ func TestMarkMailboxPaidEnsuresRuntimeMailbox(t *testing.T) {
 	repo := &fakeMailboxRepo{
 		byStripeSession: map[string]*domain.Mailbox{
 			"sess-1": {
-				ID:              "mbx-1",
-				AccountID:       "acc-1",
-				IMAPUsername:    "mbx_abc",
-				IMAPPassword:    "pass",
-				StripeSessionID: "sess-1",
-				Status:          domain.MailboxStatusPendingPayment,
+				ID:               "mbx-1",
+				AccountID:        "acc-1",
+				IMAPUsername:     "mbx_abc",
+				IMAPPassword:     "pass",
+				PaymentSessionID: "sess-1",
+				Status:           domain.MailboxStatusPendingPayment,
 			},
 		},
 	}
@@ -212,11 +212,11 @@ func TestMarkMailboxPaidActivatesKeyBoundMailboxWithoutAccount(t *testing.T) {
 	repo := &fakeMailboxRepo{
 		byStripeSession: map[string]*domain.Mailbox{
 			"sess-key-1": {
-				ID:              "mbx-key-1",
-				IMAPUsername:    "mbx_key",
-				IMAPPassword:    "pass",
-				StripeSessionID: "sess-key-1",
-				Status:          domain.MailboxStatusPendingPayment,
+				ID:               "mbx-key-1",
+				IMAPUsername:     "mbx_key",
+				IMAPPassword:     "pass",
+				PaymentSessionID: "sess-key-1",
+				Status:           domain.MailboxStatusPendingPayment,
 			},
 		},
 	}
@@ -521,7 +521,7 @@ func (f *fakeMailboxRepo) GetPendingByAccountID(_ context.Context, accountID str
 	return nil, ports.ErrMailboxNotFound
 }
 
-func (f *fakeMailboxRepo) GetByStripeSessionID(_ context.Context, sessionID string) (*domain.Mailbox, error) {
+func (f *fakeMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID string) (*domain.Mailbox, error) {
 	if f.byStripeSession != nil {
 		if item, ok := f.byStripeSession[sessionID]; ok {
 			return item, nil

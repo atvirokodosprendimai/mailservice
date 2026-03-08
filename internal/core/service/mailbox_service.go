@@ -106,18 +106,18 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	}
 
 	mailbox := &domain.Mailbox{
-		ID:              id,
-		OwnerEmail:      billingEmail,
-		BillingEmail:    billingEmail,
-		KeyFingerprint:  key.Fingerprint,
-		IMAPHost:        s.imapHost,
-		IMAPPort:        s.imapPort,
-		IMAPUsername:    "mbx_" + strings.ReplaceAll(id[:12], "-", ""),
-		IMAPPassword:    imapPassword,
-		AccessToken:     accessToken,
-		StripeSessionID: paymentLink.SessionID,
-		PaymentURL:      paymentLink.URL,
-		Status:          domain.MailboxStatusPendingPayment,
+		ID:               id,
+		OwnerEmail:       billingEmail,
+		BillingEmail:     billingEmail,
+		KeyFingerprint:   key.Fingerprint,
+		IMAPHost:         s.imapHost,
+		IMAPPort:         s.imapPort,
+		IMAPUsername:     "mbx_" + strings.ReplaceAll(id[:12], "-", ""),
+		IMAPPassword:     imapPassword,
+		AccessToken:      accessToken,
+		PaymentSessionID: paymentLink.SessionID,
+		PaymentURL:       paymentLink.URL,
+		Status:           domain.MailboxStatusPendingPayment,
 	}
 
 	if err := s.repo.Create(ctx, mailbox); err != nil {
@@ -184,7 +184,7 @@ func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxReq
 			return nil, false, fmt.Errorf("create payment link: %w", err)
 		}
 
-		mailbox.StripeSessionID = paymentLink.SessionID
+		mailbox.PaymentSessionID = paymentLink.SessionID
 		mailbox.PaymentURL = paymentLink.URL
 	}
 
@@ -226,8 +226,8 @@ func (s *MailboxService) ListMailboxesForAccount(ctx context.Context, accountID 
 	return s.repo.ListByAccountID(ctx, accountID)
 }
 
-func (s *MailboxService) MarkMailboxPaid(ctx context.Context, stripeSessionID string) (*domain.Mailbox, error) {
-	mailbox, err := s.repo.GetByStripeSessionID(ctx, stripeSessionID)
+func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID string) (*domain.Mailbox, error) {
+	mailbox, err := s.repo.GetByPaymentSessionID(ctx, paymentSessionID)
 	if err != nil {
 		return nil, err
 	}

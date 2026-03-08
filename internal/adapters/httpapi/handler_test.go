@@ -241,7 +241,7 @@ func (r *httpMailboxRepo) GetPendingByAccountID(_ context.Context, _ string) (*d
 	return nil, ports.ErrMailboxNotFound
 }
 
-func (r *httpMailboxRepo) GetByStripeSessionID(_ context.Context, _ string) (*domain.Mailbox, error) {
+func (r *httpMailboxRepo) GetByPaymentSessionID(_ context.Context, _ string) (*domain.Mailbox, error) {
 	return nil, ports.ErrMailboxNotFound
 }
 
