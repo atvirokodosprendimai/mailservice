@@ -297,8 +297,27 @@ jobs:
             set -a
             . ./production.env
             set +a
-            docker compose -f compose.yml pull
-            docker compose -f compose.yml up -d
+
+            if docker compose version >/dev/null 2>&1; then
+              compose_cmd="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              compose_cmd="docker-compose"
+            else
+              apt-get update
+              if apt-get install -y docker-compose-plugin; then
+                compose_cmd="docker compose"
+              elif apt-get install -y docker-compose-v2; then
+                compose_cmd="docker compose"
+              elif apt-get install -y docker-compose; then
+                compose_cmd="docker-compose"
+              else
+                echo "failed to install docker compose" >&2
+                exit 1
+              fi
+            fi
+
+            $compose_cmd -f compose.yml pull
+            $compose_cmd -f compose.yml up -d
           '
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
