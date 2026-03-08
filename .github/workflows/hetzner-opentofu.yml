@@ -267,8 +267,11 @@ jobs:
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             cd /opt/mailservice
-            docker compose --env-file production.env -f compose.yml pull
-            docker compose --env-file production.env -f compose.yml up -d
+            set -a
+            . ./production.env
+            set +a
+            docker compose -f compose.yml pull
+            docker compose -f compose.yml up -d
           '
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
