@@ -1,6 +1,6 @@
 services:
   api:
-    image: ghcr.io/atvirokodosprendimai/mailservice-api:latest
+    image: ${API_IMAGE:-ghcr.io/atvirokodosprendimai/mailservice-api:latest}
     env_file:
       - ./production.env
     environment:
@@ -29,7 +29,7 @@ services:
     restart: unless-stopped
 
   mailreceive:
-    image: ghcr.io/atvirokodosprendimai/mailservice-mailreceive:latest
+    image: ${MAILRECEIVE_IMAGE:-ghcr.io/atvirokodosprendimai/mailservice-mailreceive:latest}
     env_file:
       - ./production.env
     environment:
