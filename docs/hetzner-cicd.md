@@ -92,3 +92,4 @@ Rollback expectations:
 - provider-specific payment/runtime secrets remain separate from infra secrets
 - this design uses OpenTofu, not Terraform
 - before pushing workflow or OpenTofu changes, use the local checklist in `docs/local-workflow-validation.md`
+- current production hostname target is `truevipaccess.com`; see `docs/truevipaccess-deploy.md`

@@ -37,3 +37,9 @@ variable "public_base_url" {
   description = "Public base URL for the application."
   type        = string
 }
+
+variable "public_hostname" {
+  description = "Public DNS hostname for the application."
+  type        = string
+  default     = "truevipaccess.com"
+}

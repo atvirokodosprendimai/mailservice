@@ -66,3 +66,7 @@ output "server_ipv4" {
 output "server_name" {
   value = hcloud_server.app.name
 }
+
+output "public_hostname" {
+  value = var.public_hostname
+}
