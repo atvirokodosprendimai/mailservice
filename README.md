@@ -86,6 +86,14 @@ docker compose up -d
 docker compose logs -f mailreceive
 ```
 
+Tunnel-based production compose baseline:
+
+```bash
+cp compose.tunnel.yml.example compose.tunnel.yml
+docker compose -f compose.tunnel.yml pull
+docker compose -f compose.tunnel.yml up -d
+```
+
 The service auto-loads `.env` from the project root (via `godotenv`).
 
 ## Environment variables

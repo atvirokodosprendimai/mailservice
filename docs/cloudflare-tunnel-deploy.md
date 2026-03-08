@@ -68,6 +68,11 @@ with:
 - dependency on the API container
 - no published API host port in the tunnel-based production shape
 
+Use:
+
+- `compose.yml.example` for local development
+- `compose.tunnel.yml.example` for the tunnel-based production shape
+
 ## Cloudflare Routing
 
 In Cloudflare:
