@@ -19,7 +19,6 @@ NixOps, while keeping `truevipaccess.com` available throughout the cutover.
 3. Create the secret directories and files:
    - `/var/lib/secrets/mailservice.env`
    - `/var/lib/secrets/cloudflared.env`
-   - `/var/lib/secrets/truevipaccess/root_authorized_keys`
 4. Populate the files with production values.
 
 `mailservice.env` must include at least:
