@@ -17,7 +17,7 @@ The current target is a single Hetzner host fronted by Cloudflare Tunnel for `tr
 
 | Service | Purpose |
 | --- | --- |
-| `mailservice` | Main API container. |
+| API (`api` in compose) | Main API container. |
 | `mailreceive` | Receive-only mail stack for inbound mail and IMAP access. |
 | `cloudflared` | Temporary reverse-proxy ingress for `truevipaccess.com`. |
 | SQLite volume | Shared persistent state for API and mail runtime. |
