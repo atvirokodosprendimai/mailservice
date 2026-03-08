@@ -1,0 +1,28 @@
+---
+- name: Bootstrap Hetzner Object Storage for OpenTofu state
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    bootstrap_dir: "{{ playbook_dir }}/.."
+  tasks:
+    - name: Create the OpenTofu state bucket
+      ansible.builtin.command:
+        cmd: "{{ bootstrap_dir }}/create_tofu_state_bucket.sh"
+      environment:
+        HETZNER_OBJECT_STORAGE_ACCESS_KEY: "{{ lookup('env', 'HETZNER_OBJECT_STORAGE_ACCESS_KEY') }}"
+        HETZNER_OBJECT_STORAGE_SECRET_KEY: "{{ lookup('env', 'HETZNER_OBJECT_STORAGE_SECRET_KEY') }}"
+        TOFU_STATE_BUCKET: "{{ lookup('env', 'TOFU_STATE_BUCKET') }}"
+        TOFU_STATE_REGION: "{{ lookup('env', 'TOFU_STATE_REGION') }}"
+        TOFU_STATE_ENDPOINT: "{{ lookup('env', 'TOFU_STATE_ENDPOINT') }}"
+
+    - name: Push GitHub secrets for the OpenTofu backend
+      ansible.builtin.command:
+        cmd: "{{ bootstrap_dir }}/set_github_tofu_state_secrets.sh"
+      environment:
+        GITHUB_REPOSITORY: "{{ lookup('env', 'GITHUB_REPOSITORY') }}"
+        TOFU_STATE_BUCKET: "{{ lookup('env', 'TOFU_STATE_BUCKET') }}"
+        TOFU_STATE_REGION: "{{ lookup('env', 'TOFU_STATE_REGION') }}"
+        TOFU_STATE_ENDPOINT: "{{ lookup('env', 'TOFU_STATE_ENDPOINT') }}"
+        HETZNER_OBJECT_STORAGE_ACCESS_KEY: "{{ lookup('env', 'HETZNER_OBJECT_STORAGE_ACCESS_KEY') }}"
+        HETZNER_OBJECT_STORAGE_SECRET_KEY: "{{ lookup('env', 'HETZNER_OBJECT_STORAGE_SECRET_KEY') }}"

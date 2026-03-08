@@ -29,6 +29,7 @@ Further reading:
 - [Migration plan](docs/migration-plan.md)
 - [Future access design](docs/future-access.md)
 - [Hetzner CI/CD](docs/hetzner-cicd.md)
+- [Hetzner Object Storage bootstrap](docs/hetzner-object-storage-bootstrap.md)
 - [Local workflow validation](docs/local-workflow-validation.md)
 - [truevipaccess.com deployment](docs/truevipaccess-deploy.md)
 - [Cloudflare Tunnel deployment](docs/cloudflare-tunnel-deploy.md)

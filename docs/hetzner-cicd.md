@@ -19,11 +19,15 @@ Recommended state backend:
 - S3-compatible remote state
 - Hetzner Object Storage is a practical option
 
+Bootstrap helper:
+- `docs/hetzner-object-storage-bootstrap.md`
+
 State handling rules:
 - do not commit backend credentials
 - generate backend config in CI from secrets
 - enable bucket versioning if supported
 - use remote state for apply, not local state
+- note: Hetzner Object Storage credentials are created in Hetzner Console, not from `HCLOUD_API`
 
 OpenTofu backend reference:
 - OpenTofu `s3` backend docs: https://opentofu.org/docs/v1.9/language/settings/backends/s3/
