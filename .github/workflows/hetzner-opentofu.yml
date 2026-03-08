@@ -325,8 +325,11 @@ jobs:
 
       - name: Health check
         run: |
-          curl --fail --silent --show-error \
-            --retry 10 --retry-delay 3 --retry-connrefused \
-            "${PUBLIC_BASE_URL}/healthz"
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            curl --fail --silent --show-error \
+              --retry 10 --retry-delay 3 --retry-connrefused \
+              http://127.0.0.1:8080/healthz
+          '
         env:
-          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
