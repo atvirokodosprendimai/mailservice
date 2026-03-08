@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -65,6 +66,7 @@ func NewHandler(cfg Config) *Handler {
 
 func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", h.handleHome)
 	mux.HandleFunc("GET /healthz", h.handleHealth)
 	mux.HandleFunc("POST /v1/accounts", h.handleCreateAccount)
 	mux.HandleFunc("POST /v1/auth/refresh", h.handleRefreshAuth)
@@ -90,9 +92,196 @@ func (h *Handler) Routes() http.Handler {
 	return handler
 }
 
+func (h *Handler) handleHome(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, homePageHTML)
+}
+
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
+
+var homePageHTML = fmt.Sprintf(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TrueVIP Access Mailbox</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4efe4;
+      --ink: #17222d;
+      --muted: #566575;
+      --card: #fffaf0;
+      --line: #d8cdb7;
+      --accent: #a23b2a;
+      --accent-ink: #fffaf0;
+      --code: #f0e7d5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background:
+        radial-gradient(circle at top left, rgba(162,59,42,0.12), transparent 28%%),
+        linear-gradient(180deg, #f7f2e8 0%%, var(--bg) 100%%);
+      color: var(--ink);
+    }
+    main {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 48px 20px 72px;
+    }
+    .eyebrow {
+      display: inline-block;
+      margin-bottom: 14px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: rgba(255, 250, 240, 0.75);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2.5rem, 5vw, 4.6rem);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+    }
+    .lede {
+      max-width: 42rem;
+      margin: 0 0 24px;
+      font-size: 1.15rem;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    .rules {
+      display: grid;
+      gap: 12px;
+      margin: 24px 0 32px;
+    }
+    .rule, .card {
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 250, 240, 0.9);
+    }
+    .rule strong { display: block; margin-bottom: 6px; }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin: 0 0 40px;
+    }
+    .button {
+      display: inline-block;
+      padding: 12px 16px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 700;
+      border: 1px solid var(--ink);
+    }
+    .button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-ink);
+    }
+    .button.secondary {
+      color: var(--ink);
+      background: transparent;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin: 0 0 28px;
+    }
+    h2 {
+      margin: 0 0 14px;
+      font-size: 1.35rem;
+    }
+    p, li { line-height: 1.6; }
+    ul, ol { margin: 0; padding-left: 20px; }
+    code {
+      padding: 0.1em 0.35em;
+      border-radius: 6px;
+      background: var(--code);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.95em;
+    }
+    .instruction {
+      margin-top: 24px;
+      padding: 22px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: var(--card);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">Inbound Mailboxes For Agents</div>
+    <h1>Stable mailbox identity, bound to a key.</h1>
+    <p class="lede">
+      Same key, same mailbox. Different key, different mailbox. Pay monthly. Read inbound mail over IMAP.
+      No SMTP. No outbound sending.
+    </p>
+
+    <div class="rules">
+      <div class="rule">
+        <strong>The key is the mailbox identity.</strong>
+        The billing email is only where the invoice goes.
+      </div>
+      <div class="rule">
+        <strong>This product is inbound-only.</strong>
+        You get inbound delivery and IMAP read access. You do not get SMTP submission or relay access.
+      </div>
+    </div>
+
+    <div class="actions">
+      <a class="button primary" href="#start">How to start</a>
+      <a class="button secondary" href="/healthz">Health</a>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Bring a key</h2>
+        <p>If your agent already has a key, use it. If it does not, generate one.</p>
+      </section>
+      <section class="card">
+        <h2>Claim a mailbox</h2>
+        <p>Call <code>POST /v1/mailboxes/claim</code> with <code>billing_email</code> and <code>edproof</code>.</p>
+      </section>
+      <section class="card">
+        <h2>Pay and read mail</h2>
+        <p>Pay from the emailed link, then call <code>POST /v1/access/resolve</code> with the same key proof.</p>
+      </section>
+    </div>
+
+    <section id="start" class="instruction">
+      <h2>Give this to your agent</h2>
+      <ol>
+        <li>Generate a key if you do not already have one.</li>
+        <li>Keep that key if you want the same mailbox next time.</li>
+        <li>Call <code>POST /v1/mailboxes/claim</code> with <code>billing_email</code> and <code>edproof</code>.</li>
+        <li>Pay from the emailed payment link.</li>
+        <li>Call <code>POST /v1/access/resolve</code> with <code>protocol=imap</code> and <code>edproof</code>.</li>
+        <li>Read mail using the returned IMAP details.</li>
+      </ol>
+    </section>
+  </main>
+</body>
+</html>
+`)
 
 type createAccountRequest struct {
 	OwnerEmail string `json:"owner_email"`
