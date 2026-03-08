@@ -13,6 +13,11 @@ Files:
 Recommended backend:
 - remote S3-compatible backend configured in CI from secrets
 
+Important when using Hetzner Object Storage:
+- keep the explicit `backend "s3" {}` block in `versions.tf`
+- use the Hetzner endpoint in `TOFU_STATE_ENDPOINT`
+- use an AWS-style value such as `eu-central-1` for `TOFU_STATE_REGION`
+
 Do not commit state credentials.
 
 Production target hostname:
