@@ -46,7 +46,7 @@ func TestCreateMailboxReturnsExistingPendingMailbox(t *testing.T) {
 	}
 }
 
-func TestClaimMailboxReturnsExistingByKeyFingerprint(t *testing.T) {
+func TestClaimMailboxRefreshesPaymentForExistingUnpaidKey(t *testing.T) {
 	repo := &fakeMailboxRepo{
 		byKeyFingerprint: map[string]*domain.Mailbox{
 			"edproof:key-1": {
@@ -62,7 +62,7 @@ func TestClaimMailboxReturnsExistingByKeyFingerprint(t *testing.T) {
 	notifier := &fakeMailboxNotifier{}
 	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
-	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+	mailbox, created, err := service.ClaimMailbox(context.Background(), "renewed@example.com", ports.VerifiedKey{
 		Fingerprint: "edproof:key-1",
 		Algorithm:   "ed25519",
 	})
@@ -75,11 +75,17 @@ func TestClaimMailboxReturnsExistingByKeyFingerprint(t *testing.T) {
 	if mailbox.ID != "mbx-1" {
 		t.Fatalf("expected existing mailbox id, got %q", mailbox.ID)
 	}
-	if payment.calls != 0 {
-		t.Fatalf("expected no payment link creation, got %d", payment.calls)
+	if mailbox.BillingEmail != "renewed@example.com" {
+		t.Fatalf("expected billing email refresh, got %q", mailbox.BillingEmail)
 	}
-	if notifier.calls != 0 {
-		t.Fatalf("expected no notifier call, got %d", notifier.calls)
+	if payment.calls != 1 {
+		t.Fatalf("expected payment link refresh, got %d", payment.calls)
+	}
+	if notifier.calls != 1 {
+		t.Fatalf("expected notifier call, got %d", notifier.calls)
+	}
+	if repo.updated == nil || repo.updated.PaymentSessionID == "" {
+		t.Fatalf("expected mailbox update with payment session")
 	}
 }
 
@@ -113,6 +119,45 @@ func TestClaimMailboxCreatesPendingMailboxForNewKey(t *testing.T) {
 	}
 	if notifier.calls != 1 {
 		t.Fatalf("expected one notifier call, got %d", notifier.calls)
+	}
+}
+
+func TestClaimMailboxReturnsExistingActiveMailboxWithoutRefreshingPayment(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-3": {
+				ID:             "mbx-3",
+				BillingEmail:   "billing@example.com",
+				KeyFingerprint: "edproof:key-3",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC().Add(-time.Minute)),
+				ExpiresAt:      &future,
+			},
+		},
+	}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-3",
+		Algorithm:   "ed25519",
+	})
+	if err != nil {
+		t.Fatalf("ClaimMailbox failed: %v", err)
+	}
+	if created {
+		t.Fatalf("expected existing mailbox reuse, got created=true")
+	}
+	if mailbox.ID != "mbx-3" {
+		t.Fatalf("expected existing mailbox id, got %q", mailbox.ID)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment link refresh, got %d", payment.calls)
+	}
+	if notifier.calls != 0 {
+		t.Fatalf("expected no notifier call, got %d", notifier.calls)
 	}
 }
 
@@ -448,6 +493,7 @@ type fakeMailboxRepo struct {
 	byStripeSession  map[string]*domain.Mailbox
 	byAccessToken    map[string]*domain.Mailbox
 	byKeyFingerprint map[string]*domain.Mailbox
+	updated          *domain.Mailbox
 }
 
 type fakeMailboxAccountRepo struct {
@@ -502,7 +548,20 @@ func (f *fakeMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) err
 	return nil
 }
 
-func (f *fakeMailboxRepo) Update(_ context.Context, _ *domain.Mailbox) error {
+func (f *fakeMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) error {
+	f.updated = mailbox
+	if f.byKeyFingerprint == nil {
+		f.byKeyFingerprint = map[string]*domain.Mailbox{}
+	}
+	if mailbox.KeyFingerprint != "" {
+		f.byKeyFingerprint[mailbox.KeyFingerprint] = mailbox
+	}
+	if f.byStripeSession == nil {
+		f.byStripeSession = map[string]*domain.Mailbox{}
+	}
+	if mailbox.PaymentSessionID != "" {
+		f.byStripeSession[mailbox.PaymentSessionID] = mailbox
+	}
 	return nil
 }
 
@@ -555,6 +614,13 @@ type fakePaymentGateway struct {
 func (f *fakePaymentGateway) CreatePaymentLink(_ context.Context, _ ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
 	f.calls++
 	return &ports.PaymentLink{SessionID: "sess-1", URL: "http://pay/1"}, nil
+}
+
+func (f *fakePaymentGateway) GetPaymentSession(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+	return &ports.PaymentSession{
+		SessionID: sessionID,
+		Status:    ports.PaymentSessionStatusSucceeded,
+	}, nil
 }
 
 type fakeMailboxTokenGenerator struct {

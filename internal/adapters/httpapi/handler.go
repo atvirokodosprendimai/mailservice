@@ -22,6 +22,7 @@ type Config struct {
 	StripeWebhookSecret string
 	MaxConcurrentReqs   int
 	KeyProofVerifier    ports.KeyProofVerifier
+	PaymentGateway      ports.PaymentGateway
 	MailboxService      *service.MailboxService
 	AccountService      *service.AccountService
 	Logger              *log.Logger
@@ -31,6 +32,7 @@ type Handler struct {
 	stripeWebhookSecret string
 	concurrencySem      chan struct{}
 	keyProofVerifier    ports.KeyProofVerifier
+	paymentGateway      ports.PaymentGateway
 	mailboxService      *service.MailboxService
 	accountService      *service.AccountService
 	logger              *log.Logger
@@ -48,6 +50,7 @@ func NewHandler(cfg Config) *Handler {
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
 		concurrencySem:      sem,
 		keyProofVerifier:    cfg.KeyProofVerifier,
+		paymentGateway:      cfg.PaymentGateway,
 		mailboxService:      cfg.MailboxService,
 		accountService:      cfg.AccountService,
 		logger:              cfg.Logger,
@@ -67,6 +70,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/mailboxes/claim", h.handleClaimMailbox)
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
 	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
+	mux.HandleFunc("GET /v1/payments/polar/success", h.handlePolarSuccess)
 	mux.HandleFunc("POST /v1/imap/resolve", h.withAccountToken(h.handleResolveIMAP))
 	mux.HandleFunc("POST /v1/imap/messages", h.withAccountToken(h.handleListIMAPMessages))
 	mux.HandleFunc("POST /v1/imap/messages/get", h.withAccountToken(h.handleGetIMAPMessageByUID))
@@ -600,6 +604,42 @@ func (h *Handler) handleMockPay(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "paid"})
 }
 
+func (h *Handler) handlePolarSuccess(w http.ResponseWriter, r *http.Request) {
+	if h.paymentGateway == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("payment gateway not configured"))
+		return
+	}
+
+	checkoutID := strings.TrimSpace(r.URL.Query().Get("checkout_id"))
+	if checkoutID == "" {
+		writeError(w, http.StatusBadRequest, errors.New("missing checkout_id"))
+		return
+	}
+
+	session, err := h.paymentGateway.GetPaymentSession(r.Context(), checkoutID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+
+	if !isSuccessfulPayment(session.Status) {
+		writeJSON(w, http.StatusConflict, map[string]string{"status": "waiting_payment"})
+		return
+	}
+
+	mailbox, err := h.mailboxService.MarkMailboxPaid(r.Context(), session.SessionID)
+	if err != nil {
+		if errors.Is(err, ports.ErrMailboxNotFound) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, mailboxResponse(mailbox))
+}
+
 func (h *Handler) withAccountToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("X-API-Token")
@@ -684,4 +724,8 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func isSuccessfulPayment(status ports.PaymentSessionStatus) bool {
+	return status == ports.PaymentSessionStatusSucceeded || status == ports.PaymentSessionStatusConfirmed
 }

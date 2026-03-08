@@ -69,8 +69,25 @@ type PaymentLink struct {
 	URL       string
 }
 
+type PaymentSessionStatus string
+
+const (
+	PaymentSessionStatusOpen      PaymentSessionStatus = "open"
+	PaymentSessionStatusConfirmed PaymentSessionStatus = "confirmed"
+	PaymentSessionStatusSucceeded PaymentSessionStatus = "succeeded"
+	PaymentSessionStatusExpired   PaymentSessionStatus = "expired"
+	PaymentSessionStatusFailed    PaymentSessionStatus = "failed"
+)
+
+type PaymentSession struct {
+	SessionID string
+	Status    PaymentSessionStatus
+	URL       string
+}
+
 type PaymentGateway interface {
 	CreatePaymentLink(ctx context.Context, req PaymentLinkRequest) (*PaymentLink, error)
+	GetPaymentSession(ctx context.Context, sessionID string) (*PaymentSession, error)
 }
 
 type Notifier interface {

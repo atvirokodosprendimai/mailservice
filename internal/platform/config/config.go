@@ -21,6 +21,11 @@ type Config struct {
 	ResendAPIKey        string
 	ResendFromEmail     string
 	ResendFromName      string
+	PolarToken          string
+	PolarServerURL      string
+	PolarPriceID        string
+	PolarSuccessURL     string
+	PolarReturnURL      string
 	StripeSecretKey     string
 	StripeWebhookSecret string
 	StripeSuccessURL    string
@@ -34,11 +39,15 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	publicBaseURL := getEnv("PUBLIC_BASE_URL", "http://localhost:8080")
+	polarSuccessURL := getEnv("POLAR_SUCCESS_URL", publicBaseURL+"/v1/payments/polar/success?checkout_id={CHECKOUT_ID}")
+	polarReturnURL := getEnv("POLAR_RETURN_URL", publicBaseURL)
+
 	return &Config{
 		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
 		DatabaseDSN:         getEnv("DATABASE_DSN", "mailservice.db"),
 		MaxConcurrentReqs:   getEnvInt("MAX_CONCURRENT_REQUESTS", 100),
-		PublicBaseURL:       getEnv("PUBLIC_BASE_URL", "http://localhost:8080"),
+		PublicBaseURL:       publicBaseURL,
 		MailDomain:          getEnv("MAIL_DOMAIN", "mail.local"),
 		IMAPHost:            getEnv("IMAP_HOST", getEnv("MAIL_DOMAIN", "mail.local")),
 		IMAPPort:            getEnvInt("IMAP_PORT", 143),
@@ -48,6 +57,11 @@ func Load() (*Config, error) {
 		ResendAPIKey:        os.Getenv("RESEND_API_KEY"),
 		ResendFromEmail:     getEnv("RESEND_FROM_EMAIL", ""),
 		ResendFromName:      getEnv("RESEND_FROM_NAME", "MailService"),
+		PolarToken:          os.Getenv("POLAR_TOKEN"),
+		PolarServerURL:      getEnv("POLAR_SERVER_URL", "https://api.polar.sh"),
+		PolarPriceID:        getEnv("POLAR_PRICE_ID", ""),
+		PolarSuccessURL:     polarSuccessURL,
+		PolarReturnURL:      polarReturnURL,
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		StripeSuccessURL:    getEnv("STRIPE_SUCCESS_URL", "http://localhost:8080/payment/success"),

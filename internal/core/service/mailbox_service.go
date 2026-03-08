@@ -83,6 +83,29 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 
 	existing, err := s.repo.GetByKeyFingerprint(ctx, key.Fingerprint)
 	if err == nil {
+		if existing.Usable() {
+			return existing, false, nil
+		}
+
+		paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
+			MailboxID:  existing.ID,
+			OwnerEmail: billingEmail,
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("create payment link: %w", err)
+		}
+
+		existing.OwnerEmail = billingEmail
+		existing.BillingEmail = billingEmail
+		existing.PaymentSessionID = paymentLink.SessionID
+		existing.PaymentURL = paymentLink.URL
+		existing.Status = domain.MailboxStatusPendingPayment
+		if err := s.repo.Update(ctx, existing); err != nil {
+			return nil, false, fmt.Errorf("update mailbox payment link: %w", err)
+		}
+		if err := s.notifier.SendPaymentLink(ctx, existing.BillingEmail, existing.PaymentURL, existing.ID); err != nil {
+			return nil, false, fmt.Errorf("send payment link: %w", err)
+		}
 		return existing, false, nil
 	}
 	if !errors.Is(err, ports.ErrMailboxNotFound) {

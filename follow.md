@@ -16,6 +16,12 @@ curl -X POST http://localhost:8080/v1/mailboxes/claim \
 
 2. Complete payment and then resolve IMAP details with the same key:
 
+If using Polar checkout, confirm the redirected checkout before resolving access:
+
+```bash
+curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
+```
+
 ```bash
 curl -X POST http://localhost:8080/v1/access/resolve \
   -H 'Content-Type: application/json' \

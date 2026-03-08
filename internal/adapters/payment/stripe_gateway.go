@@ -73,6 +73,31 @@ func (g *StripeGateway) CreatePaymentLink(ctx context.Context, req ports.Payment
 	}, nil
 }
 
+func (g *StripeGateway) GetPaymentSession(ctx context.Context, sessionID string) (*ports.PaymentSession, error) {
+	sess, err := session.Get(sessionID, &stripe.CheckoutSessionParams{
+		Params: stripe.Params{Context: ctx},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	status := ports.PaymentSessionStatusOpen
+	switch sess.PaymentStatus {
+	case stripe.CheckoutSessionPaymentStatusPaid:
+		status = ports.PaymentSessionStatusSucceeded
+	case stripe.CheckoutSessionPaymentStatusNoPaymentRequired:
+		status = ports.PaymentSessionStatusConfirmed
+	case stripe.CheckoutSessionPaymentStatusUnpaid:
+		status = ports.PaymentSessionStatusOpen
+	}
+
+	return &ports.PaymentSession{
+		SessionID: sess.ID,
+		Status:    status,
+		URL:       sess.URL,
+	}, nil
+}
+
 type MockGateway struct {
 	baseURL string
 }
@@ -85,6 +110,14 @@ func (g *MockGateway) CreatePaymentLink(_ context.Context, req ports.PaymentLink
 	sessionID := "mock_" + uuid.NewString()
 	return &ports.PaymentLink{
 		SessionID: sessionID,
+		URL:       fmt.Sprintf("%s/mock/pay/%s", g.baseURL, sessionID),
+	}, nil
+}
+
+func (g *MockGateway) GetPaymentSession(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+	return &ports.PaymentSession{
+		SessionID: sessionID,
+		Status:    ports.PaymentSessionStatusSucceeded,
 		URL:       fmt.Sprintf("%s/mock/pay/%s", g.baseURL, sessionID),
 	}, nil
 }

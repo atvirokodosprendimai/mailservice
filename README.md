@@ -36,7 +36,8 @@ Further reading:
 - SQLite (pure Go, no CGO) via `github.com/glebarez/sqlite`
 - GORM ORM
 - Goose SQL migrations
-- Stripe Checkout + webhooks today
+- Polar checkout for the preferred key-bound flow
+- Stripe Checkout + webhooks kept as legacy fallback
 - mock payment links for local development
 
 ## Run
@@ -94,10 +95,15 @@ The service auto-loads `.env` from the project root (via `godotenv`).
 - `IMAP_HOST` (default `MAIL_DOMAIN`)
 - `IMAP_PORT` (default `143`)
 - `MAILBOX_PRICE_CENTS` (default `299`)
+- `POLAR_TOKEN` (optional; enable Polar for the preferred key-bound flow)
+- `POLAR_PRICE_ID` (required when Polar is enabled)
+- `POLAR_SERVER_URL` (default `https://api.polar.sh`)
+- `POLAR_SUCCESS_URL` (default `PUBLIC_BASE_URL/v1/payments/polar/success?checkout_id={CHECKOUT_ID}`)
+- `POLAR_RETURN_URL` (default `PUBLIC_BASE_URL`)
 - `STRIPE_CURRENCY` (default `usd`)
 - `STRIPE_SUCCESS_URL` (default `http://localhost:8080/payment/success`)
 - `STRIPE_CANCEL_URL` (default `http://localhost:8080/payment/cancel`)
-- `STRIPE_SECRET_KEY` (optional; if empty, mock payment links are used)
+- `STRIPE_SECRET_KEY` (optional legacy fallback; if no real provider is configured, mock payment links are used)
 - `STRIPE_WEBHOOK_SECRET` (required only for real Stripe webhook verification)
 - `SENDGRID_API_KEY` (optional; enable SendGrid notifier)
 - `SENDGRID_FROM_EMAIL` (required when SendGrid is enabled)
@@ -116,6 +122,12 @@ Preferred key-bound claim flow:
 curl -X POST http://localhost:8080/v1/mailboxes/claim \
   -H 'Content-Type: application/json' \
   -d '{"billing_email":"billing@example.com","edproof":"<proof>"}'
+```
+
+Confirm Polar payment after redirect:
+
+```bash
+curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
 ```
 
 Resolve IMAP credentials by key proof:
