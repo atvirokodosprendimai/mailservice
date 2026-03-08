@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -15,6 +16,8 @@ type mailboxModel struct {
 	ID              string `gorm:"primaryKey;type:text"`
 	AccountID       string `gorm:"not null;index"`
 	OwnerEmail      string `gorm:"not null"`
+	BillingEmail    string `gorm:"not null"`
+	KeyFingerprint  string
 	IMAPHost        string `gorm:"not null"`
 	IMAPPort        int    `gorm:"not null"`
 	IMAPUsername    string `gorm:"not null;uniqueIndex"`
@@ -38,6 +41,8 @@ func toDomain(model *mailboxModel) *domain.Mailbox {
 		ID:              model.ID,
 		AccountID:       model.AccountID,
 		OwnerEmail:      model.OwnerEmail,
+		BillingEmail:    firstNonEmpty(model.BillingEmail, model.OwnerEmail),
+		KeyFingerprint:  strings.TrimSpace(strings.ToLower(model.KeyFingerprint)),
 		IMAPHost:        model.IMAPHost,
 		IMAPPort:        model.IMAPPort,
 		IMAPUsername:    model.IMAPUsername,
@@ -54,10 +59,16 @@ func toDomain(model *mailboxModel) *domain.Mailbox {
 }
 
 func toModel(mailbox *domain.Mailbox) *mailboxModel {
+	billingEmail := firstNonEmpty(
+		strings.TrimSpace(strings.ToLower(mailbox.BillingEmail)),
+		strings.TrimSpace(strings.ToLower(mailbox.OwnerEmail)),
+	)
 	return &mailboxModel{
 		ID:              mailbox.ID,
 		AccountID:       mailbox.AccountID,
 		OwnerEmail:      mailbox.OwnerEmail,
+		BillingEmail:    billingEmail,
+		KeyFingerprint:  strings.TrimSpace(strings.ToLower(mailbox.KeyFingerprint)),
 		IMAPHost:        mailbox.IMAPHost,
 		IMAPPort:        mailbox.IMAPPort,
 		IMAPUsername:    mailbox.IMAPUsername,
@@ -148,4 +159,25 @@ func (r *MailboxRepository) GetByAccessToken(ctx context.Context, accessToken st
 		return nil, err
 	}
 	return toDomain(&model), nil
+}
+
+func (r *MailboxRepository) GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error) {
+	var model mailboxModel
+	err := r.db.WithContext(ctx).First(&model, "key_fingerprint = ?", strings.TrimSpace(strings.ToLower(keyFingerprint))).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrMailboxNotFound
+		}
+		return nil, err
+	}
+	return toDomain(&model), nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
