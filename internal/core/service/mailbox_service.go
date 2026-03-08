@@ -315,6 +315,48 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 	}, nil
 }
 
+func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.VerifiedKey) (*ResolveIMAPResult, error) {
+	key.Fingerprint = strings.TrimSpace(strings.ToLower(key.Fingerprint))
+	key.Algorithm = strings.TrimSpace(strings.ToLower(key.Algorithm))
+	if key.Fingerprint == "" || key.Algorithm == "" {
+		return nil, ports.ErrInvalidKeyProof
+	}
+
+	mailbox, err := s.repo.GetByKeyFingerprint(ctx, key.Fingerprint)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now().UTC()
+	if !mailbox.Usable() {
+		if mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
+			mailbox.Status = domain.MailboxStatusExpired
+			_ = s.repo.Update(ctx, mailbox)
+		}
+		return nil, ports.ErrMailboxNotUsable
+	}
+
+	if s.shouldRewriteLegacyIMAPHost(mailbox.IMAPHost) || mailbox.IMAPPort <= 0 {
+		mailbox.IMAPHost = s.imapHost
+		mailbox.IMAPPort = s.imapPort
+		_ = s.repo.Update(ctx, mailbox)
+	}
+	if s.provisioner != nil {
+		if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+			return nil, err
+		}
+	}
+
+	return &ResolveIMAPResult{
+		MailboxID: mailbox.ID,
+		Host:      mailbox.IMAPHost,
+		Port:      mailbox.IMAPPort,
+		Username:  mailbox.IMAPUsername,
+		Password:  mailbox.IMAPPassword,
+		Email:     mailbox.IMAPUsername + "@" + s.mailDomain,
+	}, nil
+}
+
 func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken string, limit int, unreadOnly bool, includeBody bool) ([]ports.IMAPMessage, error) {
 	if limit <= 0 {
 		limit = 20

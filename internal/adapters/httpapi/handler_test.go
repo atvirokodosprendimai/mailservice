@@ -95,6 +95,98 @@ func TestHandleClaimMailboxRejectsInvalidProof(t *testing.T) {
 	}
 }
 
+func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &httpMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:             "mbx-1",
+				KeyFingerprint: "edproof:key-1",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(future.Add(-time.Hour)),
+				ExpiresAt:      &future,
+				IMAPHost:       "imap.example.com",
+				IMAPPort:       143,
+				IMAPUsername:   "mbx_abc",
+				IMAPPassword:   "secret",
+			},
+		},
+	}
+	handler := NewHandler(Config{
+		KeyProofVerifier: fakeKeyProofVerifier{
+			key: &ports.VerifiedKey{Fingerprint: "edproof:key-1", Algorithm: "ed25519"},
+		},
+		MailboxService: service.NewMailboxService(
+			repo,
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(`{"protocol":"imap","edproof":"proof"}`))
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["Email"] != "mbx_abc@mail.test.local" {
+		t.Fatalf("unexpected resolved email: %#v", resp["Email"])
+	}
+}
+
+func TestHandleResolveAccessReturnsWaitingPaymentForInactiveMailbox(t *testing.T) {
+	repo := &httpMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-2": {
+				ID:             "mbx-2",
+				KeyFingerprint: "edproof:key-2",
+				Status:         domain.MailboxStatusPendingPayment,
+			},
+		},
+	}
+	handler := NewHandler(Config{
+		KeyProofVerifier: fakeKeyProofVerifier{
+			key: &ports.VerifiedKey{Fingerprint: "edproof:key-2", Algorithm: "ed25519"},
+		},
+		MailboxService: service.NewMailboxService(
+			repo,
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(`{"protocol":"imap","edproof":"proof"}`))
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 409 {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 type fakeKeyProofVerifier struct {
 	key *ports.VerifiedKey
 	err error
@@ -210,4 +302,8 @@ func (httpMailReader) ListMessages(_ context.Context, _ string, _ int, _ string,
 
 func (httpMailReader) GetMessageByUID(_ context.Context, _ string, _ int, _ string, _ string, _ uint32, _ bool) (*ports.IMAPMessage, error) {
 	return nil, nil
+}
+
+func ptrTime(value time.Time) *time.Time {
+	return &value
 }

@@ -267,6 +267,65 @@ func TestResolveIMAPAllowsPendingMailboxWhenAccountSubscribed(t *testing.T) {
 	}
 }
 
+func TestResolveIMAPByKeyReturnsActiveMailbox(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:             "mbx-1",
+				KeyFingerprint: "edproof:key-1",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC().Add(-time.Minute)),
+				ExpiresAt:      &future,
+				IMAPHost:       "imap.example.com",
+				IMAPPort:       143,
+				IMAPUsername:   "mbx_abc",
+				IMAPPassword:   "secret",
+			},
+		},
+	}
+	provisioner := &fakeMailRuntimeProvisioner{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "mx.example.com", "imap.example.com", 143)
+
+	result, err := service.ResolveIMAPByKey(context.Background(), ports.VerifiedKey{
+		Fingerprint: "edproof:key-1",
+		Algorithm:   "ed25519",
+	})
+	if err != nil {
+		t.Fatalf("ResolveIMAPByKey failed: %v", err)
+	}
+	if result.Email != "mbx_abc@mx.example.com" {
+		t.Fatalf("expected email to use mail domain, got %q", result.Email)
+	}
+	if provisioner.calls != 1 {
+		t.Fatalf("expected provisioner called once")
+	}
+}
+
+func TestResolveIMAPByKeyRejectsUnusableMailbox(t *testing.T) {
+	expired := time.Now().UTC().Add(-time.Minute)
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-2": {
+				ID:             "mbx-2",
+				KeyFingerprint: "edproof:key-2",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC().Add(-time.Hour)),
+				ExpiresAt:      &expired,
+			},
+		},
+	}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mx.example.com", "imap.example.com", 143)
+
+	_, err := service.ResolveIMAPByKey(context.Background(), ports.VerifiedKey{
+		Fingerprint: "edproof:key-2",
+		Algorithm:   "ed25519",
+	})
+	if err != ports.ErrMailboxNotUsable {
+		t.Fatalf("expected ErrMailboxNotUsable, got %v", err)
+	}
+}
+
 func TestResolveIMAPReturnsMailboxAddressUsingMailDomain(t *testing.T) {
 	future := time.Now().UTC().Add(time.Hour)
 	repo := &fakeMailboxRepo{

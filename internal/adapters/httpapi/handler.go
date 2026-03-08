@@ -66,6 +66,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/mailboxes", h.withAccountToken(h.handleCreateMailbox))
 	mux.HandleFunc("POST /v1/mailboxes/claim", h.handleClaimMailbox)
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
+	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
 	mux.HandleFunc("POST /v1/imap/resolve", h.withAccountToken(h.handleResolveIMAP))
 	mux.HandleFunc("POST /v1/imap/messages", h.withAccountToken(h.handleListIMAPMessages))
 	mux.HandleFunc("POST /v1/imap/messages/get", h.withAccountToken(h.handleGetIMAPMessageByUID))
@@ -368,6 +369,11 @@ type resolveIMAPRequest struct {
 	AccessToken string `json:"access_token"`
 }
 
+type resolveAccessRequest struct {
+	Protocol string `json:"protocol"`
+	EDProof  string `json:"edproof"`
+}
+
 func (h *Handler) handleResolveIMAP(w http.ResponseWriter, r *http.Request) {
 	var req resolveIMAPRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -382,6 +388,50 @@ func (h *Handler) handleResolveIMAP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, err)
 		case errors.Is(err, ports.ErrMailboxNotUsable):
 			writeJSON(w, http.StatusConflict, map[string]string{"status": "waiting_payment"})
+		default:
+			writeError(w, http.StatusInternalServerError, err)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleResolveAccess(w http.ResponseWriter, r *http.Request) {
+	var req resolveAccessRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.TrimSpace(strings.ToLower(req.Protocol)) != "imap" {
+		writeError(w, http.StatusBadRequest, errors.New("unsupported protocol"))
+		return
+	}
+	if h.keyProofVerifier == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("key proof verifier not configured"))
+		return
+	}
+
+	key, err := h.keyProofVerifier.Verify(r.Context(), req.EDProof)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrInvalidKeyProof):
+			writeError(w, http.StatusUnauthorized, err)
+		default:
+			writeError(w, http.StatusServiceUnavailable, err)
+		}
+		return
+	}
+
+	result, err := h.mailboxService.ResolveIMAPByKey(r.Context(), *key)
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrMailboxNotFound):
+			writeError(w, http.StatusNotFound, err)
+		case errors.Is(err, ports.ErrMailboxNotUsable):
+			writeJSON(w, http.StatusConflict, map[string]string{"status": "waiting_payment"})
+		case errors.Is(err, ports.ErrInvalidKeyProof):
+			writeError(w, http.StatusUnauthorized, err)
 		default:
 			writeError(w, http.StatusInternalServerError, err)
 		}
