@@ -30,6 +30,7 @@ Further reading:
 - [Hetzner CI/CD](docs/hetzner-cicd.md)
 - [Local workflow validation](docs/local-workflow-validation.md)
 - [truevipaccess.com deployment](docs/truevipaccess-deploy.md)
+- [Cloudflare Tunnel deployment](docs/cloudflare-tunnel-deploy.md)
 
 ## Stack
 
@@ -83,6 +84,14 @@ cp compose.yml.example compose.yml
 docker compose pull
 docker compose up -d
 docker compose logs -f mailreceive
+```
+
+Tunnel-based production compose baseline:
+
+```bash
+cp compose.tunnel.yml.example compose.tunnel.yml
+docker compose -f compose.tunnel.yml pull
+docker compose -f compose.tunnel.yml up -d
 ```
 
 The service auto-loads `.env` from the project root (via `godotenv`).
