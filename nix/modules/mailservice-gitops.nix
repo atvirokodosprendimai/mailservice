@@ -37,6 +37,17 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = !(lib.hasInfix "PLACEHOLDER" cfg.apiImage);
+        message = "services.mailserviceGitOps.apiImage must be pinned to a real image tag before deployment.";
+      }
+      {
+        assertion = !(lib.hasInfix "PLACEHOLDER" cfg.mailreceiveImage);
+        message = "services.mailserviceGitOps.mailreceiveImage must be pinned to a real image tag before deployment.";
+      }
+    ];
+
     virtualisation.oci-containers.backend = "docker";
     virtualisation.docker.enable = true;
 
