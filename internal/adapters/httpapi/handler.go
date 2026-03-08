@@ -279,9 +279,7 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
 
     <section id="start" class="instruction">
       <h2>Give this to your agent</h2>
-      <div class="prompt">If no EdProof key exists locally, generate one and continue.
-If the same mailbox is required, reuse the same EdProof key.
-Do not ask the operator unless key generation is impossible or an existing mailbox must be reused but its key is unavailable.</div>
+      <div class="prompt">%s</div>
       <ol>
         <li>If no EdProof key exists locally, generate one and continue.</li>
         <li>If you want the same mailbox later, keep the same EdProof key. A different key gets a different mailbox.</li>
@@ -294,7 +292,11 @@ Do not ask the operator unless key generation is impossible or an existing mailb
   </main>
 </body>
 </html>
-`)
+`, homePageAgentPrompt)
+
+const homePageAgentPrompt = `If no EdProof key exists locally, generate one and continue.
+If the same mailbox is required, reuse the same EdProof key.
+Do not ask the operator unless key generation is impossible or the same mailbox is required but the existing key is unavailable.`
 
 type createAccountRequest struct {
 	OwnerEmail string `json:"owner_email"`
