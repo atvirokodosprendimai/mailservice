@@ -70,20 +70,23 @@ Run:
 5. gated `apply` job can run only after the `plan` job succeeds
 6. production environment approval can be enforced through GitHub environment protection
 7. `deploy` job writes `production.env` from GitHub vars/secrets with secret-safe file permissions
-8. workflow pins the SSH host key from `DEPLOY_HOST_KEY`
-9. workflow uploads `compose.tunnel.yml.example` and `production.env` to `/opt/mailservice`
-10. workflow runs `docker compose pull` and `docker compose up -d` on the host
-11. workflow checks `${PUBLIC_BASE_URL}/healthz` with bounded retries
+8. deploy computes immutable image refs for the current commit SHA
+9. workflow waits for those GHCR image tags to exist before continuing
+10. workflow pins the SSH host key from `DEPLOY_HOST_KEY`
+11. workflow uploads `compose.tunnel.yml.example` and `production.env` to `/opt/mailservice`
+12. workflow runs compose on the host against those exact image tags
+13. workflow checks the host-local API health endpoint with bounded retries
 
 ## Rollout
 
 Recommended rollout:
 1. build and publish image
-2. apply infrastructure changes if needed
-3. upload env/runtime config
-4. pull new image on host
-5. restart service with Docker Compose
-6. run health check
+2. resolve exact immutable image tags for the commit being deployed
+3. apply infrastructure changes if needed
+4. upload env/runtime config
+5. pull those exact images on host
+6. restart service with Docker Compose
+7. run health check
 
 ## Rollback
 
@@ -106,3 +109,4 @@ Rollback expectations:
 - for the tunnel path, pass `CLOUDFLARE_TUNNEL_TOKEN` into the container as `TUNNEL_TOKEN`
 - host-side deploy uses `compose.tunnel.yml.example` plus a generated `production.env`
 - the tunnel compose file reads runtime values from `production.env`; it is not meant to hard-code production secrets
+- production deploy uses immutable GHCR tags of the form `sha-<commit>` rather than relying on `latest`
