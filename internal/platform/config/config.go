@@ -26,6 +26,7 @@ type Config struct {
 	PolarPriceID        string
 	PolarSuccessURL     string
 	PolarReturnURL      string
+	PolarWebhookSecret  string
 	StripeSecretKey     string
 	StripeWebhookSecret string
 	StripeSuccessURL    string
@@ -62,6 +63,7 @@ func Load() (*Config, error) {
 		PolarPriceID:        getEnv("POLAR_PRICE_ID", ""),
 		PolarSuccessURL:     polarSuccessURL,
 		PolarReturnURL:      polarReturnURL,
+		PolarWebhookSecret:  os.Getenv("POLAR_WEBHOOK_SECRET"),
 		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		StripeSuccessURL:    getEnv("STRIPE_SUCCESS_URL", "http://localhost:8080/payment/success"),

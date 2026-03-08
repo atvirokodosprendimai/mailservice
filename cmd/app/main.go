@@ -81,6 +81,7 @@ func main() {
 
 	handler := httpapi.NewHandler(httpapi.Config{
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
+		PolarWebhookSecret:  cfg.PolarWebhookSecret,
 		MaxConcurrentReqs:   cfg.MaxConcurrentReqs,
 		PaymentGateway:      paymentGateway,
 		MailboxService:      mailboxService,

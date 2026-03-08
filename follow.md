@@ -20,6 +20,8 @@ If using Polar checkout, confirm the redirected checkout before resolving access
 
 ```bash
 curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
+
+# production should use signed POST /v1/webhooks/polar with POLAR_WEBHOOK_SECRET
 ```
 
 ```bash
