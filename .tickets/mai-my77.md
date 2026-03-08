@@ -1,6 +1,6 @@
 ---
 id: mai-my77
-status: open
+status: closed
 deps: [mai-mtk9]
 links: []
 created: 2026-03-08T09:50:58Z

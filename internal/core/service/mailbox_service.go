@@ -68,6 +68,8 @@ type ResolveIMAPResult struct {
 	Email     string `json:"email"`
 }
 
+type ResolveAccessResult = ResolveIMAPResult
+
 func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, key ports.VerifiedKey) (*domain.Mailbox, bool, error) {
 	billingEmail = strings.TrimSpace(strings.ToLower(billingEmail))
 	if billingEmail == "" || !strings.Contains(billingEmail, "@") {
@@ -292,7 +294,10 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 	return mailbox, nil
 }
 
-func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken string) (*ResolveIMAPResult, error) {
+func (s *MailboxService) ResolveAccessByToken(ctx context.Context, accessToken string, protocol string) (*ResolveAccessResult, error) {
+	if !supportsProtocol(protocol) {
+		return nil, errors.New("unsupported protocol")
+	}
 	mailbox, err := s.repo.GetByAccessToken(ctx, accessToken)
 	if err != nil {
 		return nil, err
@@ -326,17 +331,17 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 		}
 	}
 
-	return &ResolveIMAPResult{
-		MailboxID: mailbox.ID,
-		Host:      mailbox.IMAPHost,
-		Port:      mailbox.IMAPPort,
-		Username:  mailbox.IMAPUsername,
-		Password:  mailbox.IMAPPassword,
-		Email:     mailbox.IMAPUsername + "@" + s.mailDomain,
-	}, nil
+	return s.resolveAccessResult(mailbox), nil
 }
 
-func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.VerifiedKey) (*ResolveIMAPResult, error) {
+func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken string) (*ResolveIMAPResult, error) {
+	return s.ResolveAccessByToken(ctx, accessToken, "imap")
+}
+
+func (s *MailboxService) ResolveAccessByKey(ctx context.Context, key ports.VerifiedKey, protocol string) (*ResolveAccessResult, error) {
+	if !supportsProtocol(protocol) {
+		return nil, errors.New("unsupported protocol")
+	}
 	key.Fingerprint = strings.TrimSpace(strings.ToLower(key.Fingerprint))
 	key.Algorithm = strings.TrimSpace(strings.ToLower(key.Algorithm))
 	if key.Fingerprint == "" || key.Algorithm == "" {
@@ -368,6 +373,14 @@ func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.Verifie
 		}
 	}
 
+	return s.resolveAccessResult(mailbox), nil
+}
+
+func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.VerifiedKey) (*ResolveIMAPResult, error) {
+	return s.ResolveAccessByKey(ctx, key, "imap")
+}
+
+func (s *MailboxService) resolveAccessResult(mailbox *domain.Mailbox) *ResolveAccessResult {
 	return &ResolveIMAPResult{
 		MailboxID: mailbox.ID,
 		Host:      mailbox.IMAPHost,
@@ -375,7 +388,7 @@ func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.Verifie
 		Username:  mailbox.IMAPUsername,
 		Password:  mailbox.IMAPPassword,
 		Email:     mailbox.IMAPUsername + "@" + s.mailDomain,
-	}, nil
+	}
 }
 
 func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken string, limit int, unreadOnly bool, includeBody bool) ([]ports.IMAPMessage, error) {
@@ -486,4 +499,8 @@ func (s *MailboxService) shouldRewriteLegacyIMAPHost(value string) bool {
 		return true
 	}
 	return host == "imap.mailservice.local"
+}
+
+func supportsProtocol(protocol string) bool {
+	return strings.TrimSpace(strings.ToLower(protocol)) == "imap"
 }

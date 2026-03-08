@@ -187,6 +187,36 @@ func TestHandleResolveAccessReturnsWaitingPaymentForInactiveMailbox(t *testing.T
 	}
 }
 
+func TestHandleResolveAccessRejectsUnsupportedProtocol(t *testing.T) {
+	handler := NewHandler(Config{
+		KeyProofVerifier: fakeKeyProofVerifier{
+			key: &ports.VerifiedKey{Fingerprint: "edproof:key-2", Algorithm: "ed25519"},
+		},
+		MailboxService: service.NewMailboxService(
+			&httpMailboxRepo{},
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(`{"protocol":"pop3","edproof":"proof"}`))
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 type fakeKeyProofVerifier struct {
 	key *ports.VerifiedKey
 	err error

@@ -381,7 +381,7 @@ func (h *Handler) handleResolveIMAP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.mailboxService.ResolveIMAPByToken(r.Context(), req.AccessToken)
+	result, err := h.mailboxService.ResolveAccessByToken(r.Context(), req.AccessToken, "imap")
 	if err != nil {
 		switch {
 		case errors.Is(err, ports.ErrMailboxNotFound):
@@ -423,7 +423,7 @@ func (h *Handler) handleResolveAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.mailboxService.ResolveIMAPByKey(r.Context(), *key)
+	result, err := h.mailboxService.ResolveAccessByKey(r.Context(), *key, req.Protocol)
 	if err != nil {
 		switch {
 		case errors.Is(err, ports.ErrMailboxNotFound):
