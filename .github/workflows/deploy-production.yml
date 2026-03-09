@@ -1,0 +1,187 @@
+name: Deploy Production App
+
+env:
+  REGISTRY: ghcr.io
+
+on:
+  workflow_run:
+    workflows:
+      - Docker Build and Push
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Compute image refs
+        id: images
+        run: |
+          repo_lc="${GITHUB_REPOSITORY,,}"
+          commit_sha="${DEPLOY_SHA}"
+          short_sha="${commit_sha:0:7}"
+          echo "api=${{ env.REGISTRY }}/${repo_lc}-api:sha-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "mailreceive=${{ env.REGISTRY }}/${repo_lc}-mailreceive:sha-${short_sha}" >> "$GITHUB_OUTPUT"
+        env:
+          DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for published images
+        env:
+          API_IMAGE: ${{ steps.images.outputs.api }}
+          MAILRECEIVE_IMAGE: ${{ steps.images.outputs.mailreceive }}
+        run: |
+          for image in "$API_IMAGE" "$MAILRECEIVE_IMAGE"; do
+            for attempt in $(seq 1 30); do
+              if docker manifest inspect "$image" >/dev/null 2>&1; then
+                break
+              fi
+              if [ "$attempt" -eq 30 ]; then
+                echo "image not available: $image" >&2
+                exit 1
+              fi
+              sleep 20
+            done
+          done
+
+      - name: Write production env
+        run: |
+          umask 077
+          cat > production.env <<EOF
+          API_IMAGE=${API_IMAGE}
+          MAILRECEIVE_IMAGE=${MAILRECEIVE_IMAGE}
+          PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+          MAIL_DOMAIN=${MAIL_DOMAIN}
+          IMAP_HOST=${IMAP_HOST}
+          IMAP_PORT=${IMAP_PORT}
+          MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
+          POLAR_TOKEN=${POLAR_TOKEN}
+          POLAR_PRICE_ID=${POLAR_PRICE_ID}
+          POLAR_SERVER_URL=${POLAR_SERVER_URL}
+          POLAR_SUCCESS_URL=${POLAR_SUCCESS_URL}
+          POLAR_RETURN_URL=${POLAR_RETURN_URL}
+          POLAR_WEBHOOK_SECRET=${POLAR_WEBHOOK_SECRET}
+          STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+          STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+          STRIPE_SUCCESS_URL=${STRIPE_SUCCESS_URL}
+          STRIPE_CANCEL_URL=${STRIPE_CANCEL_URL}
+          STRIPE_CURRENCY=${STRIPE_CURRENCY}
+          MAILBOX_PRICE_CENTS=${MAILBOX_PRICE_CENTS}
+          CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+          EOF
+          chmod 600 production.env
+        env:
+          API_IMAGE: ${{ steps.images.outputs.api }}
+          MAILRECEIVE_IMAGE: ${{ steps.images.outputs.mailreceive }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          MAIL_DOMAIN: ${{ vars.MAIL_DOMAIN }}
+          IMAP_HOST: ${{ vars.IMAP_HOST }}
+          IMAP_PORT: ${{ vars.IMAP_PORT }}
+          MAX_CONCURRENT_REQUESTS: ${{ vars.MAX_CONCURRENT_REQUESTS }}
+          POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
+          POLAR_PRICE_ID: ${{ vars.POLAR_PRICE_ID }}
+          POLAR_SERVER_URL: ${{ vars.POLAR_SERVER_URL }}
+          POLAR_SUCCESS_URL: ${{ vars.POLAR_SUCCESS_URL }}
+          POLAR_RETURN_URL: ${{ vars.POLAR_RETURN_URL }}
+          POLAR_WEBHOOK_SECRET: ${{ secrets.POLAR_WEBHOOK_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_SUCCESS_URL: ${{ vars.STRIPE_SUCCESS_URL }}
+          STRIPE_CANCEL_URL: ${{ vars.STRIPE_CANCEL_URL }}
+          STRIPE_CURRENCY: ${{ vars.STRIPE_CURRENCY }}
+          MAILBOX_PRICE_CENTS: ${{ vars.MAILBOX_PRICE_CENTS }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+
+      - name: Start ssh-agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Trust deploy host
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${DEPLOY_HOST_KEY}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+        env:
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+
+      - name: Upload runtime files
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            install -d -m 700 /opt/mailservice
+          '
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            compose.tunnel.yml.example "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/compose.yml"
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            production.env "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/production.env"
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            chmod 600 /opt/mailservice/production.env
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Deploy compose stack
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            set -eu
+            cd /opt/mailservice
+            set -a
+            . ./production.env
+            set +a
+
+            if docker compose version >/dev/null 2>&1; then
+              compose_cmd="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              compose_cmd="docker-compose"
+            else
+              echo "docker compose is not available on the target host" >&2
+              exit 1
+            fi
+
+            $compose_cmd -f compose.yml pull
+            $compose_cmd -f compose.yml up -d
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Health check
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            curl --fail --silent --show-error \
+              --retry 10 --retry-delay 3 --retry-connrefused \
+              http://127.0.0.1:8080/healthz
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}

@@ -82,6 +82,20 @@ Run:
 12. workflow runs compose on the host against those exact image tags
 13. workflow checks the host-local API health endpoint with bounded retries
 
+### Automatic app deploy on `main`
+
+Run:
+1. `Docker Build and Push` publishes immutable GHCR images on `push` to `main`
+2. `Deploy Production App` starts only after that workflow completes successfully for the same `main` commit
+3. deploy resolves the exact `sha-<commit>` image tags for that built commit
+4. deploy waits until those exact image manifests exist in GHCR
+5. deploy uploads `compose.tunnel.yml.example` and a generated `production.env`
+6. deploy rolls the host to that exact app revision
+7. deploy checks the host-local API health endpoint
+
+This is the normal release path for application changes.
+Use the OpenTofu workflow when infrastructure changes are needed.
+
 For a NixOS migration host:
 1. run the same workflow with:
    - `image=<nixos snapshot or image id>`

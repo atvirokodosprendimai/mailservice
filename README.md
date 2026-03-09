@@ -104,6 +104,28 @@ docker compose -f compose.tunnel.yml up -d
 
 The service auto-loads `.env` from the project root (via `godotenv`).
 
+Production delivery:
+- merges to `main` build immutable GHCR images automatically
+- `Deploy Production App` runs after the Docker workflow succeeds for that `main` commit
+- `Hetzner OpenTofu` remains the manual workflow for infrastructure changes
+
+Live smoke test helper:
+
+```bash
+./ops/smoke-test-mailbox.sh --billing-email you@example.com
+```
+
+The script:
+- checks `/healthz`
+- generates an Ed25519 key pair if needed
+- claims a mailbox
+- prints the payment URL
+- polls `/v1/access/resolve` until payment activates the mailbox
+
+By default it sends the contents of `<work-dir>/identity.pub` as the `edproof` payload,
+or `<key-path>.pub` when a custom key path is used.
+If your verifier expects a different proof blob, pass `--edproof` or `--edproof-file`.
+
 ## Environment variables
 
 - `HTTP_ADDR` (default `:8080`)
