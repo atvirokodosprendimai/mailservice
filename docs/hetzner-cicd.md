@@ -48,7 +48,8 @@ Infrastructure:
 
 Deployment/runtime:
 - `APP_ENV_PRODUCTION`
-- `CACHIX_AUTH_TOKEN`
+- `NIX_CACHE_S3_ACCESS_KEY_ID`
+- `NIX_CACHE_S3_SECRET_ACCESS_KEY`
 - `CLOUDFLARE_TUNNEL_TOKEN`
 - `DEPLOY_HOST`
 - `DEPLOY_HOST_KEY`
@@ -57,8 +58,9 @@ Deployment/runtime:
 - `POLAR_WEBHOOK_SECRET`
 
 Deployment/cache vars:
-- `CACHIX_CACHE_NAME`
-- `CACHIX_PUBLIC_KEY`
+- `NIX_CACHE_S3_BUCKET`
+- `NIX_CACHE_S3_ENDPOINT` (for Hetzner: `fsn1.your-objectstorage.com`, `nbg1.your-objectstorage.com`, or `hel1.your-objectstorage.com`)
+- `NIX_CACHE_S3_REGION` (for Hetzner use an AWS-style value such as `eu-central-1`)
 
 ## Workflow Shape
 
@@ -87,10 +89,10 @@ Run:
 Run:
 1. `Deploy Production App` runs on `push` to `main`
 2. CI builds `.#nixosConfigurations.truevipaccess.config.system.build.toplevel`
-3. if Cachix is configured, CI pushes the built closure to that cache
+3. if S3 cache vars and credentials are configured, CI pushes the built closure to Hetzner Object Storage
 4. the workflow syncs the repo contents to the NixOS host over SSH
 5. the workflow runs `nixos-rebuild switch --flake .#truevipaccess` on the host
-6. if Cachix is configured, the host prefers the CI-pushed cache instead of rebuilding locally
+6. if S3 cache vars are configured, the host prefers the S3 cache via Nix `s3://` substituter instead of rebuilding locally
 7. deploy checks the host-local API health endpoint
 
 This is the normal release path for application changes.
@@ -107,7 +109,7 @@ For a NixOS migration host:
 
 Recommended rollout:
 1. commit the NixOS host and application changes
-2. CI builds the system closure and pushes it to Cachix
+2. CI builds the system closure and pushes it to Hetzner S3 cache
 3. apply infrastructure changes if needed
 4. sync the repo to the host
 5. run `nixos-rebuild switch --flake .#truevipaccess`
@@ -126,7 +128,7 @@ Rollback expectations:
 - current repo includes the OpenTofu scaffold and GitHub Actions workflow
 - production apply is gated behind a separate plan stage and uploaded plan artifact
 - provider-specific payment/runtime secrets remain separate from infra secrets
-- when `CACHIX_CACHE_NAME`, `CACHIX_PUBLIC_KEY`, and `CACHIX_AUTH_TOKEN` are configured, production deploys use a CI-built binary cache instead of host-local builds
+- when `NIX_CACHE_S3_BUCKET`, `NIX_CACHE_S3_ENDPOINT`, `NIX_CACHE_S3_REGION`, `NIX_CACHE_S3_ACCESS_KEY_ID`, and `NIX_CACHE_S3_SECRET_ACCESS_KEY` are configured, production deploys use a CI-built S3 binary cache instead of host-local builds
 - this design uses OpenTofu, not Terraform
 - before pushing workflow or OpenTofu changes, use the local checklist in `docs/local-workflow-validation.md`
 - current production hostname target is `truevipaccess.com`; see `docs/truevipaccess-deploy.md`
