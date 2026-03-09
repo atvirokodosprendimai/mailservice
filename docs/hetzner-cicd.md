@@ -9,7 +9,7 @@ Deploy mailservice to Hetzner using GitHub Actions and OpenTofu.
 Initial target:
 - one Hetzner Cloud server
 - firewall allowing SSH, HTTP, HTTPS, SMTP receive, and IMAP
-- Docker-based app deployment on the host
+- NixOS-native app deployment on the host
 
 Alternate migration target:
 - one Hetzner Cloud server created from a prebuilt NixOS/custom image or snapshot
@@ -74,24 +74,16 @@ Run:
 4. plan artifact is uploaded for operator review
 5. gated `apply` job can run only after the `plan` job succeeds
 6. production environment approval can be enforced through GitHub environment protection
-7. `deploy` job writes `production.env` from GitHub vars/secrets with secret-safe file permissions
-8. deploy computes the immutable `mailreceive` image ref for the current commit SHA
-9. workflow waits for that GHCR image tag to exist before continuing
-10. workflow pins the SSH host key from `DEPLOY_HOST_KEY`
-11. workflow uploads `compose.tunnel.yml.example` and `production.env` to `/opt/mailservice`
-12. workflow runs compose on the host against that exact mailreceive image tag
-13. workflow checks the host-local API health endpoint with bounded retries
+7. OpenTofu stops after infrastructure apply
+8. production NixOS hosts are updated through the dedicated NixOS deploy workflow
 
 ### Automatic app deploy on `main`
 
 Run:
-1. `Docker Build and Push` publishes immutable GHCR images on `push` to `main`
-2. `Deploy Production App` starts only after that workflow completes successfully for the same `main` commit
-3. deploy resolves the exact `sha-<commit>` mailreceive image tag for that built commit
-4. deploy waits until that exact image manifest exists in GHCR
-5. deploy uploads `compose.tunnel.yml.example` and a generated `production.env`
-6. deploy rolls the host to that exact app revision
-7. deploy checks the host-local API health endpoint
+1. `Deploy Production App` runs on `push` to `main`
+2. the workflow syncs the repo contents to the NixOS host over SSH
+3. the workflow runs `nixos-rebuild switch --flake .#truevipaccess` on the host
+4. deploy checks the host-local API health endpoint
 
 This is the normal release path for application changes.
 Use the OpenTofu workflow when infrastructure changes are needed.
@@ -101,28 +93,24 @@ For a NixOS migration host:
    - `image=<nixos snapshot or image id>`
    - `bootstrap_mode=none`
 2. OpenTofu will create the server, firewall, and SSH key only
-3. the Ubuntu compose deploy job is skipped
-4. complete the host configuration via the NixOps migration path
+3. complete the host configuration via the NixOps migration path or the main NixOS deploy workflow
 
 ## Rollout
 
 Recommended rollout:
-1. build and publish image
-2. resolve exact immutable image tags for the commit being deployed
-3. apply infrastructure changes if needed
-4. upload env/runtime config
-5. pull those exact images on host
-6. restart service with Docker Compose
-7. run health check
+1. commit the NixOS host and application changes
+2. apply infrastructure changes if needed
+3. sync the repo to the host
+4. run `nixos-rebuild switch --flake .#truevipaccess`
+5. run health check
 
 ## Rollback
 
 Rollback expectations:
-- keep previous image tag available
-- deploy by explicit image tag, not mutable assumptions alone
-- allow manual workflow input for rollback tag
+- keep previous Git revisions available
+- deploy by explicit Git revision, not mutable runtime state
 - if infra apply fails, do not run app deploy
-- if app health check fails, revert to previous known-good image tag
+- if app health check fails, revert to the previous known-good revision
 
 ## Notes
 
@@ -133,8 +121,6 @@ Rollback expectations:
 - before pushing workflow or OpenTofu changes, use the local checklist in `docs/local-workflow-validation.md`
 - current production hostname target is `truevipaccess.com`; see `docs/truevipaccess-deploy.md`
 - current temporary ingress path is Cloudflare Tunnel; see `docs/cloudflare-tunnel-deploy.md`
-- for the tunnel path, pass `CLOUDFLARE_TUNNEL_TOKEN` into the container as `TUNNEL_TOKEN`
-- host-side deploy uses `compose.tunnel.yml.example` plus a generated `production.env`
-- the tunnel compose file reads runtime values from `production.env`; it is not meant to hard-code production secrets
-- production deploy uses an immutable `mailreceive` GHCR tag of the form `sha-<commit>` rather than relying on `latest`
+- for the tunnel path, keep `TUNNEL_TOKEN` in `/var/lib/secrets/cloudflared.env`
+- host-side deploy is now NixOS-native; it no longer depends on Docker Compose or GHCR mail images
 - for a NixOS/custom image host, set `bootstrap_mode=none` so the workflow provisions the VM without assuming Ubuntu packages or Docker bootstrap

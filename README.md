@@ -105,8 +105,9 @@ docker compose -f compose.tunnel.yml up -d
 The service auto-loads `.env` from the project root (via `godotenv`).
 
 Production delivery:
-- merges to `main` build the mailreceive GHCR image automatically
-- `Deploy Production App` runs after the Docker workflow succeeds for that `main` commit
+- production runs on a NixOS host with native API, Postfix, Dovecot, and cloudflared services
+- merges to `main` trigger `Deploy Production App`
+- the deploy workflow syncs the repo to the host and runs `nixos-rebuild switch --flake .#truevipaccess`
 - `Hetzner OpenTofu` remains the manual workflow for infrastructure changes
 
 Live smoke test helper:
