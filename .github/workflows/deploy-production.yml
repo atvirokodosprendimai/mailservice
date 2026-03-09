@@ -153,16 +153,30 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
         run: |
+          build_log="$(mktemp)"
+          echo "NIX_BUILD_LOG=$build_log" >> "$GITHUB_ENV"
+
           if [ "$S3_CACHE_ENABLED" = "true" ]; then
             if [ "$S3_CACHE_AUTH_ENABLED" = "true" ]; then
               nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel \
-                --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?profile=cache-ci&scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+                --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?profile=cache-ci&scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}" \
+                2> >(tee "$build_log" >&2)
             else
               nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel \
-                --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+                --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}" \
+                2> >(tee "$build_log" >&2)
             fi
           else
-            nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel
+            nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel \
+              2> >(tee "$build_log" >&2)
+          fi
+
+      - name: Assert S3 cache read had no auth/path errors
+        if: ${{ steps.s3cache.outputs.enabled == 'true' }}
+        run: |
+          if rg -n "AWS authentication failed|AccessDenied|nix-cache-info" "$NIX_BUILD_LOG"; then
+            echo "S3 cache read encountered auth/path errors during nix build." >&2
+            exit 1
           fi
 
       - name: Upload closure to Hetzner S3 cache
