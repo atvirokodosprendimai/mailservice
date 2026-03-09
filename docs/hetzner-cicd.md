@@ -48,12 +48,17 @@ Infrastructure:
 
 Deployment/runtime:
 - `APP_ENV_PRODUCTION`
+- `CACHIX_AUTH_TOKEN`
 - `CLOUDFLARE_TUNNEL_TOKEN`
 - `DEPLOY_HOST`
 - `DEPLOY_HOST_KEY`
 - `DEPLOY_USER`
 - `DEPLOY_SSH_PRIVATE_KEY`
 - `POLAR_WEBHOOK_SECRET`
+
+Deployment/cache vars:
+- `CACHIX_CACHE_NAME`
+- `CACHIX_PUBLIC_KEY`
 
 ## Workflow Shape
 
@@ -81,9 +86,12 @@ Run:
 
 Run:
 1. `Deploy Production App` runs on `push` to `main`
-2. the workflow syncs the repo contents to the NixOS host over SSH
-3. the workflow runs `nixos-rebuild switch --flake .#truevipaccess` on the host
-4. deploy checks the host-local API health endpoint
+2. CI builds `.#nixosConfigurations.truevipaccess.config.system.build.toplevel`
+3. if Cachix is configured, CI pushes the built closure to that cache
+4. the workflow syncs the repo contents to the NixOS host over SSH
+5. the workflow runs `nixos-rebuild switch --flake .#truevipaccess` on the host
+6. if Cachix is configured, the host prefers the CI-pushed cache instead of rebuilding locally
+7. deploy checks the host-local API health endpoint
 
 This is the normal release path for application changes.
 Use the OpenTofu workflow when infrastructure changes are needed.
@@ -99,10 +107,11 @@ For a NixOS migration host:
 
 Recommended rollout:
 1. commit the NixOS host and application changes
-2. apply infrastructure changes if needed
-3. sync the repo to the host
-4. run `nixos-rebuild switch --flake .#truevipaccess`
-5. run health check
+2. CI builds the system closure and pushes it to Cachix
+3. apply infrastructure changes if needed
+4. sync the repo to the host
+5. run `nixos-rebuild switch --flake .#truevipaccess`
+6. run health check
 
 ## Rollback
 
@@ -117,6 +126,7 @@ Rollback expectations:
 - current repo includes the OpenTofu scaffold and GitHub Actions workflow
 - production apply is gated behind a separate plan stage and uploaded plan artifact
 - provider-specific payment/runtime secrets remain separate from infra secrets
+- when `CACHIX_CACHE_NAME`, `CACHIX_PUBLIC_KEY`, and `CACHIX_AUTH_TOKEN` are configured, production deploys use a CI-built binary cache instead of host-local builds
 - this design uses OpenTofu, not Terraform
 - before pushing workflow or OpenTofu changes, use the local checklist in `docs/local-workflow-validation.md`
 - current production hostname target is `truevipaccess.com`; see `docs/truevipaccess-deploy.md`
