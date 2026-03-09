@@ -247,23 +247,54 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
-      - name: Write build metadata on host
+      - name: Write environment file on host
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "BUILD_NUMBER='${BUILD_NUMBER}' CACHE_BUSTER='${CACHE_BUSTER}' bash -se" <<'EOF'
+          tmp_file="$(mktemp)"
+          cat > "$tmp_file" <<ENVCONTENT
+          PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+          MAIL_DOMAIN=${MAIL_DOMAIN}
+          IMAP_HOST=${IMAP_HOST}
+          IMAP_PORT=${IMAP_PORT}
+          MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
+          POLAR_TOKEN=${POLAR_TOKEN}
+          POLAR_PRICE_ID=${POLAR_PRICE_ID}
+          POLAR_SERVER_URL=${POLAR_SERVER_URL}
+          POLAR_SUCCESS_URL=${POLAR_SUCCESS_URL}
+          POLAR_RETURN_URL=${POLAR_RETURN_URL}
+          POLAR_WEBHOOK_SECRET=${POLAR_WEBHOOK_SECRET}
+          UNSEND_KEY=${UNSEND_KEY}
+          UNSEND_BASE_URL=${UNSEND_BASE_URL}
+          UNSEND_FROM_EMAIL=${UNSEND_FROM_EMAIL}
+          UNSEND_FROM_NAME=${UNSEND_FROM_NAME}
+          BUILD_NUMBER=${BUILD_NUMBER}
+          CACHE_BUSTER=${CACHE_BUSTER}
+          ENVCONTENT
+          sed -i 's/^[[:space:]]*//' "$tmp_file"
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/mailservice-env-stage"
+          rm -f "$tmp_file"
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
-            env_file="/var/lib/secrets/mailservice.env"
-            tmp_file="$(mktemp)"
-            if [ -f "$env_file" ]; then
-              awk "!/^BUILD_NUMBER=|^CACHE_BUSTER=/" "$env_file" > "$tmp_file"
-            fi
-            printf "BUILD_NUMBER=%s\n" "$BUILD_NUMBER" >> "$tmp_file"
-            printf "CACHE_BUSTER=%s\n" "$CACHE_BUSTER" >> "$tmp_file"
-            install -m 640 -o root -g mailservice "$tmp_file" "$env_file"
-            rm -f "$tmp_file"
-          EOF
+            install -m 640 -o root -g mailservice /tmp/mailservice-env-stage /var/lib/secrets/mailservice.env
+            rm -f /tmp/mailservice-env-stage
+          '
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          MAIL_DOMAIN: ${{ vars.MAIL_DOMAIN }}
+          IMAP_HOST: ${{ vars.IMAP_HOST }}
+          IMAP_PORT: ${{ vars.IMAP_PORT }}
+          MAX_CONCURRENT_REQUESTS: ${{ vars.MAX_CONCURRENT_REQUESTS }}
+          POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
+          POLAR_PRICE_ID: ${{ vars.POLAR_PRICE_ID }}
+          POLAR_SERVER_URL: ${{ vars.POLAR_SERVER_URL }}
+          POLAR_SUCCESS_URL: ${{ vars.POLAR_SUCCESS_URL }}
+          POLAR_RETURN_URL: ${{ vars.POLAR_RETURN_URL }}
+          POLAR_WEBHOOK_SECRET: ${{ secrets.POLAR_WEBHOOK_SECRET }}
+          UNSEND_KEY: ${{ secrets.UNSEND_KEY }}
+          UNSEND_BASE_URL: ${{ vars.UNSEND_BASE_URL }}
+          UNSEND_FROM_EMAIL: ${{ vars.UNSEND_FROM_EMAIL }}
+          UNSEND_FROM_NAME: ${{ vars.UNSEND_FROM_NAME }}
           BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
           CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
 
