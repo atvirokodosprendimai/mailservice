@@ -1,4 +1,4 @@
-{ lib, config, pkgs, ... }:
+{ lib, config, pkgs, self, ... }:
 
 let
   cfg = config.services.mailserviceGitOps;
@@ -19,9 +19,10 @@ in
       description = "Environment file containing TUNNEL_TOKEN for cloudflared.";
     };
 
-    apiImage = lib.mkOption {
-      type = lib.types.str;
-      description = "Pinned OCI image reference for the API service.";
+    package = lib.mkOption {
+      type = lib.types.package;
+      default = self.packages.${pkgs.system}.mailservice-api;
+      description = "Mailservice API package to run directly under systemd.";
     };
 
     mailreceiveImage = lib.mkOption {
@@ -29,19 +30,10 @@ in
       description = "Pinned OCI image reference for the inbound mail runtime.";
     };
 
-    cloudflaredImage = lib.mkOption {
-      type = lib.types.str;
-      default = "cloudflare/cloudflared:2026.2.0";
-      description = "Cloudflare tunnel image reference.";
-    };
   };
 
   config = lib.mkIf cfg.enable {
     assertions = [
-      {
-        assertion = !(lib.hasInfix "PLACEHOLDER" cfg.apiImage);
-        message = "services.mailserviceGitOps.apiImage must be pinned to a real image tag before deployment.";
-      }
       {
         assertion = !(lib.hasInfix "PLACEHOLDER" cfg.mailreceiveImage);
         message = "services.mailserviceGitOps.mailreceiveImage must be pinned to a real image tag before deployment.";
@@ -53,30 +45,51 @@ in
 
     networking.firewall.allowedTCPPorts = [ 25 143 ];
 
+    users.groups.mailservice = { };
+    users.users.mailservice = {
+      isSystemUser = true;
+      group = "mailservice";
+      home = "/var/lib/mailservice";
+      createHome = false;
+    };
+    users.users.cloudflared = {
+      isSystemUser = true;
+      group = "mailservice";
+      home = "/var/lib/mailservice";
+      createHome = false;
+    };
+
     systemd.tmpfiles.rules = [
       "d /var/lib/mailservice 0755 root root -"
-      "d /var/lib/mailservice/data 0755 root root -"
+      "d /var/lib/mailservice/data 2770 mailservice mailservice -"
+      "Z /var/lib/mailservice/data 2770 mailservice mailservice - -"
       "d /var/lib/mailservice/vhosts 0755 root root -"
-      "d /var/lib/secrets 0700 root root -"
+      "d /var/lib/secrets 0750 root mailservice -"
+      "f ${cfg.environmentFile} 0640 root mailservice - -"
+      "f ${cfg.cloudflaredEnvironmentFile} 0640 root mailservice - -"
     ];
 
-    virtualisation.oci-containers.containers = {
-      mailservice-api = {
-        image = cfg.apiImage;
-        environmentFiles = [ cfg.environmentFile ];
-        environment = {
-          HTTP_ADDR = ":8080";
-          DATABASE_DSN = "/data/mailservice.db";
-        };
-        volumes = [
-          "/var/lib/mailservice/data:/data"
-        ];
-        ports = [
-          "127.0.0.1:8080:8080"
-        ];
-        extraOptions = [ "--pull=always" ];
+    systemd.services.mailservice-api = {
+      description = "Mailservice API";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network-online.target" "docker.service" "docker.socket" ];
+      wants = [ "network-online.target" "docker.service" ];
+      serviceConfig = {
+        User = "mailservice";
+        Group = "mailservice";
+        Restart = "always";
+        RestartSec = 5;
+        WorkingDirectory = "/var/lib/mailservice";
+        EnvironmentFile = cfg.environmentFile;
+        ExecStart = "${cfg.package}/bin/app";
       };
+      environment = {
+        HTTP_ADDR = "127.0.0.1:8080";
+        DATABASE_DSN = "/var/lib/mailservice/data/mailservice.db";
+      };
+    };
 
+    virtualisation.oci-containers.containers = {
       mailservice-mailreceive = {
         image = cfg.mailreceiveImage;
         environmentFiles = [ cfg.environmentFile ];
@@ -94,19 +107,20 @@ in
         extraOptions = [ "--pull=always" ];
       };
 
-      mailservice-cloudflared = {
-        image = cfg.cloudflaredImage;
-        environmentFiles = [ cfg.cloudflaredEnvironmentFile ];
-        cmd = [
-          "tunnel"
-          "--no-autoupdate"
-          "run"
-        ];
-        dependsOn = [ "mailservice-api" ];
-        extraOptions = [
-          "--network=host"
-          "--pull=always"
-        ];
+    };
+
+    systemd.services.mailservice-cloudflared = {
+      description = "Cloudflare Tunnel for mailservice";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network-online.target" "mailservice-api.service" ];
+      wants = [ "network-online.target" "mailservice-api.service" ];
+      serviceConfig = {
+        User = "cloudflared";
+        Group = "mailservice";
+        Restart = "always";
+        RestartSec = 5;
+        EnvironmentFile = cfg.cloudflaredEnvironmentFile;
+        ExecStart = "${pkgs.cloudflared}/bin/cloudflared tunnel --no-autoupdate run";
       };
     };
   };
