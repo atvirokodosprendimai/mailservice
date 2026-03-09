@@ -364,9 +364,19 @@ jobs:
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             cert_dir="/var/lib/acme/mail.'"${MAIL_DOMAIN}"'"
-            if [ ! -f "$cert_dir/fullchain.pem" ] || openssl x509 -in "$cert_dir/fullchain.pem" -noout -issuer 2>/dev/null | grep -qi minica; then
-              echo "ACME cert missing or self-signed, triggering renewal..."
-              systemctl start acme-mail.'"${MAIL_DOMAIN}"'.service
+            needs_renewal=false
+            if [ ! -f "$cert_dir/fullchain.pem" ]; then
+              needs_renewal=true
+            else
+              if ! issuer_output=$(openssl x509 -in "$cert_dir/fullchain.pem" -noout -issuer 2>/dev/null); then
+                needs_renewal=true
+              elif echo "$issuer_output" | grep -qi minica; then
+                needs_renewal=true
+              fi
+            fi
+            if [ "$needs_renewal" = true ]; then
+              echo "ACME cert missing, invalid, or self-signed, triggering renewal..."
+              sudo systemctl start acme-mail.'"${MAIL_DOMAIN}"'.service
             fi
           '
         env:
