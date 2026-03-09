@@ -41,16 +41,8 @@ func main() {
 	refreshTokenRepo := repository.NewRefreshTokenRepository(db)
 	tokenGen := token.NewSecureGenerator()
 
-	var notifier ports.Notifier = notify.NewLogNotifier(log.Default())
-	if cfg.ResendAPIKey != "" && cfg.ResendFromEmail != "" {
-		notifier = notify.NewResendNotifier(cfg.ResendAPIKey, cfg.ResendFromEmail, cfg.ResendFromName)
-		log.Printf("resend notifier enabled")
-	} else if cfg.SendGridAPIKey != "" && cfg.SendGridFromEmail != "" {
-		notifier = notify.NewSendGridNotifier(cfg.SendGridAPIKey, cfg.SendGridFromEmail, cfg.SendGridFromName)
-		log.Printf("sendgrid notifier enabled")
-	} else {
-		log.Printf("email providers disabled, using log notifier")
-	}
+	notifier, notifierProvider := selectNotifier(cfg, log.Default())
+	log.Printf("%s notifier enabled", notifierProvider)
 
 	var paymentGateway ports.PaymentGateway = payment.NewMockGateway(cfg.PublicBaseURL)
 	if cfg.PolarToken != "" && cfg.PolarPriceID != "" {
@@ -119,4 +111,17 @@ func main() {
 
 func newKeyProofVerifier() ports.KeyProofVerifier {
 	return edproof.NewVerifier(nil)
+}
+
+func selectNotifier(cfg *config.Config, logger *log.Logger) (ports.Notifier, string) {
+	if cfg.UnsendKey != "" && cfg.UnsendFromEmail != "" {
+		return notify.NewUnsendNotifier(cfg.UnsendBaseURL, cfg.UnsendKey, cfg.UnsendFromEmail, cfg.UnsendFromName), "unsend"
+	}
+	if cfg.ResendAPIKey != "" && cfg.ResendFromEmail != "" {
+		return notify.NewResendNotifier(cfg.ResendAPIKey, cfg.ResendFromEmail, cfg.ResendFromName), "resend"
+	}
+	if cfg.SendGridAPIKey != "" && cfg.SendGridFromEmail != "" {
+		return notify.NewSendGridNotifier(cfg.SendGridAPIKey, cfg.SendGridFromEmail, cfg.SendGridFromName), "sendgrid"
+	}
+	return notify.NewLogNotifier(logger), "log"
 }
