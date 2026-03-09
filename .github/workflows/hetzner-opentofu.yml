@@ -146,7 +146,7 @@ jobs:
       - name: OpenTofu plan
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_name: ${{ github.event.inputs.name }}
           TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
@@ -233,7 +233,7 @@ jobs:
       - name: OpenTofu apply
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_name: ${{ github.event.inputs.name }}
           TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
@@ -301,10 +301,10 @@ jobs:
       - name: OpenTofu apply
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
-          TF_VAR_name: "mailservice"
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_name: ${{ vars.TOFU_SERVER_NAME }}
           TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
-          TF_VAR_image: "ubuntu-24.04"
+          TF_VAR_image: ${{ vars.TOFU_SERVER_IMAGE }}
           TF_VAR_bootstrap_mode: "none"
         run: tofu apply -input=false -auto-approve
