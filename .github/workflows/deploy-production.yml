@@ -377,7 +377,15 @@ jobs:
             if [ "$needs_renewal" = true ]; then
               echo "ACME cert missing, invalid, or self-signed, triggering renewal..."
               sudo systemctl reset-failed acme-mail.'"${MAIL_DOMAIN}"'.service 2>/dev/null || true
-              sudo systemctl restart acme-mail.'"${MAIL_DOMAIN}"'.service
+              if sudo systemctl start acme-mail.'"${MAIL_DOMAIN}"'.service; then
+                echo "ACME renewal succeeded"
+              else
+                echo "ACME renewal failed, showing journal:"
+                sudo journalctl -u acme-mail.'"${MAIL_DOMAIN}"'.service --no-pager -n 30
+                exit 1
+              fi
+              echo "Certificate issuer after renewal:"
+              openssl x509 -in "$cert_dir/fullchain.pem" -noout -issuer 2>/dev/null || echo "cert file not found"
             fi
           '
         env:
