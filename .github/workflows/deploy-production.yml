@@ -25,29 +25,42 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v1
 
-      - name: Detect Cachix configuration
-        id: cachix
+      - name: Detect S3 cache configuration
+        id: s3cache
         env:
-          CACHIX_CACHE_NAME: ${{ vars.CACHIX_CACHE_NAME }}
-          CACHIX_PUBLIC_KEY: ${{ vars.CACHIX_PUBLIC_KEY }}
-          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
+          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
+          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
+          NIX_CACHE_S3_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          NIX_CACHE_S3_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
         run: |
-          if [ -n "$CACHIX_CACHE_NAME" ] && [ -n "$CACHIX_PUBLIC_KEY" ] && [ -n "$CACHIX_AUTH_TOKEN" ]; then
+          if [ -n "$NIX_CACHE_S3_BUCKET" ] && [ -n "$NIX_CACHE_S3_ENDPOINT" ] && [ -n "$NIX_CACHE_S3_REGION" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Configure Cachix
-        if: ${{ steps.cachix.outputs.enabled == 'true' }}
-        uses: cachix/cachix-action@v15
-        with:
-          name: ${{ vars.CACHIX_CACHE_NAME }}
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          if [ -n "$NIX_CACHE_S3_BUCKET" ] && [ -n "$NIX_CACHE_S3_ENDPOINT" ] && [ -n "$NIX_CACHE_S3_REGION" ] && [ -n "$NIX_CACHE_S3_ACCESS_KEY_ID" ] && [ -n "$NIX_CACHE_S3_SECRET_ACCESS_KEY" ]; then
+            echo "upload_enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload_enabled=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build production system closure
         run: |
           nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel
+
+      - name: Upload closure to Hetzner S3 cache
+        if: ${{ steps.s3cache.outputs.upload_enabled == 'true' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
+          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
+          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
+          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
+        run: |
+          closure_path="$(nix path-info .#nixosConfigurations.truevipaccess.config.system.build.toplevel)"
+          nix copy --to "s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}" "$closure_path"
 
   deploy:
     needs: build
@@ -93,10 +106,9 @@ jobs:
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
             set -eu
             cd /root/mailservice
-            if [ -n \"${CACHIX_CACHE_NAME}\" ] && [ -n \"${CACHIX_PUBLIC_KEY}\" ]; then
+            if [ -n \"${NIX_CACHE_S3_BUCKET}\" ] && [ -n \"${NIX_CACHE_S3_ENDPOINT}\" ] && [ -n \"${NIX_CACHE_S3_REGION}\" ]; then
               nixos-rebuild switch --flake .#truevipaccess \
-                --option extra-substituters \"https://${CACHIX_CACHE_NAME}.cachix.org\" \
-                --option extra-trusted-public-keys \"${CACHIX_CACHE_NAME}.cachix.org-1:${CACHIX_PUBLIC_KEY}\"
+                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\"
             else
               nixos-rebuild switch --flake .#truevipaccess
             fi
@@ -104,8 +116,9 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          CACHIX_CACHE_NAME: ${{ vars.CACHIX_CACHE_NAME }}
-          CACHIX_PUBLIC_KEY: ${{ vars.CACHIX_PUBLIC_KEY }}
+          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
+          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
+          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
 
       - name: Health check
         run: |

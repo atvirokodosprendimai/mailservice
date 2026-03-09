@@ -99,7 +99,7 @@ Preferred future path: use NixOps to apply the host revision.
 
 1. Commit the host and application changes to Git.
 2. CI builds `.#nixosConfigurations.truevipaccess.config.system.build.toplevel`.
-3. If Cachix is configured, CI pushes the closure to the configured cache.
+3. If S3 cache vars/secrets are configured, CI pushes the closure to Hetzner Object Storage.
 4. Apply the new revision with NixOps or `nixos-rebuild switch`.
 
 Example:
@@ -116,18 +116,20 @@ debugging on the host, but it is not the preferred multi-step rollout path.
 Recommended production shape:
 
 - CI builds the NixOS closure on the runner
-- CI pushes that closure to Cachix
-- the host switches using that cache instead of rebuilding locally
+- CI pushes that closure to a Hetzner S3-compatible bucket
+- the host switches using that cache (`s3://` substituter) instead of rebuilding locally
 
 Required GitHub configuration:
 
-- secret: `CACHIX_AUTH_TOKEN`
-- var: `CACHIX_CACHE_NAME`
-- var: `CACHIX_PUBLIC_KEY`
+- secret: `NIX_CACHE_S3_ACCESS_KEY_ID`
+- secret: `NIX_CACHE_S3_SECRET_ACCESS_KEY`
+- var: `NIX_CACHE_S3_BUCKET`
+- var: `NIX_CACHE_S3_ENDPOINT`
+- var: `NIX_CACHE_S3_REGION`
 
-The deploy workflow passes the configured Cachix substituter and trusted public
-key directly to `nixos-rebuild`, so the host can consume the prebuilt closure
-without additional persistent Nix configuration.
+The deploy workflow passes the configured `s3://` substituter directly to
+`nixos-rebuild`, so the host can consume the prebuilt closure without
+additional persistent Nix configuration.
 
 ## Rollback
 
