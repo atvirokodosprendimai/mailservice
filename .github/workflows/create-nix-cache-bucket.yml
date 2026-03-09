@@ -1,6 +1,11 @@
 name: Create Nix Cache Bucket
 
 on:
+  push:
+    branches:
+      - ci/nix-cache-builds
+    paths:
+      - .github/workflows/create-nix-cache-bucket.yml
   workflow_dispatch:
 
 jobs:
