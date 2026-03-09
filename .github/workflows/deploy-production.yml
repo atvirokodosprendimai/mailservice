@@ -376,16 +376,23 @@ jobs:
             fi
             if [ "$needs_renewal" = true ]; then
               echo "ACME cert missing, invalid, or self-signed, triggering renewal..."
+              echo "Cert directory before renewal:"
+              sudo ls -la "$cert_dir/" 2>/dev/null || echo "  directory does not exist"
+              sudo ls -la /var/lib/acme/ 2>/dev/null || echo "  /var/lib/acme/ does not exist"
               sudo systemctl reset-failed acme-mail.'"${MAIL_DOMAIN}"'.service 2>/dev/null || true
+              sudo journalctl -u acme-mail.'"${MAIL_DOMAIN}"'.service --no-pager -n 5 2>/dev/null || true
+              echo "Starting ACME renewal..."
               if sudo systemctl start acme-mail.'"${MAIL_DOMAIN}"'.service; then
-                echo "ACME renewal succeeded"
+                echo "ACME service exited 0"
               else
-                echo "ACME renewal failed, showing journal:"
-                sudo journalctl -u acme-mail.'"${MAIL_DOMAIN}"'.service --no-pager -n 30
-                exit 1
+                echo "ACME service failed"
               fi
+              echo "Journal after renewal:"
+              sudo journalctl -u acme-mail.'"${MAIL_DOMAIN}"'.service --no-pager -n 20
+              echo "Cert directory after renewal:"
+              sudo ls -la "$cert_dir/" 2>/dev/null || echo "  directory does not exist"
               echo "Certificate issuer after renewal:"
-              openssl x509 -in "$cert_dir/fullchain.pem" -noout -issuer 2>/dev/null || echo "cert file not found"
+              sudo openssl x509 -in "$cert_dir/fullchain.pem" -noout -issuer 2>/dev/null || echo "  cert file not readable"
             fi
           '
         env:
