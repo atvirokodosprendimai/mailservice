@@ -146,6 +146,7 @@ jobs:
       - name: Build production system closure
         env:
           S3_CACHE_ENABLED: ${{ steps.s3cache.outputs.enabled }}
+          S3_CACHE_AUTH_ENABLED: ${{ steps.s3cache.outputs.upload_enabled }}
           NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
           NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
           NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
@@ -153,8 +154,13 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
         run: |
           if [ "$S3_CACHE_ENABLED" = "true" ]; then
-            nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel \
-              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?profile=cache-ci&scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+            if [ "$S3_CACHE_AUTH_ENABLED" = "true" ]; then
+              nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel \
+                --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?profile=cache-ci&scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+            else
+              nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel \
+                --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+            fi
           else
             nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel
           fi
@@ -243,7 +249,7 @@ jobs:
             cd /root/mailservice
             if [ -n \"${NIX_CACHE_S3_BUCKET}\" ] && [ -n \"${NIX_CACHE_S3_ENDPOINT}\" ] && [ -n \"${NIX_CACHE_S3_REGION}\" ]; then
               nixos-rebuild switch --flake .#truevipaccess \
-                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?profile=cache-ci&scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\"
+                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\"
             else
               nixos-rebuild switch --flake .#truevipaccess
             fi
