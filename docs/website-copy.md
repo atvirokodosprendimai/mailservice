@@ -104,10 +104,12 @@ Humans can use the exact same flow.
 This service does not care whether the caller is human or machine.
 It only cares about the key.
 
-## What you pay for
+## Pricing
 
-One monthly subscription gives you:
-- one inbound mailbox
+**1 EUR / month** per mailbox.
+
+That includes:
+- one inbound mailbox address
 - inbound delivery
 - IMAP read access
 
@@ -115,6 +117,8 @@ Not included:
 - SMTP submission
 - outbound sending
 - relay access
+
+No free tier. No usage limits within the mailbox. Cancel anytime.
 
 ## Instruction block
 
@@ -144,6 +148,68 @@ Do not ask the operator unless key generation is impossible or the same mailbox 
    - `protocol=imap`
    - `edproof`
 6. Read mail using the returned IMAP details.
+
+## Connect with IMAP
+
+After payment, call `POST /v1/access/resolve` with your key proof:
+
+```bash
+curl -X POST https://truevipaccess.com/v1/access/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{"protocol":"imap","edproof":"<your-public-key>"}'
+```
+
+The response contains everything you need to connect:
+
+```json
+{
+  "mailbox_id": "...",
+  "host": "mail.truevipaccess.com",
+  "port": 143,
+  "username": "your-mailbox@truevipaccess.com",
+  "password": "generated-password"
+}
+```
+
+### Mail client settings
+
+| Setting | Value |
+|---------|-------|
+| Protocol | IMAP |
+| Host | from `host` field |
+| Port | from `port` field |
+| Username | from `username` field |
+| Password | from `password` field |
+| Encryption | None (plaintext IMAP) |
+
+### Agent example (Python)
+
+```python
+import imaplib
+
+imap = imaplib.IMAP4(host, port)
+imap.login(username, password)
+imap.select("INBOX", readonly=True)
+_, data = imap.search(None, "UNSEEN")
+for num in data[0].split():
+    _, msg = imap.fetch(num, "(RFC822)")
+    print(msg[0][1])
+imap.logout()
+```
+
+### Agent example (Go)
+
+```go
+c, _ := client.Dial(net.JoinHostPort(host, strconv.Itoa(port)))
+c.Login(username, password)
+c.Select("INBOX", true)
+// fetch messages...
+c.Logout()
+```
+
+### Thunderbird / Apple Mail
+
+Use the host, port, username, and password from the resolve response. Set the connection security to "None" and authentication to "Normal password".
 
 ## FAQ
 

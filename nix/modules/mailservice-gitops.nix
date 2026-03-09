@@ -57,7 +57,7 @@ in
       }
     ];
 
-    networking.firewall.allowedTCPPorts = [ 25 143 ];
+    networking.firewall.allowedTCPPorts = [ 25 143 993 ];
 
     users.groups.mailservice = { };
     users.groups.vmail.gid = 5000;

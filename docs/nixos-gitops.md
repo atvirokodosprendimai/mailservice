@@ -62,32 +62,47 @@ services.mailserviceGitOps = {
 
 That removes the runtime dependence on GHCR and Docker.
 
-## Secrets File
+## Secrets and Configuration
 
-The host expects runtime env files at:
+The deploy workflow writes `/var/lib/secrets/mailservice.env` from GitHub secrets and
+variables on every deploy. No manual SSH is needed to manage app secrets.
 
-```text
-/var/lib/secrets/mailservice.env
-/var/lib/secrets/cloudflared.env
-```
+### GitHub Secrets (sensitive values)
 
-`/var/lib/secrets/mailservice.env` should contain values such as:
+| Secret | Purpose |
+|--------|---------|
+| `POLAR_TOKEN` | Polar API token |
+| `POLAR_WEBHOOK_SECRET` | Polar webhook signature verification |
+| `UNSEND_KEY` | Unsend transactional email API key |
+| `DEPLOY_SSH_PRIVATE_KEY` | SSH key for deploy host access |
+| `DEPLOY_HOST_KEY` | Known hosts entry for deploy host |
+| `DEPLOY_HOST` | Deploy target hostname/IP |
+| `DEPLOY_USER` | SSH user on deploy host |
 
-```env
-PUBLIC_BASE_URL=https://truevipaccess.com
-MAIL_DOMAIN=truevipaccess.com
-IMAP_HOST=truevipaccess.com
-IMAP_PORT=143
-MAX_CONCURRENT_REQUESTS=100
-POLAR_TOKEN=...
-POLAR_PRICE_ID=...
-POLAR_SERVER_URL=https://api.polar.sh
-POLAR_SUCCESS_URL=https://truevipaccess.com/v1/payments/polar/success?checkout_id={CHECKOUT_ID}
-POLAR_RETURN_URL=https://truevipaccess.com
-POLAR_WEBHOOK_SECRET=...
-```
+### GitHub Variables (non-sensitive config)
 
-`/var/lib/secrets/cloudflared.env` should contain:
+| Variable | Example |
+|----------|---------|
+| `PUBLIC_BASE_URL` | `https://truevipaccess.com` |
+| `MAIL_DOMAIN` | `truevipaccess.com` |
+| `IMAP_HOST` | `truevipaccess.com` |
+| `IMAP_PORT` | `143` |
+| `MAX_CONCURRENT_REQUESTS` | `100` |
+| `POLAR_PRICE_ID` | `01f68f36-4b6f-402a-b670-c7ebde03a836` |
+| `POLAR_SERVER_URL` | `https://api.polar.sh` |
+| `POLAR_SUCCESS_URL` | `https://truevipaccess.com/v1/payments/polar/success?checkout_id={CHECKOUT_ID}` |
+| `POLAR_RETURN_URL` | `https://truevipaccess.com` |
+| `UNSEND_BASE_URL` | `https://unsend.admin.lt/api` |
+| `UNSEND_FROM_EMAIL` | `noreply@truevipaccess.com` |
+| `UNSEND_FROM_NAME` | `MailService` |
+
+The deploy validates that required vars are non-empty before applying.
+`BUILD_NUMBER` and `CACHE_BUSTER` are computed by CI and injected automatically.
+
+### Cloudflare Tunnel
+
+`/var/lib/secrets/cloudflared.env` is not managed by the deploy workflow.
+Create it manually on the host:
 
 ```env
 TUNNEL_TOKEN=...

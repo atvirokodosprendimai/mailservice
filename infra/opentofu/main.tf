@@ -46,6 +46,13 @@ resource "hcloud_firewall" "mailservice" {
     port       = "143"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
+
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "993"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
 }
 
 resource "hcloud_server" "app" {
@@ -64,6 +71,34 @@ resource "hcloud_server" "app" {
   user_data = local.server_user_data
 }
 
+data "cloudflare_zones" "domain" {
+  filter {
+    name = var.public_hostname
+  }
+}
+
+locals {
+  cloudflare_zone_id = data.cloudflare_zones.domain.zones[0].id
+}
+
+resource "cloudflare_record" "mail_a" {
+  zone_id = local.cloudflare_zone_id
+  name    = "mail"
+  content = hcloud_server.app.ipv4_address
+  type    = "A"
+  ttl     = 300
+  proxied = false
+}
+
+resource "cloudflare_record" "mx_primary" {
+  zone_id  = local.cloudflare_zone_id
+  name     = var.public_hostname
+  content  = "mail.${var.public_hostname}"
+  type     = "MX"
+  priority = 10
+  ttl      = 300
+}
+
 output "server_ipv4" {
   value = hcloud_server.app.ipv4_address
 }
@@ -74,4 +109,8 @@ output "server_name" {
 
 output "public_hostname" {
   value = var.public_hostname
+}
+
+output "mail_hostname" {
+  value = cloudflare_record.mail_a.hostname
 }

@@ -1,13 +1,20 @@
 name: Hetzner OpenTofu
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/hetzner-opentofu.yml"
+      - "infra/opentofu/**"
+      - "nix/modules/mailservice-gitops.nix"
   pull_request:
     branches:
       - main
     paths:
       - ".github/workflows/hetzner-opentofu.yml"
       - "infra/opentofu/**"
-      - "docs/hetzner-cicd.md"
+      - "nix/modules/mailservice-gitops.nix"
   workflow_dispatch:
     inputs:
       apply:
@@ -72,6 +79,7 @@ jobs:
       - name: OpenTofu validate
         env:
           TF_VAR_hcloud_token: "placeholder"
+          TF_VAR_cloudflare_api_token: "placeholder"
           TF_VAR_ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKplaceholder mailservice@example"
           TF_VAR_public_base_url: "https://example.invalid"
           TF_VAR_image: "ubuntu-24.04"
@@ -138,6 +146,7 @@ jobs:
       - name: OpenTofu plan
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
           TF_VAR_name: ${{ github.event.inputs.name }}
           TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
@@ -224,9 +233,78 @@ jobs:
       - name: OpenTofu apply
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
           TF_VAR_name: ${{ github.event.inputs.name }}
           TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
           TF_VAR_image: ${{ github.event.inputs.image }}
           TF_VAR_bootstrap_mode: ${{ github.event.inputs.bootstrap_mode }}
         run: tofu apply -input=false -auto-approve tfplan
+
+  auto-apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: validate
+    environment:
+      name: production
+    defaults:
+      run:
+        working-directory: infra/opentofu
+        shell: bash -euo pipefail {0}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_wrapper: false
+
+      - name: Write backend config
+        run: |
+          cat > backend.hcl <<EOF
+          bucket = "${TOFU_STATE_BUCKET}"
+          key    = "mailservice/production/terraform.tfstate"
+          region = "${TOFU_STATE_REGION}"
+          endpoints = {
+            s3 = "${TOFU_STATE_ENDPOINT}"
+          }
+          access_key = "${TOFU_STATE_ACCESS_KEY}"
+          secret_key = "${TOFU_STATE_SECRET_KEY}"
+          skip_credentials_validation = true
+          skip_requesting_account_id  = true
+          skip_metadata_api_check     = true
+          use_path_style              = true
+          EOF
+        env:
+          TOFU_STATE_BUCKET: ${{ secrets.TOFU_STATE_BUCKET }}
+          TOFU_STATE_REGION: ${{ secrets.TOFU_STATE_REGION }}
+          TOFU_STATE_ENDPOINT: ${{ secrets.TOFU_STATE_ENDPOINT }}
+          TOFU_STATE_ACCESS_KEY: ${{ secrets.TOFU_STATE_ACCESS_KEY }}
+          TOFU_STATE_SECRET_KEY: ${{ secrets.TOFU_STATE_SECRET_KEY }}
+
+      - name: OpenTofu init
+        run: |
+          for attempt in 1 2 3; do
+            if tofu init -backend-config=backend.hcl; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: OpenTofu apply
+        env:
+          TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          TF_VAR_name: "mailservice"
+          TF_VAR_ssh_public_key: ${{ secrets.HETZNER_SSH_PUBLIC_KEY }}
+          TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
+          TF_VAR_image: "ubuntu-24.04"
+          TF_VAR_bootstrap_mode: "none"
+        run: tofu apply -input=false -auto-approve
