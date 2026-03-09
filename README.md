@@ -137,6 +137,8 @@ On the NixOS production host:
 - `HTTP_ADDR` (default `:8080`)
 - `DATABASE_DSN` (default `mailservice.db`)
 - `MAX_CONCURRENT_REQUESTS` (default `100`, set `0` to disable semaphore)
+- `BUILD_NUMBER` (default `dev`; shown on landing page)
+- `CACHE_BUSTER` (optional; landing page cache token, defaults to `BUILD_NUMBER`)
 - `PUBLIC_BASE_URL` (default `http://localhost:8080`)
 - `MAIL_DOMAIN` (default `mail.local`)
 - `IMAP_HOST` (default `MAIL_DOMAIN`)

@@ -11,6 +11,8 @@ type Config struct {
 	HTTPAddr            string
 	DatabaseDSN         string
 	MaxConcurrentReqs   int
+	BuildNumber         string
+	CacheBuster         string
 	PublicBaseURL       string
 	MailDomain          string
 	IMAPHost            string
@@ -48,6 +50,8 @@ func Load() (*Config, error) {
 		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
 		DatabaseDSN:         getEnv("DATABASE_DSN", "mailservice.db"),
 		MaxConcurrentReqs:   getEnvInt("MAX_CONCURRENT_REQUESTS", 100),
+		BuildNumber:         getEnv("BUILD_NUMBER", "dev"),
+		CacheBuster:         getEnv("CACHE_BUSTER", ""),
 		PublicBaseURL:       publicBaseURL,
 		MailDomain:          getEnv("MAIL_DOMAIN", "mail.local"),
 		IMAPHost:            getEnv("IMAP_HOST", getEnv("MAIL_DOMAIN", "mail.local")),

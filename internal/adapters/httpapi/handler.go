@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -23,6 +24,8 @@ type Config struct {
 	StripeWebhookSecret string
 	PolarWebhookSecret  string
 	MaxConcurrentReqs   int
+	BuildNumber         string
+	CacheBuster         string
 	KeyProofVerifier    ports.KeyProofVerifier
 	PaymentGateway      ports.PaymentGateway
 	MailboxService      *service.MailboxService
@@ -41,6 +44,8 @@ type Handler struct {
 	accountService      *service.AccountService
 	logger              *log.Logger
 	now                 func() time.Time
+	buildNumber         string
+	cacheBuster         string
 }
 
 type accountContextKey struct{}
@@ -61,6 +66,8 @@ func NewHandler(cfg Config) *Handler {
 		accountService:      cfg.AccountService,
 		logger:              cfg.Logger,
 		now:                 coalesceNow(cfg.Now),
+		buildNumber:         fallbackString(cfg.BuildNumber, "dev"),
+		cacheBuster:         fallbackString(cfg.CacheBuster, fallbackString(cfg.BuildNumber, "dev")),
 	}
 }
 
@@ -98,20 +105,35 @@ func (h *Handler) handleHome(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(w, homePageHTML)
+	_, _ = io.WriteString(w, renderHomePageHTML(h.buildNumber, h.cacheBuster))
 }
 
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-var homePageHTML = fmt.Sprintf(`<!doctype html>
+func renderHomePageHTML(buildNumber string, cacheBuster string) string {
+	return fmt.Sprintf(homePageHTMLTemplate,
+		html.EscapeString(buildNumber),
+		html.EscapeString(cacheBuster),
+		html.EscapeString(cacheBuster),
+		homePageAgentPrompt,
+	)
+}
+
+var homePageHTMLTemplate = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-store, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>TrueVIP Access Mailbox</title>
   <style>
     :root {
@@ -163,6 +185,11 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
       font-size: 1.15rem;
       line-height: 1.6;
       color: var(--muted);
+    }
+    .meta {
+      margin: 0 0 20px;
+      color: var(--muted);
+      font: 500 0.9rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
     }
     .rules {
       display: grid;
@@ -245,6 +272,7 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
       Same key, same mailbox. Different key, different mailbox. Pay monthly. Read inbound mail over IMAP.
       No SMTP. No outbound sending.
     </p>
+    <p class="meta">Build: <code>%s</code> | Cache buster: <code>%s</code></p>
 
     <div class="rules">
       <div class="rule">
@@ -264,7 +292,7 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
 
     <div class="actions">
       <a class="button primary" href="#start">How to start</a>
-      <a class="button secondary" href="/healthz">Health</a>
+      <a class="button secondary" href="/healthz?cb=%s">Health</a>
     </div>
 
     <div class="grid">
@@ -297,7 +325,7 @@ var homePageHTML = fmt.Sprintf(`<!doctype html>
   </main>
 </body>
 </html>
-`, homePageAgentPrompt)
+`
 
 const homePageAgentPrompt = `If no EdProof key exists locally, generate an Ed25519 key pair with: ssh-keygen -t ed25519 -f identity -C "entity@context"
 Use identity.pub as the public key and keep identity private.
@@ -1044,4 +1072,12 @@ func coalesceNow(now func() time.Time) func() time.Time {
 	return func() time.Time {
 		return time.Now().UTC()
 	}
+}
+
+func fallbackString(value string, fallback string) string {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return fallback
+	}
+	return v
 }

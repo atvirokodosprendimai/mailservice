@@ -119,6 +119,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Compute build metadata
+        run: |
+          short_sha="${GITHUB_SHA:0:7}"
+          echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "CACHE_BUSTER=${short_sha}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+
       - name: Start ssh-agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -145,6 +151,26 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Write build metadata on host
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            set -eu
+            env_file="/var/lib/secrets/mailservice.env"
+            tmp_file="$(mktemp)"
+            if [ -f "$env_file" ]; then
+              awk "!/^BUILD_NUMBER=|^CACHE_BUSTER=/" "$env_file" > "$tmp_file"
+            fi
+            printf "BUILD_NUMBER=%s\n" "$BUILD_NUMBER" >> "$tmp_file"
+            printf "CACHE_BUSTER=%s\n" "$CACHE_BUSTER" >> "$tmp_file"
+            install -m 640 -o root -g mailservice "$tmp_file" "$env_file"
+            rm -f "$tmp_file"
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
+          CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
 
       - name: Apply NixOS configuration
         run: |
@@ -175,3 +201,23 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Verify public build version
+        env:
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
+          CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
+        run: |
+          page="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --retry-connrefused "${PUBLIC_BASE_URL}/?cb=${CACHE_BUSTER}")"
+          expected_build="Build: <code>${BUILD_NUMBER}</code>"
+          expected_buster="Cache buster: <code>${CACHE_BUSTER}</code>"
+
+          if [[ "$page" != *"$expected_build"* ]]; then
+            echo "expected public page to contain: $expected_build" >&2
+            exit 1
+          fi
+
+          if [[ "$page" != *"$expected_buster"* ]]; then
+            echo "expected public page to contain: $expected_buster" >&2
+            exit 1
+          fi

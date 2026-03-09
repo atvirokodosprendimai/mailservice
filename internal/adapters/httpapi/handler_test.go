@@ -27,7 +27,9 @@ func TestDecodeJSONRejectsMultiplePayloads(t *testing.T) {
 
 func TestHandleHomeReturnsLandingPage(t *testing.T) {
 	handler := NewHandler(Config{
-		Logger: log.New(io.Discard, "", 0),
+		BuildNumber: "1234",
+		CacheBuster: "1234-abcd",
+		Logger:      log.New(io.Discard, "", 0),
 	})
 
 	req := httptest.NewRequest("GET", "/", nil)
@@ -41,11 +43,17 @@ func TestHandleHomeReturnsLandingPage(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "text/html") {
 		t.Fatalf("expected text/html content type, got %q", got)
 	}
+	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Fatalf("expected no-store cache control, got %q", got)
+	}
 	body := rec.Body.String()
 	for _, want := range []string{
 		"Stable mailbox identity, bound to a key.",
 		"Same key, same mailbox.",
 		"No SMTP. No outbound sending.",
+		"Build: <code>1234</code>",
+		"Cache buster: <code>1234-abcd</code>",
+		"/healthz?cb=1234-abcd",
 		"ssh-keygen -t ed25519 -f identity -C \"entity@context\"",
 		"The SHA-256 fingerprint from ssh-keygen -l -E sha256 -f identity.pub is the stable EdProof identifier.",
 		"EdProof is the key proof used to identify the mailbox.",
