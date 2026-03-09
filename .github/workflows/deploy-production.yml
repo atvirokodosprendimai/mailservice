@@ -43,7 +43,6 @@ jobs:
           repo_lc="${GITHUB_REPOSITORY,,}"
           commit_sha="${DEPLOY_SHA}"
           short_sha="${commit_sha:0:7}"
-          echo "api=${{ env.REGISTRY }}/${repo_lc}-api:sha-${short_sha}" >> "$GITHUB_OUTPUT"
           echo "mailreceive=${{ env.REGISTRY }}/${repo_lc}-mailreceive:sha-${short_sha}" >> "$GITHUB_OUTPUT"
         env:
           DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
@@ -57,27 +56,23 @@ jobs:
 
       - name: Wait for published images
         env:
-          API_IMAGE: ${{ steps.images.outputs.api }}
           MAILRECEIVE_IMAGE: ${{ steps.images.outputs.mailreceive }}
         run: |
-          for image in "$API_IMAGE" "$MAILRECEIVE_IMAGE"; do
-            for attempt in $(seq 1 30); do
-              if docker manifest inspect "$image" >/dev/null 2>&1; then
-                break
-              fi
-              if [ "$attempt" -eq 30 ]; then
-                echo "image not available: $image" >&2
-                exit 1
-              fi
-              sleep 20
-            done
+          for attempt in $(seq 1 30); do
+            if docker manifest inspect "$MAILRECEIVE_IMAGE" >/dev/null 2>&1; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "image not available: $MAILRECEIVE_IMAGE" >&2
+              exit 1
+            fi
+            sleep 20
           done
 
       - name: Write production env
         run: |
           umask 077
           cat > production.env <<EOF
-          API_IMAGE=${API_IMAGE}
           MAILRECEIVE_IMAGE=${MAILRECEIVE_IMAGE}
           PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
           MAIL_DOMAIN=${MAIL_DOMAIN}
@@ -100,7 +95,6 @@ jobs:
           EOF
           chmod 600 production.env
         env:
-          API_IMAGE: ${{ steps.images.outputs.api }}
           MAILRECEIVE_IMAGE: ${{ steps.images.outputs.mailreceive }}
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           MAIL_DOMAIN: ${{ vars.MAIL_DOMAIN }}

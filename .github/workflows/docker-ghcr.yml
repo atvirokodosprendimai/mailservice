@@ -25,9 +25,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: api
-            dockerfile: Dockerfile
-            image_suffix: -api
           - name: mailreceive
             dockerfile: docker/mailreceive/Dockerfile
             image_suffix: -mailreceive

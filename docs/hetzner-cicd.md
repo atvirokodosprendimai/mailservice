@@ -75,11 +75,11 @@ Run:
 5. gated `apply` job can run only after the `plan` job succeeds
 6. production environment approval can be enforced through GitHub environment protection
 7. `deploy` job writes `production.env` from GitHub vars/secrets with secret-safe file permissions
-8. deploy computes immutable image refs for the current commit SHA
-9. workflow waits for those GHCR image tags to exist before continuing
+8. deploy computes the immutable `mailreceive` image ref for the current commit SHA
+9. workflow waits for that GHCR image tag to exist before continuing
 10. workflow pins the SSH host key from `DEPLOY_HOST_KEY`
 11. workflow uploads `compose.tunnel.yml.example` and `production.env` to `/opt/mailservice`
-12. workflow runs compose on the host against those exact image tags
+12. workflow runs compose on the host against that exact mailreceive image tag
 13. workflow checks the host-local API health endpoint with bounded retries
 
 ### Automatic app deploy on `main`
@@ -87,8 +87,8 @@ Run:
 Run:
 1. `Docker Build and Push` publishes immutable GHCR images on `push` to `main`
 2. `Deploy Production App` starts only after that workflow completes successfully for the same `main` commit
-3. deploy resolves the exact `sha-<commit>` image tags for that built commit
-4. deploy waits until those exact image manifests exist in GHCR
+3. deploy resolves the exact `sha-<commit>` mailreceive image tag for that built commit
+4. deploy waits until that exact image manifest exists in GHCR
 5. deploy uploads `compose.tunnel.yml.example` and a generated `production.env`
 6. deploy rolls the host to that exact app revision
 7. deploy checks the host-local API health endpoint
@@ -136,5 +136,5 @@ Rollback expectations:
 - for the tunnel path, pass `CLOUDFLARE_TUNNEL_TOKEN` into the container as `TUNNEL_TOKEN`
 - host-side deploy uses `compose.tunnel.yml.example` plus a generated `production.env`
 - the tunnel compose file reads runtime values from `production.env`; it is not meant to hard-code production secrets
-- production deploy uses immutable GHCR tags of the form `sha-<commit>` rather than relying on `latest`
+- production deploy uses an immutable `mailreceive` GHCR tag of the form `sha-<commit>` rather than relying on `latest`
 - for a NixOS/custom image host, set `bootstrap_mode=none` so the workflow provisions the VM without assuming Ubuntu packages or Docker bootstrap
