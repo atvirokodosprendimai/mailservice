@@ -115,9 +115,14 @@ in
       };
     };
 
+    nixpkgs.overlays = [
+      (final: prev: {
+        postfix = prev.postfix.override { withSQLite = true; };
+      })
+    ];
+
     services.postfix = {
       enable = true;
-      package = pkgs.postfix.override { withSQLite = true; };
       enableSmtp = true;
       hostname = cfg.mailDomain;
       domain = cfg.mailDomain;
