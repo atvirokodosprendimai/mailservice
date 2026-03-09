@@ -131,8 +131,8 @@ in
         smtpd_relay_restrictions = "reject_unauth_destination";
         default_transport = "error:outbound_mail_disabled";
         relay_transport = "error:outbound_mail_disabled";
-        virtual_mailbox_domains = "sqlite:/etc/postfix/sqlite-domains.cf";
-        virtual_mailbox_maps = "sqlite:/etc/postfix/sqlite-mailboxes.cf";
+        virtual_mailbox_domains = "sqlite:/var/lib/postfix/conf/sqlite-domains.cf";
+        virtual_mailbox_maps = "sqlite:/var/lib/postfix/conf/sqlite-mailboxes.cf";
         virtual_transport = "lmtp:unix:private/dovecot-lmtp";
         virtual_mailbox_base = mailRoot;
         virtual_minimum_uid = 5000;
