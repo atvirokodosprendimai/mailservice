@@ -83,6 +83,8 @@ func main() {
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
 		PolarWebhookSecret:  cfg.PolarWebhookSecret,
 		MaxConcurrentReqs:   cfg.MaxConcurrentReqs,
+		BuildNumber:         cfg.BuildNumber,
+		CacheBuster:         cfg.CacheBuster,
 		PaymentGateway:      paymentGateway,
 		MailboxService:      mailboxService,
 		AccountService:      accountService,

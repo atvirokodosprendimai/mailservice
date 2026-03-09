@@ -43,8 +43,11 @@ jobs:
           repo_lc="${GITHUB_REPOSITORY,,}"
           commit_sha="${DEPLOY_SHA}"
           short_sha="${commit_sha:0:7}"
+          cache_buster="${short_sha}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
           echo "api=${{ env.REGISTRY }}/${repo_lc}-api:sha-${short_sha}" >> "$GITHUB_OUTPUT"
           echo "mailreceive=${{ env.REGISTRY }}/${repo_lc}-mailreceive:sha-${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "build_number=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "cache_buster=${cache_buster}" >> "$GITHUB_OUTPUT"
         env:
           DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
@@ -79,6 +82,8 @@ jobs:
           cat > production.env <<EOF
           API_IMAGE=${API_IMAGE}
           MAILRECEIVE_IMAGE=${MAILRECEIVE_IMAGE}
+          BUILD_NUMBER=${BUILD_NUMBER}
+          CACHE_BUSTER=${CACHE_BUSTER}
           PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
           MAIL_DOMAIN=${MAIL_DOMAIN}
           IMAP_HOST=${IMAP_HOST}
@@ -102,6 +107,8 @@ jobs:
         env:
           API_IMAGE: ${{ steps.images.outputs.api }}
           MAILRECEIVE_IMAGE: ${{ steps.images.outputs.mailreceive }}
+          BUILD_NUMBER: ${{ steps.images.outputs.build_number }}
+          CACHE_BUSTER: ${{ steps.images.outputs.cache_buster }}
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           MAIL_DOMAIN: ${{ vars.MAIL_DOMAIN }}
           IMAP_HOST: ${{ vars.IMAP_HOST }}
@@ -185,3 +192,23 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Verify public build version
+        env:
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          BUILD_NUMBER: ${{ steps.images.outputs.build_number }}
+          CACHE_BUSTER: ${{ steps.images.outputs.cache_buster }}
+        run: |
+          page="$(curl --fail --silent --show-error --location "${PUBLIC_BASE_URL}/?cb=${CACHE_BUSTER}")"
+          expected_build="Build: <code>${BUILD_NUMBER}</code>"
+          expected_buster="Cache buster: <code>${CACHE_BUSTER}</code>"
+
+          if [[ "$page" != *"$expected_build"* ]]; then
+            echo "expected public page to contain: $expected_build" >&2
+            exit 1
+          fi
+
+          if [[ "$page" != *"$expected_buster"* ]]; then
+            echo "expected public page to contain: $expected_buster" >&2
+            exit 1
+          fi
