@@ -41,6 +41,7 @@ jobs:
     defaults:
       run:
         working-directory: infra/opentofu
+        shell: bash -euo pipefail {0}
     permissions:
       contents: read
 
@@ -85,6 +86,7 @@ jobs:
     defaults:
       run:
         working-directory: infra/opentofu
+        shell: bash -euo pipefail {0}
     permissions:
       contents: read
 
@@ -164,6 +166,7 @@ jobs:
     defaults:
       run:
         working-directory: infra/opentofu
+        shell: bash -euo pipefail {0}
     permissions:
       contents: read
 
