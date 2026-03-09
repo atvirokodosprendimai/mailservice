@@ -171,6 +171,22 @@ in
       ln -sf ${postfixSqliteMailboxesFile} /var/lib/postfix/conf/sqlite-mailboxes.cf
     '';
 
+    security.acme = {
+      acceptTerms = true;
+      defaults.email = "postmaster@${cfg.mailDomain}";
+      certs."mail.${cfg.mailDomain}" = {
+        group = "mailservice";
+      };
+    };
+
+    services.nginx = {
+      enable = true;
+      virtualHosts."mail.${cfg.mailDomain}" = {
+        enableACME = true;
+        locations."/".return = "444";
+      };
+    };
+
     environment.etc."dovecot/dovecot-sql.conf.ext".source = dovecotSqlConfigFile;
     services.dovecot2 = {
       enable = true;
@@ -180,7 +196,11 @@ in
       mailUser = "vmail";
       mailGroup = "vmail";
       createMailUser = false;
+      sslServerCert = "/var/lib/acme/mail.${cfg.mailDomain}/fullchain.pem";
+      sslServerKey = "/var/lib/acme/mail.${cfg.mailDomain}/key.pem";
       extraConfig = ''
+        ssl = yes
+
         passdb {
           driver = sql
           args = /etc/dovecot/dovecot-sql.conf.ext
@@ -204,8 +224,9 @@ in
         }
       '';
     };
-    systemd.services.dovecot2.after = [ "mailservice-api.service" "postfix-setup.service" ];
-    systemd.services.dovecot2.wants = [ "mailservice-api.service" "postfix-setup.service" ];
+    systemd.services.dovecot2.after = [ "mailservice-api.service" "postfix-setup.service" "acme-mail.${cfg.mailDomain}.service" ];
+    systemd.services.dovecot2.wants = [ "mailservice-api.service" "postfix-setup.service" "acme-mail.${cfg.mailDomain}.service" ];
+    security.acme.certs."mail.${cfg.mailDomain}".reloadServices = [ "dovecot2.service" ];
 
     systemd.services.mailservice-cloudflared = {
       description = "Cloudflare Tunnel for mailservice";
