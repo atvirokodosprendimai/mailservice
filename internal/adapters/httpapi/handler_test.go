@@ -50,6 +50,7 @@ func TestHandleHomeReturnsLandingPage(t *testing.T) {
 	for _, want := range []string{
 		"Stable mailbox identity, bound to a key.",
 		"Same key, same mailbox.",
+		"Pricing: 1 EUR/month per mailbox (100 MB storage).",
 		"No SMTP. No outbound sending.",
 		"Build: <code>1234</code>",
 		"Cache buster: <code>1234-abcd</code>",

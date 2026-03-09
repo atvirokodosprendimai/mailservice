@@ -270,7 +270,7 @@ var homePageHTMLTemplate = `<!doctype html>
     <h1>Stable mailbox identity, bound to a key.</h1>
     <p class="lede">
       Same key, same mailbox. Different key, different mailbox. Pay monthly. Read inbound mail over IMAP.
-      No SMTP. No outbound sending.
+      Pricing: 1 EUR/month per mailbox (100 MB storage). No SMTP. No outbound sending.
     </p>
     <p class="meta">Build: <code>%s</code> | Cache buster: <code>%s</code></p>
 
