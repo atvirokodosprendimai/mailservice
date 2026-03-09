@@ -91,22 +91,6 @@ jobs:
           echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
           echo "region=$region" >> "$GITHUB_OUTPUT"
 
-      - name: Build production system closure
-        env:
-          S3_CACHE_ENABLED: ${{ steps.s3cache.outputs.enabled }}
-          NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
-          NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
-          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID != '' && secrets.NIX_CACHE_S3_ACCESS_KEY_ID || secrets.TOFU_STATE_ACCESS_KEY }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY != '' && secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY || secrets.TOFU_STATE_SECRET_KEY }}
-        run: |
-          if [ "$S3_CACHE_ENABLED" = "true" ]; then
-            nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel \
-              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
-          else
-            nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel
-          fi
-
       - name: Ensure Nix cache metadata exists
         if: ${{ steps.s3cache.outputs.upload_enabled == 'true' }}
         env:
@@ -122,6 +106,22 @@ jobs:
           fi
           printf 'StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 40\n' > nix-cache-info
           aws s3 cp nix-cache-info "s3://${NIX_CACHE_S3_BUCKET}/nix-cache-info" --region "$NIX_CACHE_S3_REGION" --endpoint-url "$endpoint_url"
+
+      - name: Build production system closure
+        env:
+          S3_CACHE_ENABLED: ${{ steps.s3cache.outputs.enabled }}
+          NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
+          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID != '' && secrets.NIX_CACHE_S3_ACCESS_KEY_ID || secrets.TOFU_STATE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY != '' && secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY || secrets.TOFU_STATE_SECRET_KEY }}
+        run: |
+          if [ "$S3_CACHE_ENABLED" = "true" ]; then
+            nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel \
+              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+          else
+            nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel
+          fi
 
       - name: Upload closure to Hetzner S3 cache
         if: ${{ steps.s3cache.outputs.upload_enabled == 'true' }}
@@ -245,16 +245,18 @@ jobs:
           BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
           CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
         run: |
-          page="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --retry-connrefused "${PUBLIC_BASE_URL}/?cb=${CACHE_BUSTER}")"
           expected_build="Build: <code>${BUILD_NUMBER}</code>"
           expected_buster="Cache buster: <code>${CACHE_BUSTER}</code>"
+          for attempt in $(seq 1 12); do
+            page="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --retry-connrefused "${PUBLIC_BASE_URL}/?cb=${CACHE_BUSTER}")"
+            if [[ "$page" == *"$expected_build"* && "$page" == *"$expected_buster"* ]]; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 12 ]; then
+              sleep 5
+            fi
+          done
 
-          if [[ "$page" != *"$expected_build"* ]]; then
-            echo "expected public page to contain: $expected_build" >&2
-            exit 1
-          fi
-
-          if [[ "$page" != *"$expected_buster"* ]]; then
-            echo "expected public page to contain: $expected_buster" >&2
-            exit 1
-          fi
+          echo "expected public page to contain: $expected_build" >&2
+          echo "expected public page to contain: $expected_buster" >&2
+          exit 1
