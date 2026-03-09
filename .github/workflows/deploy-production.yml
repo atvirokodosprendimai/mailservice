@@ -107,6 +107,22 @@ jobs:
             nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel
           fi
 
+      - name: Ensure Nix cache metadata exists
+        if: ${{ steps.s3cache.outputs.upload_enabled == 'true' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID != '' && secrets.NIX_CACHE_S3_ACCESS_KEY_ID || secrets.TOFU_STATE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY != '' && secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY || secrets.TOFU_STATE_SECRET_KEY }}
+          NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
+          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+        run: |
+          endpoint_url="https://${NIX_CACHE_S3_ENDPOINT}"
+          if aws s3api head-object --bucket "$NIX_CACHE_S3_BUCKET" --key nix-cache-info --region "$NIX_CACHE_S3_REGION" --endpoint-url "$endpoint_url" >/dev/null 2>&1; then
+            exit 0
+          fi
+          printf 'StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 40\n' > nix-cache-info
+          aws s3 cp nix-cache-info "s3://${NIX_CACHE_S3_BUCKET}/nix-cache-info" --region "$NIX_CACHE_S3_REGION" --endpoint-url "$endpoint_url"
+
       - name: Upload closure to Hetzner S3 cache
         if: ${{ steps.s3cache.outputs.upload_enabled == 'true' }}
         env:
