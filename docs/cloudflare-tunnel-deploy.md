@@ -64,17 +64,16 @@ cloudflared tunnel --no-autoupdate run
 
 with:
 
-- image `cloudflare/cloudflared:2026.2.0`
-- `TUNNEL_TOKEN` from environment
-- compose maps `CLOUDFLARE_TUNNEL_TOKEN` into `TUNNEL_TOKEN`
-- dependency on the API container
+- `TUNNEL_TOKEN` from `/var/lib/secrets/cloudflared.env`
+- a native systemd service on the NixOS host
+- dependency on the API service
 - no published API host port in the tunnel-based production shape
 
 Use:
 
 - `compose.yml.example` for local development
-- `compose.tunnel.yml.example` for the tunnel-based production shape
-- `deploy/production.env.example` as the checked-in template for the host runtime file
+- the NixOS host configuration for the live production shape
+- `deploy/production.env.example` as the checked-in template for the runtime secrets file
 
 ## Cloudflare Routing
 
@@ -82,7 +81,7 @@ In Cloudflare:
 
 1. create a tunnel
 2. configure public hostname `truevipaccess.com`
-3. point it to `http://api:8080` inside the Docker network
+3. point it to `http://127.0.0.1:8080` on the host
 4. issue the tunnel token for runtime use
 
 No direct `A` record to Hetzner is required for this temporary path.

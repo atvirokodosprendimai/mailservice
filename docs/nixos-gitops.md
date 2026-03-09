@@ -11,7 +11,7 @@ The reason is simple:
 
 - host package drift caused real deploy failures
 - mutable shell assumptions made rollouts fragile
-- Git should describe both the host runtime and the pinned application artifact
+- Git should describe the host runtime and the application it runs
 
 ## Shape
 
@@ -25,9 +25,8 @@ Runtime model:
 
 - NixOS host
 - native systemd service for the API
-- pinned mailreceive image ref in Git
+- native Postfix and Dovecot services for inbound mail
 - native systemd service for Cloudflare Tunnel; configure the tunnel origin to `http://127.0.0.1:8080`, not a Docker-internal hostname such as `http://api:8080`
-- Docker backend still used for mailreceive until that stack is also moved to native NixOS services
 - secrets kept out of Git in `/var/lib/secrets/mailservice.env`
 
 ## What Lives In Git
@@ -36,7 +35,7 @@ Git-managed:
 
 - host configuration
 - API package build and service definition
-- mailreceive image reference
+- native mail service configuration
 - firewall/runtime shape
 - Cloudflare tunnel runtime definition
 - service topology
@@ -57,17 +56,11 @@ Example:
 ```nix
 services.mailserviceGitOps = {
   enable = true;
-  mailreceiveImage = "ghcr.io/atvirokodosprendimai/mailservice-mailreceive:sha-abc1234";
+  mailDomain = "truevipaccess.com";
 };
 ```
 
-That removes the API’s runtime dependence on GHCR and Docker.
-
-## Mailreceive Pinning
-
-Rollouts for the inbound mail stack still happen by changing the pinned
-`mailreceiveImage` ref in
-[`nix/hosts/truevipaccess/configuration.nix`](../nix/hosts/truevipaccess/configuration.nix).
+That removes the runtime dependence on GHCR and Docker.
 
 ## Secrets File
 
@@ -104,10 +97,8 @@ TUNNEL_TOKEN=...
 
 Preferred future path: use NixOps to apply the host revision.
 
-1. Build and publish commit-pinned images.
-2. Update the pinned `mailreceiveImage` ref in the NixOS host config when needed.
-3. Commit that change to Git.
-4. Apply the new revision with NixOps.
+1. Commit the host and application changes to Git.
+2. Apply the new revision with NixOps.
 
 Example:
 
@@ -122,7 +113,7 @@ debugging on the host, but it is not the preferred multi-step rollout path.
 
 Rollback is revision-based:
 
-1. revert the Git commit that changed the host config or image refs
+1. revert the Git commit that changed the host config
 2. apply the previous revision again
 
 That is the key GitOps property this path is meant to provide.

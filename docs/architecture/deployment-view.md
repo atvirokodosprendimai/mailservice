@@ -17,22 +17,23 @@ The current target is a single Hetzner host fronted by Cloudflare Tunnel for `tr
 
 | Service | Purpose |
 | --- | --- |
-| `mailservice` | Main API container. |
-| `mailreceive` | Receive-only mail stack for inbound mail and IMAP access. |
-| `cloudflared` | Temporary reverse-proxy ingress for `truevipaccess.com`. |
-| SQLite volume | Shared persistent state for API and mail runtime. |
+| `mailservice-api` | Main API systemd service built from the repo with Nix. |
+| `postfix` | Receive-only SMTP ingress for inbound mail. |
+| `dovecot2` | IMAP access and LMTP delivery for provisioned mailboxes. |
+| `mailservice-cloudflared` | Temporary reverse-proxy ingress for `truevipaccess.com`. |
+| SQLite database | Shared persistent state for API and mail runtime. |
 
 ## Deployment Flow
 
 1. GitHub Actions validates the workflow and OpenTofu configuration.
 2. GitHub Actions runs OpenTofu plan.
 3. Production apply is gated behind the plan stage and environment approval.
-4. After infrastructure apply, GitHub Actions uploads compose/runtime files to the host.
-5. The host runs `docker compose pull` and `docker compose up -d`.
-6. GitHub Actions performs a health check against `PUBLIC_BASE_URL`.
+4. For application changes, GitHub Actions syncs the repo revision to the host.
+5. The host runs `nixos-rebuild switch --flake .#truevipaccess`.
+6. GitHub Actions performs a host-local health check.
 
 ## Operational Constraints
 
 - Cloudflare Tunnel is the current temporary ingress path, not the final permanent edge design.
 - The app must keep `PUBLIC_BASE_URL` aligned with the public hostname so payment return URLs remain valid.
-- The deployment docs and workflow should stay aligned with `compose.tunnel.yml.example`.
+- The deployment docs and workflow should stay aligned with the NixOS host configuration.
