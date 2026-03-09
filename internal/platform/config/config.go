@@ -23,6 +23,10 @@ type Config struct {
 	ResendAPIKey        string
 	ResendFromEmail     string
 	ResendFromName      string
+	UnsendKey           string
+	UnsendBaseURL       string
+	UnsendFromEmail     string
+	UnsendFromName      string
 	PolarToken          string
 	PolarServerURL      string
 	PolarPriceID        string
@@ -62,6 +66,10 @@ func Load() (*Config, error) {
 		ResendAPIKey:        os.Getenv("RESEND_API_KEY"),
 		ResendFromEmail:     getEnv("RESEND_FROM_EMAIL", ""),
 		ResendFromName:      getEnv("RESEND_FROM_NAME", "MailService"),
+		UnsendKey:           os.Getenv("UNSEND_KEY"),
+		UnsendBaseURL:       getEnv("UNSEND_BASE_URL", "https://unsend.admin.lt/api"),
+		UnsendFromEmail:     getEnv("UNSEND_FROM_EMAIL", ""),
+		UnsendFromName:      getEnv("UNSEND_FROM_NAME", "MailService"),
 		PolarToken:          os.Getenv("POLAR_TOKEN"),
 		PolarServerURL:      getEnv("POLAR_SERVER_URL", "https://api.polar.sh"),
 		PolarPriceID:        getEnv("POLAR_PRICE_ID", ""),

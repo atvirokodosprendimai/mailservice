@@ -163,8 +163,12 @@ On the NixOS production host:
 - `RESEND_API_KEY` (optional; enable Resend notifier)
 - `RESEND_FROM_EMAIL` (required when Resend is enabled)
 - `RESEND_FROM_NAME` (optional, default `MailService`)
+- `UNSEND_KEY` (optional; enable Unsend notifier)
+- `UNSEND_BASE_URL` (default `https://unsend.admin.lt/api`)
+- `UNSEND_FROM_EMAIL` (required when Unsend is enabled)
+- `UNSEND_FROM_NAME` (optional, default `MailService`)
 
-When both providers are configured, Resend takes precedence.
+Notifier precedence: Unsend -> Resend -> SendGrid -> log notifier.
 
 ## API examples
 

@@ -8,7 +8,7 @@ import (
 
 func TestLoadReadsDotEnvFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	dotEnv := []byte("HTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\nMAX_CONCURRENT_REQUESTS=77\nMAIL_DOMAIN=mx.example.com\nIMAP_HOST=imap.example.com\nIMAP_PORT=1143\nSENDGRID_FROM_EMAIL=noreply@example.com\nRESEND_FROM_EMAIL=hello@example.com\n")
+	dotEnv := []byte("HTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\nMAX_CONCURRENT_REQUESTS=77\nMAIL_DOMAIN=mx.example.com\nIMAP_HOST=imap.example.com\nIMAP_PORT=1143\nSENDGRID_FROM_EMAIL=noreply@example.com\nRESEND_FROM_EMAIL=hello@example.com\nUNSEND_BASE_URL=https://unsend.admin.lt/api\nUNSEND_FROM_EMAIL=mail@example.com\n")
 	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), dotEnv, 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
@@ -35,6 +35,9 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 	t.Setenv("IMAP_PORT", "")
 	t.Setenv("SENDGRID_FROM_EMAIL", "")
 	t.Setenv("RESEND_FROM_EMAIL", "")
+	t.Setenv("UNSEND_BASE_URL", "")
+	t.Setenv("UNSEND_FROM_EMAIL", "")
+	t.Setenv("UNSEND_KEY", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -64,5 +67,14 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 	}
 	if cfg.ResendFromEmail != "hello@example.com" {
 		t.Fatalf("expected resend from email from .env, got %q", cfg.ResendFromEmail)
+	}
+	if cfg.UnsendBaseURL != "https://unsend.admin.lt/api" {
+		t.Fatalf("expected unsend base url from .env, got %q", cfg.UnsendBaseURL)
+	}
+	if cfg.UnsendKey != "" {
+		t.Fatalf("expected empty unsend key by default, got %q", cfg.UnsendKey)
+	}
+	if cfg.UnsendFromEmail != "mail@example.com" {
+		t.Fatalf("expected unsend from email from .env, got %q", cfg.UnsendFromEmail)
 	}
 }
