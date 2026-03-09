@@ -164,7 +164,7 @@ The response contains everything you need to connect:
 ```json
 {
   "mailbox_id": "...",
-  "host": "truevipaccess.com",
+  "host": "mail.truevipaccess.com",
   "port": 143,
   "username": "your-mailbox@truevipaccess.com",
   "password": "generated-password"
@@ -180,7 +180,7 @@ The response contains everything you need to connect:
 | Port | from `port` field |
 | Username | from `username` field |
 | Password | from `password` field |
-| Encryption | None (connection is tunneled) |
+| Encryption | None (plaintext IMAP) |
 
 ### Agent example (Python)
 
