@@ -166,7 +166,7 @@ jobs:
 
       - name: Write build metadata on host
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "BUILD_NUMBER='${BUILD_NUMBER}' CACHE_BUSTER='${CACHE_BUSTER}' bash -se" <<'EOF'
             set -eu
             env_file="/var/lib/secrets/mailservice.env"
             tmp_file="$(mktemp)"
@@ -177,7 +177,7 @@ jobs:
             printf "CACHE_BUSTER=%s\n" "$CACHE_BUSTER" >> "$tmp_file"
             install -m 640 -o root -g mailservice "$tmp_file" "$env_file"
             rm -f "$tmp_file"
-          '
+          EOF
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
