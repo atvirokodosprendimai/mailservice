@@ -99,11 +99,6 @@ resource "cloudflare_record" "mx_primary" {
   ttl      = 300
 }
 
-# Note: existing Cloudflare Email Routing MX records (route1/2/3.mx.cloudflare.net)
-# must be removed manually in the Cloudflare dashboard after verifying direct
-# mail delivery works via mail.truevipaccess.com. Disable Email Routing for
-# this zone to remove them automatically.
-
 output "server_ipv4" {
   value = hcloud_server.app.ipv4_address
 }
