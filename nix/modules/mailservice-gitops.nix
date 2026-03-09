@@ -145,7 +145,7 @@ in
     };
     systemd.services.postfix.after = [ "mailservice-api.service" "dovecot2.service" ];
     systemd.services.postfix.wants = [ "mailservice-api.service" "dovecot2.service" ];
-    systemd.services.postfix-setup.script = lib.mkAfter ''
+    systemd.services.postfix-setup.preStart = ''
       if [ -d /var/mail ] && [ ! -L /var/mail ]; then
         if [ -d /var/mail/vhosts ] && [ ! -e ${mailRoot} ]; then
           install -d -m 2770 -o vmail -g vmail /var/lib/mailservice
@@ -159,6 +159,8 @@ in
           mv /var/mail "/var/mail.legacy.$(date +%s)"
         fi
       fi
+    '';
+    systemd.services.postfix-setup.script = lib.mkAfter ''
       ln -sf ${postfixSqliteDomainsFile} /var/lib/postfix/conf/sqlite-domains.cf
       ln -sf ${postfixSqliteMailboxesFile} /var/lib/postfix/conf/sqlite-mailboxes.cf
     '';
