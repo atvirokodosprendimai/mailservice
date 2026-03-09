@@ -267,6 +267,26 @@ jobs:
           BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
           CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
 
+      - name: Validate required env vars on host
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
+            set -eu
+            env_file="/var/lib/secrets/mailservice.env"
+            missing=()
+            for var in POLAR_TOKEN POLAR_PRICE_ID POLAR_WEBHOOK_SECRET MAIL_DOMAIN IMAP_HOST IMAP_PORT PUBLIC_BASE_URL; do
+              if ! grep -q "^${var}=.\+" "$env_file" 2>/dev/null; then
+                missing+=("$var")
+              fi
+            done
+            if [ ${#missing[@]} -gt 0 ]; then
+              printf 'FATAL: missing required vars in %s: %s\n' "$env_file" "${missing[*]}" >&2
+              exit 1
+            fi
+          EOF
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
       - name: Apply NixOS configuration
         run: |
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
