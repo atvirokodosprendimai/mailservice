@@ -174,6 +174,7 @@ in
     security.acme = {
       acceptTerms = true;
       defaults.email = "postmaster@${cfg.mailDomain}";
+      certs."mail.${cfg.mailDomain}".reloadServices = [ "dovecot2.service" ];
     };
 
     services.nginx = {
