@@ -24,10 +24,10 @@ Source of truth:
 Runtime model:
 
 - NixOS host
-- Docker backend managed declaratively through `virtualisation.oci-containers`
-- pinned API image ref in Git
+- native systemd service for the API
 - pinned mailreceive image ref in Git
-- Cloudflare Tunnel container managed by NixOS using host networking; configure the tunnel origin to `http://127.0.0.1:8080`, not a Docker-internal hostname such as `http://api:8080`
+- native systemd service for Cloudflare Tunnel; configure the tunnel origin to `http://127.0.0.1:8080`, not a Docker-internal hostname such as `http://api:8080`
+- Docker backend still used for mailreceive until that stack is also moved to native NixOS services
 - secrets kept out of Git in `/var/lib/secrets/mailservice.env`
 
 ## What Lives In Git
@@ -35,7 +35,8 @@ Runtime model:
 Git-managed:
 
 - host configuration
-- OCI image references
+- API package build and service definition
+- mailreceive image reference
 - firewall/runtime shape
 - Cloudflare tunnel runtime definition
 - service topology
@@ -47,22 +48,26 @@ Not in Git:
 - `CLOUDFLARE_TUNNEL_TOKEN`
 - any other secret env values
 
-## Image Pinning
+## API Packaging
 
-Rollouts happen by changing the pinned image refs in
-[`nix/hosts/truevipaccess/configuration.nix`](../nix/hosts/truevipaccess/configuration.nix).
+The API is built directly from the repo as a Nix package and run under systemd.
 
 Example:
 
 ```nix
 services.mailserviceGitOps = {
   enable = true;
-  apiImage = "ghcr.io/atvirokodosprendimai/mailservice-api:sha-abc1234";
   mailreceiveImage = "ghcr.io/atvirokodosprendimai/mailservice-mailreceive:sha-abc1234";
 };
 ```
 
-That removes the mutable-`latest` race from deployment.
+That removes the API’s runtime dependence on GHCR and Docker.
+
+## Mailreceive Pinning
+
+Rollouts for the inbound mail stack still happen by changing the pinned
+`mailreceiveImage` ref in
+[`nix/hosts/truevipaccess/configuration.nix`](../nix/hosts/truevipaccess/configuration.nix).
 
 ## Secrets File
 
@@ -100,7 +105,7 @@ TUNNEL_TOKEN=...
 Preferred future path: use NixOps to apply the host revision.
 
 1. Build and publish commit-pinned images.
-2. Update the pinned image refs in the NixOS host config.
+2. Update the pinned `mailreceiveImage` ref in the NixOS host config when needed.
 3. Commit that change to Git.
 4. Apply the new revision with NixOps.
 
