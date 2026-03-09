@@ -53,14 +53,48 @@ func TestVerifierReturnsBackendError(t *testing.T) {
 	}
 }
 
-func TestVerifierRequiresBackend(t *testing.T) {
+func TestVerifierReturnsInvalidProofFromBackendWithoutWrapping(t *testing.T) {
+	t.Parallel()
+
+	verifier := NewVerifier(fakeBackend{err: ports.ErrInvalidKeyProof})
+
+	_, err := verifier.Verify(context.Background(), "proof")
+	if !errors.Is(err, ports.ErrInvalidKeyProof) {
+		t.Fatalf("expected ErrInvalidKeyProof, got %v", err)
+	}
+	if err.Error() != ports.ErrInvalidKeyProof.Error() {
+		t.Fatalf("expected canonical invalid key proof error, got %q", err.Error())
+	}
+}
+
+func TestVerifierFallsBackToLocalSSHVerifier(t *testing.T) {
 	t.Parallel()
 
 	verifier := NewVerifier(nil)
 
-	_, err := verifier.Verify(context.Background(), "proof")
-	if !errors.Is(err, ErrVerifierNotConfigured) {
-		t.Fatalf("expected ErrVerifierNotConfigured, got %v", err)
+	key, err := verifier.Verify(context.Background(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOB0H114bTlib+M0AuEoXJDWHzU52aMKtT8O1wtpk5WB entity@context")
+	if err != nil {
+		t.Fatalf("Verify failed: %v", err)
+	}
+	if key.Fingerprint != "sha256:ac1f9a7583aea966a3320d0124329b982a0dd4aa95bf22f598ee089aea6357c0" {
+		t.Fatalf("expected local verifier fingerprint, got %q", key.Fingerprint)
+	}
+	if key.Algorithm != "ed25519" {
+		t.Fatalf("expected ed25519 algorithm, got %q", key.Algorithm)
+	}
+}
+
+func TestVerifierReturnsInvalidProofWithoutWrapping(t *testing.T) {
+	t.Parallel()
+
+	verifier := NewVerifier(nil)
+
+	_, err := verifier.Verify(context.Background(), "ssh-ed25519 !!!not-base64!!! entity@context")
+	if !errors.Is(err, ports.ErrInvalidKeyProof) {
+		t.Fatalf("expected ErrInvalidKeyProof, got %v", err)
+	}
+	if err.Error() != ports.ErrInvalidKeyProof.Error() {
+		t.Fatalf("expected canonical invalid key proof error, got %q", err.Error())
 	}
 }
 

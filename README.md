@@ -126,6 +126,8 @@ The script:
 
 By default it sends the contents of `<work-dir>/identity.pub` as the `edproof` payload,
 or `<key-path>.pub` when a custom key path is used.
+The built-in verifier accepts OpenSSH Ed25519 public keys directly and derives the
+stable mailbox identity from their SHA-256 fingerprint.
 If your verifier expects a different proof blob, pass `--edproof` or `--edproof-file`.
 
 On the NixOS production host:
@@ -304,3 +306,8 @@ curl http://localhost:8080/mock/pay/<session-id>
 - A different key gets a different mailbox.
 - `billing_email` is only the address used for invoice/payment delivery.
 - Who actually pays is outside the service model.
+
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0.
+See `LICENSE` for the full text.

@@ -2,6 +2,9 @@ package edproof
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -25,6 +28,9 @@ type Verifier struct {
 }
 
 func NewVerifier(backend Backend) *Verifier {
+	if backend == nil {
+		backend = localBackend{}
+	}
 	return &Verifier{backend: backend}
 }
 
@@ -39,6 +45,9 @@ func (v *Verifier) Verify(ctx context.Context, rawProof string) (*ports.Verified
 
 	result, err := v.backend.Verify(ctx, rawProof)
 	if err != nil {
+		if errors.Is(err, ports.ErrInvalidKeyProof) {
+			return nil, ports.ErrInvalidKeyProof
+		}
 		return nil, fmt.Errorf("verify edproof: %w", err)
 	}
 	if result == nil {
@@ -53,4 +62,27 @@ func (v *Verifier) Verify(ctx context.Context, rawProof string) (*ports.Verified
 		return nil, ports.ErrInvalidKeyProof
 	}
 	return key, nil
+}
+
+type localBackend struct{}
+
+func (localBackend) Verify(_ context.Context, rawProof string) (*BackendResult, error) {
+	parts := strings.Fields(rawProof)
+	if len(parts) < 2 {
+		return nil, ports.ErrInvalidKeyProof
+	}
+	if parts[0] != "ssh-ed25519" {
+		return nil, ports.ErrInvalidKeyProof
+	}
+
+	keyBlob, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, ports.ErrInvalidKeyProof
+	}
+
+	fingerprint := sha256.Sum256(keyBlob)
+	return &BackendResult{
+		Fingerprint: "sha256:" + hex.EncodeToString(fingerprint[:]),
+		Algorithm:   "ed25519",
+	}, nil
 }
