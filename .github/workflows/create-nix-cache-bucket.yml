@@ -1,0 +1,74 @@
+name: Create Nix Cache Bucket
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-bucket:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve S3 cache settings
+        id: cfg
+        env:
+          TOFU_STATE_BUCKET: ${{ secrets.TOFU_STATE_BUCKET }}
+          TOFU_STATE_ENDPOINT: ${{ secrets.TOFU_STATE_ENDPOINT }}
+          TOFU_STATE_REGION: ${{ secrets.TOFU_STATE_REGION }}
+          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
+          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
+          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
+        run: |
+          set -eu
+
+          bucket="${NIX_CACHE_S3_BUCKET:-}"
+          if [ -z "$bucket" ]; then
+            if [ -z "${TOFU_STATE_BUCKET:-}" ]; then
+              echo "Unable to determine bucket name." >&2
+              exit 1
+            fi
+            bucket="${TOFU_STATE_BUCKET}-nix-cache"
+          fi
+
+          endpoint="${NIX_CACHE_S3_ENDPOINT:-${TOFU_STATE_ENDPOINT:-}}"
+          region="${NIX_CACHE_S3_REGION:-${TOFU_STATE_REGION:-eu-central-1}}"
+
+          if [ -z "$endpoint" ]; then
+            echo "Unable to determine S3 endpoint." >&2
+            exit 1
+          fi
+
+          endpoint="${endpoint#http://}"
+          endpoint="${endpoint#https://}"
+
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+          echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
+          echo "region=$region" >> "$GITHUB_OUTPUT"
+
+      - name: Create bucket if needed
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID != '' && secrets.NIX_CACHE_S3_ACCESS_KEY_ID || secrets.TOFU_STATE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY != '' && secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY || secrets.TOFU_STATE_SECRET_KEY }}
+          BUCKET: ${{ steps.cfg.outputs.bucket }}
+          ENDPOINT: ${{ steps.cfg.outputs.endpoint }}
+          REGION: ${{ steps.cfg.outputs.region }}
+        run: |
+          set -eu
+
+          endpoint_url="https://${ENDPOINT}"
+
+          if aws s3api head-bucket --bucket "$BUCKET" --endpoint-url "$endpoint_url" 2>/dev/null; then
+            echo "Bucket already exists: $BUCKET"
+            exit 0
+          fi
+
+          if ! aws s3api create-bucket \
+            --bucket "$BUCKET" \
+            --endpoint-url "$endpoint_url" \
+            --region "$REGION" \
+            --create-bucket-configuration "LocationConstraint=$REGION"; then
+            aws s3api create-bucket \
+              --bucket "$BUCKET" \
+              --endpoint-url "$endpoint_url" \
+              --region "$REGION"
+          fi
+
+          echo "Bucket created: $BUCKET"
