@@ -3,7 +3,7 @@
 let
   cfg = config.services.mailserviceGitOps;
   mailDbPath = "/var/lib/mailservice/data/mailservice.db";
-  mailRoot = "/var/mail/vhosts";
+  mailRoot = "/var/lib/mailservice/vhosts";
   postfixSqliteDomainsFile = pkgs.writeText "postfix-sqlite-domains.cf" ''
     dbpath = ${mailDbPath}
     query = SELECT domain FROM mail_domains WHERE domain='%s'
@@ -146,6 +146,19 @@ in
     systemd.services.postfix.after = [ "mailservice-api.service" "dovecot2.service" ];
     systemd.services.postfix.wants = [ "mailservice-api.service" "dovecot2.service" ];
     systemd.services.postfix-setup.script = lib.mkAfter ''
+      if [ -d /var/mail ] && [ ! -L /var/mail ]; then
+        if [ -d /var/mail/vhosts ] && [ ! -e ${mailRoot} ]; then
+          install -d -m 2770 -o vmail -g vmail /var/lib/mailservice
+          mv /var/mail/vhosts ${mailRoot}
+          chown -R vmail:vmail ${mailRoot}
+          chmod 2770 ${mailRoot}
+        fi
+        if [ -z "$(ls -A /var/mail 2>/dev/null)" ]; then
+          rmdir /var/mail
+        else
+          mv /var/mail "/var/mail.legacy.$(date +%s)"
+        fi
+      fi
       ln -sf ${postfixSqliteDomainsFile} /var/lib/postfix/conf/sqlite-domains.cf
       ln -sf ${postfixSqliteMailboxesFile} /var/lib/postfix/conf/sqlite-mailboxes.cf
     '';
