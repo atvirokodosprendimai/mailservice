@@ -376,7 +376,8 @@ jobs:
             fi
             if [ "$needs_renewal" = true ]; then
               echo "ACME cert missing, invalid, or self-signed, triggering renewal..."
-              sudo systemctl start acme-mail.'"${MAIL_DOMAIN}"'.service
+              sudo systemctl reset-failed acme-mail.'"${MAIL_DOMAIN}"'.service 2>/dev/null || true
+              sudo systemctl restart acme-mail.'"${MAIL_DOMAIN}"'.service
             fi
           '
         env:
