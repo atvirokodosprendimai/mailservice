@@ -34,7 +34,7 @@ jobs:
           fi
 
           endpoint="${NIX_CACHE_S3_ENDPOINT:-${TOFU_STATE_ENDPOINT:-}}"
-          region="${NIX_CACHE_S3_REGION:-${TOFU_STATE_REGION:-eu-central-1}}"
+          region="${NIX_CACHE_S3_REGION:-${TOFU_STATE_REGION:-}}"
 
           if [ -z "$endpoint" ]; then
             echo "Unable to determine S3 endpoint." >&2
@@ -43,6 +43,14 @@ jobs:
 
           endpoint="${endpoint#http://}"
           endpoint="${endpoint#https://}"
+
+          if [ -z "$region" ]; then
+            region="${endpoint%%.*}"
+          fi
+
+          if [ "$region" = "eu-central-1" ] || [ "$region" = "eu-central" ]; then
+            region="${endpoint%%.*}"
+          fi
 
           echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
           echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
