@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -44,6 +45,9 @@ func (v *Verifier) Verify(ctx context.Context, rawProof string) (*ports.Verified
 
 	result, err := v.backend.Verify(ctx, rawProof)
 	if err != nil {
+		if errors.Is(err, ports.ErrInvalidKeyProof) {
+			return nil, ports.ErrInvalidKeyProof
+		}
 		return nil, fmt.Errorf("verify edproof: %w", err)
 	}
 	if result == nil {
@@ -78,7 +82,7 @@ func (localBackend) Verify(_ context.Context, rawProof string) (*BackendResult, 
 
 	fingerprint := sha256.Sum256(keyBlob)
 	return &BackendResult{
-		Fingerprint: "SHA256:" + base64.StdEncoding.WithPadding(base64.NoPadding).EncodeToString(fingerprint[:]),
+		Fingerprint: "sha256:" + hex.EncodeToString(fingerprint[:]),
 		Algorithm:   "ed25519",
 	}, nil
 }

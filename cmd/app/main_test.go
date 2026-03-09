@@ -17,7 +17,7 @@ func TestNewKeyProofVerifierUsesLocalVerifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Verify failed: %v", err)
 	}
-	if key.Fingerprint != "sha256:rb+adyouqwajmg0bjdkbmcon1kqvvyl1mo4imupjv8a" {
+	if key.Fingerprint != "sha256:ac1f9a7583aea966a3320d0124329b982a0dd4aa95bf22f598ee089aea6357c0" {
 		t.Fatalf("unexpected fingerprint %q", key.Fingerprint)
 	}
 }

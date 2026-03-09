@@ -306,3 +306,8 @@ curl http://localhost:8080/mock/pay/<session-id>
 - A different key gets a different mailbox.
 - `billing_email` is only the address used for invoice/payment delivery.
 - Who actually pays is outside the service model.
+
+## License
+
+This project is licensed under the GNU Affero General Public License v3.0.
+See `LICENSE` for the full text.
