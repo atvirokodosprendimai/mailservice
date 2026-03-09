@@ -12,6 +12,12 @@ concurrency:
 
 jobs:
   build:
+    outputs:
+      s3_cache_enabled: ${{ steps.s3cache.outputs.enabled }}
+      s3_cache_upload_enabled: ${{ steps.s3cache.outputs.upload_enabled }}
+      s3_cache_bucket: ${{ steps.s3cache.outputs.bucket }}
+      s3_cache_endpoint: ${{ steps.s3cache.outputs.endpoint }}
+      s3_cache_region: ${{ steps.s3cache.outputs.region }}
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -33,18 +39,57 @@ jobs:
           NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
           NIX_CACHE_S3_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
           NIX_CACHE_S3_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
+          TOFU_STATE_BUCKET: ${{ secrets.TOFU_STATE_BUCKET }}
+          TOFU_STATE_ENDPOINT: ${{ secrets.TOFU_STATE_ENDPOINT }}
+          TOFU_STATE_REGION: ${{ secrets.TOFU_STATE_REGION }}
+          TOFU_STATE_ACCESS_KEY: ${{ secrets.TOFU_STATE_ACCESS_KEY }}
+          TOFU_STATE_SECRET_KEY: ${{ secrets.TOFU_STATE_SECRET_KEY }}
         run: |
-          if [ -n "$NIX_CACHE_S3_BUCKET" ] && [ -n "$NIX_CACHE_S3_ENDPOINT" ] && [ -n "$NIX_CACHE_S3_REGION" ]; then
+          set -eu
+
+          bucket="${NIX_CACHE_S3_BUCKET:-}"
+          endpoint="${NIX_CACHE_S3_ENDPOINT:-}"
+          region="${NIX_CACHE_S3_REGION:-}"
+
+          if [ -z "$bucket" ] && [ -n "${TOFU_STATE_BUCKET:-}" ]; then
+            bucket="${TOFU_STATE_BUCKET}-nix-cache"
+          fi
+
+          if [ -z "$endpoint" ] && [ -n "${TOFU_STATE_ENDPOINT:-}" ]; then
+            endpoint="$TOFU_STATE_ENDPOINT"
+          fi
+
+          if [ -z "$region" ] && [ -n "${TOFU_STATE_REGION:-}" ]; then
+            region="$TOFU_STATE_REGION"
+          fi
+
+          endpoint="${endpoint#http://}"
+          endpoint="${endpoint#https://}"
+
+          if [ -z "$region" ] && [ -n "$endpoint" ]; then
+            region="${endpoint%%.*}"
+          fi
+          if [ "$region" = "eu-central-1" ] || [ "$region" = "eu-central" ]; then
+            region="${endpoint%%.*}"
+          fi
+
+          if [ -n "$bucket" ] && [ -n "$endpoint" ] && [ -n "$region" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-          if [ -n "$NIX_CACHE_S3_BUCKET" ] && [ -n "$NIX_CACHE_S3_ENDPOINT" ] && [ -n "$NIX_CACHE_S3_REGION" ] && [ -n "$NIX_CACHE_S3_ACCESS_KEY_ID" ] && [ -n "$NIX_CACHE_S3_SECRET_ACCESS_KEY" ]; then
+          access_key="${NIX_CACHE_S3_ACCESS_KEY_ID:-${TOFU_STATE_ACCESS_KEY:-}}"
+          secret_key="${NIX_CACHE_S3_SECRET_ACCESS_KEY:-${TOFU_STATE_SECRET_KEY:-}}"
+          if [ -n "$bucket" ] && [ -n "$endpoint" ] && [ -n "$region" ] && [ -n "$access_key" ] && [ -n "$secret_key" ]; then
             echo "upload_enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "upload_enabled=false" >> "$GITHUB_OUTPUT"
           fi
+
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+          echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
+          echo "region=$region" >> "$GITHUB_OUTPUT"
 
       - name: Build production system closure
         run: |
@@ -53,11 +98,11 @@ jobs:
       - name: Upload closure to Hetzner S3 cache
         if: ${{ steps.s3cache.outputs.upload_enabled == 'true' }}
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
-          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
-          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
-          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID != '' && secrets.NIX_CACHE_S3_ACCESS_KEY_ID || secrets.TOFU_STATE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY != '' && secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY || secrets.TOFU_STATE_SECRET_KEY }}
+          NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
+          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
         run: |
           closure_path="$(nix path-info .#nixosConfigurations.truevipaccess.config.system.build.toplevel)"
           nix copy --to "s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}" "$closure_path"
@@ -116,9 +161,9 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
-          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
-          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
+          NIX_CACHE_S3_BUCKET: ${{ needs.build.outputs.s3_cache_bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ needs.build.outputs.s3_cache_endpoint }}
+          NIX_CACHE_S3_REGION: ${{ needs.build.outputs.s3_cache_region }}
 
       - name: Health check
         run: |
