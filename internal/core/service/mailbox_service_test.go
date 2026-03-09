@@ -458,6 +458,152 @@ func TestListMessagesByTokenReturnsReaderMessages(t *testing.T) {
 	}
 }
 
+func TestResolveAccessByTokenWorksForKeyBoundMailbox(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		byAccessToken: map[string]*domain.Mailbox{
+			"token-kb": {
+				ID:           "mbx-kb",
+				AccountID:    "",
+				Status:       domain.MailboxStatusActive,
+				PaidAt:       ptrTime(time.Now().UTC().Add(-time.Minute)),
+				ExpiresAt:    &future,
+				AccessToken:  "token-kb",
+				IMAPHost:     "imap.example.com",
+				IMAPPort:     143,
+				IMAPUsername: "mbx_abc",
+				IMAPPassword: "secret",
+			},
+		},
+	}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mx.example.com", "imap.example.com", 143)
+
+	result, err := service.ResolveIMAPByToken(context.Background(), "token-kb")
+	if err != nil {
+		t.Fatalf("ResolveIMAPByToken failed for key-bound mailbox: %v", err)
+	}
+	if result.Username != "mbx_abc" {
+		t.Fatalf("expected IMAP username mbx_abc, got %s", result.Username)
+	}
+	if result.AccessToken != "token-kb" {
+		t.Fatalf("expected AccessToken token-kb, got %s", result.AccessToken)
+	}
+}
+
+func TestResolveAccessByTokenRejectsExpiredKeyBoundMailbox(t *testing.T) {
+	expiredAt := time.Now().UTC().Add(-time.Hour)
+	repo := &fakeMailboxRepo{
+		byAccessToken: map[string]*domain.Mailbox{
+			"token-kb": {
+				ID:          "mbx-kb",
+				AccountID:   "",
+				Status:      domain.MailboxStatusActive,
+				PaidAt:      ptrTime(time.Now().UTC().Add(-2 * time.Hour)),
+				ExpiresAt:   &expiredAt,
+				AccessToken: "token-kb",
+			},
+		},
+	}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	_, err := service.ResolveIMAPByToken(context.Background(), "token-kb")
+	if err != ports.ErrMailboxNotUsable {
+		t.Fatalf("expected ErrMailboxNotUsable, got %v", err)
+	}
+}
+
+func TestListMessagesByTokenWorksForKeyBoundMailbox(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		byAccessToken: map[string]*domain.Mailbox{
+			"token-kb": {
+				ID:           "mbx-kb",
+				AccountID:    "",
+				Status:       domain.MailboxStatusActive,
+				PaidAt:       ptrTime(time.Now().UTC().Add(-time.Minute)),
+				ExpiresAt:    &future,
+				AccessToken:  "token-kb",
+				IMAPHost:     "imap",
+				IMAPPort:     143,
+				IMAPUsername: "u",
+				IMAPPassword: "p",
+			},
+		},
+	}
+	reader := &fakeMailReader{messages: []ports.IMAPMessage{{UID: 1, Subject: "hello"}}}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, reader, "mail.test.local", "imap.test.local", 1143)
+
+	messages, err := service.ListMessagesByToken(context.Background(), "token-kb", 20, true, false)
+	if err != nil {
+		t.Fatalf("ListMessagesByToken failed for key-bound mailbox: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Subject != "hello" {
+		t.Fatalf("unexpected messages result: %+v", messages)
+	}
+}
+
+func TestGetMessageByUIDTokenWorksForKeyBoundMailbox(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		byAccessToken: map[string]*domain.Mailbox{
+			"token-kb": {
+				ID:           "mbx-kb",
+				AccountID:    "",
+				Status:       domain.MailboxStatusActive,
+				PaidAt:       ptrTime(time.Now().UTC().Add(-time.Minute)),
+				ExpiresAt:    &future,
+				AccessToken:  "token-kb",
+				IMAPHost:     "imap",
+				IMAPPort:     143,
+				IMAPUsername: "u",
+				IMAPPassword: "p",
+			},
+		},
+	}
+	reader := &fakeMailReader{messageByUID: map[uint32]ports.IMAPMessage{3: {UID: 3, Subject: "keyed"}}}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, reader, "mail.test.local", "imap.test.local", 1143)
+
+	message, err := service.GetMessageByUIDToken(context.Background(), "token-kb", 3, true)
+	if err != nil {
+		t.Fatalf("GetMessageByUIDToken failed for key-bound mailbox: %v", err)
+	}
+	if message == nil || message.UID != 3 {
+		t.Fatalf("unexpected message result: %+v", message)
+	}
+}
+
+func TestResolveAccessResultIncludesAccessToken(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:             "mbx-1",
+				KeyFingerprint: "edproof:key-1",
+				AccessToken:    "my-access-token",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC().Add(-time.Minute)),
+				ExpiresAt:      &future,
+				IMAPHost:       "imap.example.com",
+				IMAPPort:       143,
+				IMAPUsername:   "mbx_abc",
+				IMAPPassword:   "secret",
+			},
+		},
+	}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mx.example.com", "imap.example.com", 143)
+
+	result, err := service.ResolveIMAPByKey(context.Background(), ports.VerifiedKey{
+		Fingerprint: "edproof:key-1",
+		Algorithm:   "ed25519",
+	})
+	if err != nil {
+		t.Fatalf("ResolveIMAPByKey failed: %v", err)
+	}
+	if result.AccessToken != "my-access-token" {
+		t.Fatalf("expected AccessToken my-access-token, got %q", result.AccessToken)
+	}
+}
+
 func TestGetMessageByUIDTokenReturnsSingleMessage(t *testing.T) {
 	future := time.Now().UTC().Add(time.Hour)
 	repo := &fakeMailboxRepo{

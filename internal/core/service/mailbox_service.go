@@ -60,12 +60,13 @@ type CreateMailboxRequest struct {
 }
 
 type ResolveIMAPResult struct {
-	MailboxID string
-	Host      string
-	Port      int
-	Username  string
-	Password  string
-	Email     string
+	MailboxID   string
+	Host        string
+	Port        int
+	Username    string
+	Password    string
+	Email       string
+	AccessToken string
 }
 
 type ResolveAccessResult = ResolveIMAPResult
@@ -317,6 +318,44 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 	return mailbox, nil
 }
 
+// validateMailboxSubscription checks whether mailbox is currently usable.
+// For key-bound mailboxes (empty AccountID) it inspects the mailbox row directly.
+// For account-bound mailboxes it loads the account and validates its subscription.
+// On success the mailbox status is synchronised in the repository as a side-effect.
+func (s *MailboxService) validateMailboxSubscription(ctx context.Context, mailbox *domain.Mailbox, now time.Time) error {
+	if strings.TrimSpace(mailbox.AccountID) == "" {
+		// Key-bound mailbox: subscription is tracked on the mailbox itself.
+		if !mailbox.Usable() {
+			if mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
+				mailbox.Status = domain.MailboxStatusExpired
+				_ = s.repo.Update(ctx, mailbox)
+			}
+			return ports.ErrMailboxNotUsable
+		}
+		return nil
+	}
+
+	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
+	if err != nil {
+		return err
+	}
+
+	if !account.SubscriptionActive(now) {
+		if mailbox.Status == domain.MailboxStatusActive {
+			mailbox.Status = domain.MailboxStatusExpired
+			_ = s.repo.Update(ctx, mailbox)
+		}
+		return ports.ErrMailboxNotUsable
+	}
+
+	if mailbox.Status != domain.MailboxStatusActive {
+		mailbox.Status = domain.MailboxStatusActive
+		mailbox.ExpiresAt = account.SubscriptionExpiresAt
+		_ = s.repo.Update(ctx, mailbox)
+	}
+	return nil
+}
+
 func (s *MailboxService) ResolveAccessByToken(ctx context.Context, accessToken string, protocol string) (*ResolveAccessResult, error) {
 	if !supportsProtocol(protocol) {
 		return nil, errors.New("unsupported protocol")
@@ -325,24 +364,11 @@ func (s *MailboxService) ResolveAccessByToken(ctx context.Context, accessToken s
 	if err != nil {
 		return nil, err
 	}
-	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
-	if err != nil {
+
+	if err := s.validateMailboxSubscription(ctx, mailbox, time.Now().UTC()); err != nil {
 		return nil, err
 	}
 
-	if !account.SubscriptionActive(time.Now().UTC()) {
-		if mailbox.Status == domain.MailboxStatusActive {
-			mailbox.Status = domain.MailboxStatusExpired
-			_ = s.repo.Update(ctx, mailbox)
-		}
-		return nil, ports.ErrMailboxNotUsable
-	}
-
-	if mailbox.Status != domain.MailboxStatusActive {
-		mailbox.Status = domain.MailboxStatusActive
-		mailbox.ExpiresAt = account.SubscriptionExpiresAt
-		_ = s.repo.Update(ctx, mailbox)
-	}
 	if s.shouldRewriteLegacyIMAPHost(mailbox.IMAPHost) || mailbox.IMAPPort <= 0 {
 		mailbox.IMAPHost = s.imapHost
 		mailbox.IMAPPort = s.imapPort
@@ -405,12 +431,13 @@ func (s *MailboxService) ResolveIMAPByKey(ctx context.Context, key ports.Verifie
 
 func (s *MailboxService) resolveAccessResult(mailbox *domain.Mailbox) *ResolveAccessResult {
 	return &ResolveIMAPResult{
-		MailboxID: mailbox.ID,
-		Host:      mailbox.IMAPHost,
-		Port:      mailbox.IMAPPort,
-		Username:  mailbox.IMAPUsername,
-		Password:  mailbox.IMAPPassword,
-		Email:     mailbox.IMAPUsername + "@" + s.mailDomain,
+		MailboxID:   mailbox.ID,
+		Host:        mailbox.IMAPHost,
+		Port:        mailbox.IMAPPort,
+		Username:    mailbox.IMAPUsername,
+		Password:    mailbox.IMAPPassword,
+		Email:       mailbox.IMAPUsername + "@" + s.mailDomain,
+		AccessToken: mailbox.AccessToken,
 	}
 }
 
@@ -427,23 +454,8 @@ func (s *MailboxService) ListMessagesByToken(ctx context.Context, accessToken st
 		return nil, err
 	}
 
-	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
-	if err != nil {
+	if err := s.validateMailboxSubscription(ctx, mailbox, time.Now().UTC()); err != nil {
 		return nil, err
-	}
-
-	if !account.SubscriptionActive(time.Now().UTC()) {
-		if mailbox.Status == domain.MailboxStatusActive {
-			mailbox.Status = domain.MailboxStatusExpired
-			_ = s.repo.Update(ctx, mailbox)
-		}
-		return nil, ports.ErrMailboxNotUsable
-	}
-
-	if mailbox.Status != domain.MailboxStatusActive {
-		mailbox.Status = domain.MailboxStatusActive
-		mailbox.ExpiresAt = account.SubscriptionExpiresAt
-		_ = s.repo.Update(ctx, mailbox)
 	}
 
 	if s.shouldRewriteLegacyIMAPHost(mailbox.IMAPHost) || mailbox.IMAPPort <= 0 {
@@ -471,23 +483,8 @@ func (s *MailboxService) GetMessageByUIDToken(ctx context.Context, accessToken s
 		return nil, err
 	}
 
-	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
-	if err != nil {
+	if err := s.validateMailboxSubscription(ctx, mailbox, time.Now().UTC()); err != nil {
 		return nil, err
-	}
-
-	if !account.SubscriptionActive(time.Now().UTC()) {
-		if mailbox.Status == domain.MailboxStatusActive {
-			mailbox.Status = domain.MailboxStatusExpired
-			_ = s.repo.Update(ctx, mailbox)
-		}
-		return nil, ports.ErrMailboxNotUsable
-	}
-
-	if mailbox.Status != domain.MailboxStatusActive {
-		mailbox.Status = domain.MailboxStatusActive
-		mailbox.ExpiresAt = account.SubscriptionExpiresAt
-		_ = s.repo.Update(ctx, mailbox)
 	}
 
 	if s.shouldRewriteLegacyIMAPHost(mailbox.IMAPHost) || mailbox.IMAPPort <= 0 {

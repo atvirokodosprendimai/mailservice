@@ -504,6 +504,120 @@ func (httpMailReader) GetMessageByUID(_ context.Context, _ string, _ int, _ stri
 	return nil, nil
 }
 
+func TestHandleResolveAccessIncludesAccessToken(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &httpMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:             "mbx-1",
+				KeyFingerprint: "edproof:key-1",
+				AccessToken:    "my-access-token",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(future.Add(-time.Hour)),
+				ExpiresAt:      &future,
+				IMAPHost:       "imap.example.com",
+				IMAPPort:       143,
+				IMAPUsername:   "mbx_abc",
+				IMAPPassword:   "secret",
+			},
+		},
+	}
+	handler := NewHandler(Config{
+		KeyProofVerifier: fakeKeyProofVerifier{
+			key: &ports.VerifiedKey{Fingerprint: "edproof:key-1", Algorithm: "ed25519"},
+		},
+		PaymentGateway: &httpPaymentGateway{},
+		MailboxService: service.NewMailboxService(
+			repo,
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(`{"protocol":"imap","edproof":"proof"}`))
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["access_token"] != "my-access-token" {
+		t.Fatalf("expected access_token my-access-token in resolve response, got %#v", resp["access_token"])
+	}
+}
+
+func TestHandleListIMAPMessagesWorksWithoutAPIToken(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &httpMailboxRepoWithAccessToken{
+		byAccessToken: map[string]*domain.Mailbox{
+			"token-kb": {
+				ID:           "mbx-kb",
+				AccountID:    "",
+				Status:       domain.MailboxStatusActive,
+				PaidAt:       ptrTime(future.Add(-time.Hour)),
+				ExpiresAt:    &future,
+				AccessToken:  "token-kb",
+				IMAPHost:     "imap",
+				IMAPPort:     143,
+				IMAPUsername: "u",
+				IMAPPassword: "p",
+			},
+		},
+	}
+	handler := NewHandler(Config{
+		PaymentGateway: &httpPaymentGateway{},
+		MailboxService: service.NewMailboxService(
+			repo,
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("POST", "/v1/imap/messages", strings.NewReader(`{"access_token":"token-kb"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200 without X-API-Token, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func ptrTime(value time.Time) *time.Time {
 	return &value
+}
+
+// httpMailboxRepoWithAccessToken extends httpMailboxRepo to support access-token lookup.
+type httpMailboxRepoWithAccessToken struct {
+	httpMailboxRepo
+	byAccessToken map[string]*domain.Mailbox
+}
+
+func (r *httpMailboxRepoWithAccessToken) GetByAccessToken(_ context.Context, token string) (*domain.Mailbox, error) {
+	if item, ok := r.byAccessToken[token]; ok {
+		return item, nil
+	}
+	return nil, ports.ErrMailboxNotFound
 }

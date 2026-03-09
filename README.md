@@ -204,6 +204,9 @@ curl -X POST http://localhost:8080/v1/access/resolve \
   -d '{"protocol":"imap","edproof":"<proof>"}'
 ```
 
+The response includes `host`, `port`, `username`, `password`, `email`, and `access_token`.
+Use `access_token` to call the HTTP read API without a separate account token.
+
 If global concurrency limit is reached, API returns `503` with `retry_after_seconds` random value in range `3..100`.
 
 Legacy account flow:
@@ -272,7 +275,6 @@ Resolve IMAP credentials by access token:
 ```bash
 curl -X POST http://localhost:8080/v1/imap/resolve \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Token: <api-token>' \
   -d '{"access_token":"<access-token>"}'
 ```
 
@@ -281,7 +283,6 @@ Fetch unread messages by access token:
 ```bash
 curl -X POST http://localhost:8080/v1/imap/messages \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Token: <api-token>' \
   -d '{"access_token":"<access-token>","unread_only":true,"limit":20,"include_body":false}'
 ```
 
@@ -292,11 +293,14 @@ Fetch a single message by UID:
 ```bash
 curl -X POST http://localhost:8080/v1/imap/messages/get \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Token: <api-token>' \
   -d '{"access_token":"<access-token>","uid":1,"include_body":true}'
 ```
 
 For `messages/get`, `include_body` defaults to `true`.
+
+The `<access-token>` above is the `access_token` returned by either `POST /v1/access/resolve`
+(preferred key-bound flow) or `GET /v1/mailboxes/<id>` (legacy account flow). No account-level
+`X-API-Token` is required for these endpoints.
 
 Mock payment (only when Stripe key is not configured):
 
