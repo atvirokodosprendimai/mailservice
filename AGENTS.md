@@ -1,112 +1,156 @@
-# AGENTS context
+# AGENTS.md
 
-This file gives fast context for coding agents working in this repo.
+Practical guidance for coding agents working in this repository.
 
-## Project purpose
+## Project Snapshot
+- Go API for paid inbound mailbox provisioning (OpenClaw use case).
+- Preferred flow: `POST /v1/mailboxes/claim` -> pay -> `POST /v1/access/resolve`.
+- Legacy account/token flow still exists and must stay stable during migration.
+- Product boundary: inbound email + IMAP read access only; no SMTP/outbound sending.
 
-Tiny mailbox provisioning API for OpenClaw.
-
-- Mailbox is created for an owner email.
-- Owner receives payment link (Stripe or mock).
-- After payment, mailbox becomes usable.
-- OpenClaw uses API token auth and mailbox access token -> IMAP credentials.
-
-## Architecture
-
-Hexagonal structure:
-
-- Core domain: `internal/domain`
-- Core ports: `internal/core/ports`
-- Core services: `internal/core/service`
+## Architecture (Hexagonal)
+- Domain models: `internal/domain`
+- Ports/interfaces: `internal/core/ports`
+- Core business services: `internal/core/service`
 - Adapters:
   - HTTP API: `internal/adapters/httpapi`
   - Repositories (GORM): `internal/adapters/repository`
-  - Payment (Stripe/mock): `internal/adapters/payment`
-  - Notifier: `internal/adapters/notify`
-  - Token generator: `internal/adapters/token`
+  - Payment providers: `internal/adapters/payment`
+  - Notifiers: `internal/adapters/notify`
+  - Token generation: `internal/adapters/token`
+  - IMAP reader + key verification: `internal/adapters/imap`, `internal/adapters/identity`
 - Platform:
-  - Config: `internal/platform/config`
-  - Database + goose migrations: `internal/platform/database`
-- Entry point: `cmd/app/main.go`
+  - Config loader: `internal/platform/config`
+  - DB + migrations: `internal/platform/database`
+- Entrypoint wiring only: `cmd/app/main.go`
 
-## Data and persistence
+Rule of thumb: core packages depend on ports/domain, never on concrete adapters.
 
-- DB: SQLite without cgo (`github.com/glebarez/sqlite`)
-- ORM: GORM
-- Migrations: Goose, embedded and executed at startup
-- Important tables:
-  - `accounts`
-  - `mailboxes`
-  - `account_recoveries`
-  - `refresh_tokens`
+## Build, Run, Test, Lint
+No Makefile wrapper in this repo; use direct commands.
 
-## Auth model
+### Run and build
+- Run app: `go run ./cmd/app`
+- Build app: `go build ./cmd/app`
+- Build all packages: `go build ./...`
 
-Bot/autonomous auth (preferred):
+### Tests
+- Run all tests: `go test ./...`
+- Verbose tests: `go test -v ./...`
+- Disable test cache while iterating: `go test -count=1 ./...`
 
-1. `POST /v1/accounts` -> returns `api_token` + `refresh_token` for new account
-2. `POST /v1/auth/refresh` -> rotates both tokens
+Single-test workflows (important):
+- Run one package: `go test ./internal/core/service`
+- Run one exact test name:
+  `go test ./internal/adapters/httpapi -run '^TestHandleClaimMailboxCreatesPendingMailbox$'`
+- Run one exact test in another package:
+  `go test ./internal/platform/config -run '^TestLoad$'`
+- Run subtests:
+  `go test ./path/to/pkg -run 'TestName/subcase'`
 
-Human fallback only:
+Coverage and race checks:
+- Coverage summary: `go test ./... -cover`
+- Detailed package coverage:
+  `go test ./internal/core/service -coverprofile=cover.out && go tool cover -func=cover.out`
+- Race detector (slower): `go test -race ./...`
 
-- `POST /v1/accounts/recovery/start`
-- `POST /v1/accounts/recovery/complete`
+### Formatting and lint-like checks
+- Format changed files: `gofmt -w <files>`
+- Format all tracked Go files: `gofmt -w $(git ls-files '*.go')`
+- Static checks: `go vet ./...`
 
 Notes:
+- No committed `golangci-lint` config at the moment.
+- CI is deployment-focused; run `go test ./...` locally before push.
 
+### Infra/OpenTofu checks (when touching infra)
+If changing `infra/opentofu/**` or related workflows, run:
+- `tofu fmt -check infra/opentofu`
+- `tofu init -backend=false infra/opentofu`
+- `tofu validate infra/opentofu`
+- `go test ./...`
+
+Reference: `docs/local-workflow-validation.md`.
+
+## Data and Persistence
+- DB: SQLite (pure Go driver `github.com/glebarez/sqlite`, no cgo)
+- ORM: GORM (`gorm.io/gorm`)
+- Migrations: goose SQL migrations embedded and applied at startup
+- Core tables: `accounts`, `mailboxes`, `account_recoveries`, `refresh_tokens`
+
+## API/Auth Behaviors To Preserve
 - Refresh tokens are one-time use and stored hashed.
 - Recovery code TTL is 10 minutes.
 - Recovery start is rate-limited per account (1 request/minute).
+- Global semaphore can reject with `503` + `Retry-After` + `retry_after_seconds`.
 
-## Concurrency protection
+## Code Style Guidelines
+Follow existing Go style and package patterns.
 
-Global non-blocking semaphore middleware exists in HTTP adapter.
+### Imports
+- Let `gofmt` order imports (stdlib, external, internal).
+- Keep imports minimal; remove unused imports.
+- Avoid aliases unless needed for name collision clarity.
 
-- Config: `MAX_CONCURRENT_REQUESTS` from `.env`
-- If limit is hit, API returns `503` immediately with:
-  - `retry_after_seconds` random in range `3..100`
-  - `Retry-After` header
+### Formatting
+- Always run `gofmt -w` on modified Go files.
+- Keep functions readable; prefer helpers over deep nesting.
+- Add comments only when intent is non-obvious.
 
-## Main API endpoints
+### Types and APIs
+- `context.Context` is first arg for I/O/service/repo methods.
+- Keep interfaces in `internal/core/ports`; adapter implementations stay in adapters.
+- HTTP request/response payloads should use explicit structs + JSON tags.
+- Export only what must be used across packages.
 
-- `POST /v1/accounts`
-- `POST /v1/auth/refresh`
-- `POST /v1/accounts/recovery/start`
-- `POST /v1/accounts/recovery/complete`
-- `GET /v1/mailboxes`
-- `POST /v1/mailboxes`
-- `GET /v1/mailboxes/{id}`
-- `POST /v1/imap/resolve`
-- `POST /v1/imap/messages` (placeholder)
-- `POST /v1/webhooks/stripe`
-- `GET /mock/pay/{sessionID}` (dev/mock mode)
+### Naming
+- Exported identifiers: `PascalCase`; unexported: `camelCase`.
+- Keep acronym style consistent (`IMAP`, `API`, `ID`, `URL`).
+- Sentinel errors use `Err...` names in `ports` for cross-layer matching.
+- Prefer domain-clear names (`Mailbox`, `PaymentSession`, `SubscriptionExpiresAt`).
 
-## OpenClaw flow
+### Error handling
+- Do not `panic` in normal flow; return errors.
+- Wrap contextual failures with `%w` (especially service/repository layers).
+- Use `errors.Is` for branching on sentinel errors.
+- Keep HTTP error payload stable: `{"error":"..."}` via `writeError`.
+- Map errors to status codes deliberately; do not leak internals.
 
-Canonical bot flow is documented in `follow.md`.
+### HTTP conventions
+- Decode JSON strictly (`decodeJSON` with unknown fields disallowed).
+- Prefer explicit request structs over dynamic maps.
+- Return JSON for API endpoints and preserve status code semantics.
+- Preserve backward compatibility unless task explicitly changes contract.
 
-## Config
+### Persistence conventions
+- Repositories translate between GORM models and domain entities.
+- Convert `gorm.ErrRecordNotFound` to port sentinel errors.
+- Normalize user input where existing code does (trim/lowercase emails, fingerprints).
 
-See `.env.example`.
+### Testing conventions
+- Add or update tests with behavior changes (TDD preferred).
+- Tests use stdlib `testing` + manual fakes (no heavy mocking frameworks).
+- Prefer deterministic tests with in-memory fakes or temp SQLite DBs.
+- During development use targeted `-run`, then finish with `go test ./...`.
 
-Critical vars:
+## Security and Secrets
+- Never commit `.env` or production secrets.
+- Use `.env.example` only as a variable reference.
+- Keep webhook verification behavior intact when editing payment webhooks.
 
-- `MAX_CONCURRENT_REQUESTS`
-- `DATABASE_DSN`
-- `STRIPE_SECRET_KEY`
-- `STRIPE_WEBHOOK_SECRET`
-- `PUBLIC_BASE_URL`
-
-## How to run and verify
-
-- Run: `go run ./cmd/app`
-- Test: `go test ./...`
-- Format: `gofmt -w <files>`
-
-## Agent guardrails
-
-- Keep hexagonal boundaries; do not leak adapter concerns into core domain.
-- Prefer adding tests before behavior changes (TDD style).
-- Keep API responses stable unless explicitly changing contract.
+## Agent Workflow Guardrails
+- Preserve hexagonal boundaries; no adapter concerns in core/domain code.
+- Keep API responses backward compatible unless explicitly requested.
 - Avoid introducing cgo dependencies.
-- Do not commit `.env` secrets.
+- Prefer minimal, surgical diffs over broad refactors.
+- This project uses the `tk` CLI ticket system for task management; run `tk help` when you need to use it.
+- If flows/docs change, update docs (`README.md`, `follow.md`, architecture docs).
+- Before merge, check CI plus review comments/unresolved threads.
+
+## Cursor/Copilot Rules Check
+Checked repository for agent instruction files:
+- `.cursor/rules/`: not present
+- `.cursorrules`: not present
+- `.github/copilot-instructions.md`: not present
+
+If these files appear later, treat them as additional mandatory constraints.
