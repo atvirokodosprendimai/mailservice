@@ -31,6 +31,23 @@ curl -X POST http://localhost:8080/v1/access/resolve \
 ```
 
 - If not paid yet, API returns `409` with `{ "status": "waiting_payment" }`.
+- On success the response includes `host`, `port`, `username`, `password`, `email`, and `access_token`.
+
+3. Use the returned `access_token` to read mail via the HTTP API (no separate account token required):
+
+```bash
+curl -X POST http://localhost:8080/v1/imap/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"<access-token>","unread_only":true,"limit":20,"include_body":false}'
+```
+
+```bash
+curl -X POST http://localhost:8080/v1/imap/messages/get \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"<access-token>","uid":1,"include_body":true}'
+```
+
+Alternatively, connect to IMAP directly on port 143 using `username` and `password` from the resolve response.
 
 Legacy account/token flow remains available during migration:
 
@@ -88,7 +105,6 @@ curl http://localhost:8080/v1/mailboxes/<mailbox-id> \
 ```bash
 curl -X POST http://localhost:8080/v1/imap/resolve \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Token: <api-token>' \
   -d '{"access_token":"<mailbox-access-token>"}'
 ```
 
@@ -99,7 +115,6 @@ curl -X POST http://localhost:8080/v1/imap/resolve \
 ```bash
 curl -X POST http://localhost:8080/v1/imap/messages \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Token: <api-token>' \
   -d '{"access_token":"<mailbox-access-token>","unread_only":true,"limit":20,"include_body":false}'
 ```
 
@@ -111,7 +126,6 @@ curl -X POST http://localhost:8080/v1/imap/messages \
 ```bash
 curl -X POST http://localhost:8080/v1/imap/messages/get \
   -H 'Content-Type: application/json' \
-  -H 'X-API-Token: <api-token>' \
   -d '{"access_token":"<mailbox-access-token>","uid":1,"include_body":true}'
 ```
 

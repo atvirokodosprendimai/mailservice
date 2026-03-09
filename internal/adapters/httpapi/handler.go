@@ -87,9 +87,9 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
 	mux.HandleFunc("GET /v1/payments/polar/success", h.handlePolarSuccess)
 	mux.HandleFunc("POST /v1/webhooks/polar", h.handlePolarWebhook)
-	mux.HandleFunc("POST /v1/imap/resolve", h.withAccountToken(h.handleResolveIMAP))
-	mux.HandleFunc("POST /v1/imap/messages", h.withAccountToken(h.handleListIMAPMessages))
-	mux.HandleFunc("POST /v1/imap/messages/get", h.withAccountToken(h.handleGetIMAPMessageByUID))
+	mux.HandleFunc("POST /v1/imap/resolve", h.handleResolveIMAP)
+	mux.HandleFunc("POST /v1/imap/messages", h.handleListIMAPMessages)
+	mux.HandleFunc("POST /v1/imap/messages/get", h.handleGetIMAPMessageByUID)
 	mux.HandleFunc("POST /v1/webhooks/stripe", h.handleStripeWebhook)
 	mux.HandleFunc("GET /mock/pay/{sessionID}", h.handleMockPay)
 	handler := http.Handler(mux)
@@ -1054,12 +1054,13 @@ type mailboxView struct {
 }
 
 type resolveAccessView struct {
-	MailboxID string `json:"mailbox_id"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	Username  string `json:"username"`
-	Password  string `json:"password"`
-	Email     string `json:"email"`
+	MailboxID   string `json:"mailbox_id"`
+	Host        string `json:"host"`
+	Port        int    `json:"port"`
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	Email       string `json:"email"`
+	AccessToken string `json:"access_token,omitempty"`
 }
 
 type polarSuccessView struct {
@@ -1086,12 +1087,13 @@ func mailboxResponse(mailbox *domain.Mailbox) mailboxView {
 
 func resolveAccessResponse(result *service.ResolveAccessResult) resolveAccessView {
 	return resolveAccessView{
-		MailboxID: result.MailboxID,
-		Host:      result.Host,
-		Port:      result.Port,
-		Username:  result.Username,
-		Password:  result.Password,
-		Email:     result.Email,
+		MailboxID:   result.MailboxID,
+		Host:        result.Host,
+		Port:        result.Port,
+		Username:    result.Username,
+		Password:    result.Password,
+		Email:       result.Email,
+		AccessToken: result.AccessToken,
 	}
 }
 
