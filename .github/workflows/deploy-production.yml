@@ -11,7 +11,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Configure Cachix
+        if: ${{ vars.CACHIX_CACHE_NAME != '' && vars.CACHIX_PUBLIC_KEY != '' && secrets.CACHIX_AUTH_TOKEN != '' }}
+        uses: cachix/cachix-action@v15
+        with:
+          name: ${{ vars.CACHIX_CACHE_NAME }}
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build production system closure
+        run: |
+          nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel
+
   deploy:
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -51,14 +77,22 @@ jobs:
 
       - name: Apply NixOS configuration
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
             set -eu
             cd /root/mailservice
-            nixos-rebuild switch --flake .#truevipaccess
-          '
+            rebuild_cmd="nixos-rebuild switch --flake .#truevipaccess"
+
+            if [ -n \"${CACHIX_CACHE_NAME}\" ] && [ -n \"${CACHIX_PUBLIC_KEY}\" ]; then
+              rebuild_cmd=\"\$rebuild_cmd --option extra-substituters https://${CACHIX_CACHE_NAME}.cachix.org --option extra-trusted-public-keys ${CACHIX_CACHE_NAME}.cachix.org-1:${CACHIX_PUBLIC_KEY}\"
+            fi
+
+            eval \"\$rebuild_cmd\"
+          "
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          CACHIX_CACHE_NAME: ${{ vars.CACHIX_CACHE_NAME }}
+          CACHIX_PUBLIC_KEY: ${{ vars.CACHIX_PUBLIC_KEY }}
 
       - name: Health check
         run: |

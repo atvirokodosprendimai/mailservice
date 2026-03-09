@@ -98,7 +98,9 @@ TUNNEL_TOKEN=...
 Preferred future path: use NixOps to apply the host revision.
 
 1. Commit the host and application changes to Git.
-2. Apply the new revision with NixOps.
+2. CI builds `.#nixosConfigurations.truevipaccess.config.system.build.toplevel`.
+3. If Cachix is configured, CI pushes the closure to the configured cache.
+4. Apply the new revision with NixOps or `nixos-rebuild switch`.
 
 Example:
 
@@ -108,6 +110,24 @@ nix run .#nixops-deploy
 
 Manual `nixos-rebuild switch --flake .#truevipaccess` remains useful for local
 debugging on the host, but it is not the preferred multi-step rollout path.
+
+## Binary Cache
+
+Recommended production shape:
+
+- CI builds the NixOS closure on the runner
+- CI pushes that closure to Cachix
+- the host switches using that cache instead of rebuilding locally
+
+Required GitHub configuration:
+
+- secret: `CACHIX_AUTH_TOKEN`
+- var: `CACHIX_CACHE_NAME`
+- var: `CACHIX_PUBLIC_KEY`
+
+The deploy workflow passes the configured Cachix substituter and trusted public
+key directly to `nixos-rebuild`, so the host can consume the prebuilt closure
+without additional persistent Nix configuration.
 
 ## Rollback
 
