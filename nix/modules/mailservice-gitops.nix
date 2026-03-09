@@ -52,19 +52,28 @@ in
       home = "/var/lib/mailservice";
       createHome = false;
     };
+    users.users.cloudflared = {
+      isSystemUser = true;
+      group = "mailservice";
+      home = "/var/lib/mailservice";
+      createHome = false;
+    };
 
     systemd.tmpfiles.rules = [
       "d /var/lib/mailservice 0755 root root -"
-      "d /var/lib/mailservice/data 0770 mailservice mailservice -"
+      "d /var/lib/mailservice/data 2770 mailservice mailservice -"
+      "Z /var/lib/mailservice/data 2770 mailservice mailservice - -"
       "d /var/lib/mailservice/vhosts 0755 root root -"
-      "d /var/lib/secrets 0700 root root -"
+      "d /var/lib/secrets 0750 root mailservice -"
+      "f ${cfg.environmentFile} 0640 root mailservice - -"
+      "f ${cfg.cloudflaredEnvironmentFile} 0640 root mailservice - -"
     ];
 
     systemd.services.mailservice-api = {
       description = "Mailservice API";
       wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
+      after = [ "network-online.target" "docker.service" "docker.socket" ];
+      wants = [ "network-online.target" "docker.service" ];
       serviceConfig = {
         User = "mailservice";
         Group = "mailservice";
@@ -106,6 +115,8 @@ in
       after = [ "network-online.target" "mailservice-api.service" ];
       wants = [ "network-online.target" "mailservice-api.service" ];
       serviceConfig = {
+        User = "cloudflared";
+        Group = "mailservice";
         Restart = "always";
         RestartSec = 5;
         EnvironmentFile = cfg.cloudflaredEnvironmentFile;
