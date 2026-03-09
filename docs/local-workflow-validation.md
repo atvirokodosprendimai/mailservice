@@ -75,3 +75,17 @@ Example:
 - if the workflow runs `go test ./...`, run that locally too
 
 This catches the cheapest failures earliest.
+
+## PR Review Rule
+
+Before merging any PR:
+
+1. check status checks
+2. inspect review comments and unresolved threads
+3. only then merge
+
+Practical reminder:
+
+- green checks are not enough
+- after pushing follow-up commits, re-check review comments again
+- do not rely on memory for this step
