@@ -174,9 +174,6 @@ in
     security.acme = {
       acceptTerms = true;
       defaults.email = "postmaster@${cfg.mailDomain}";
-      certs."mail.${cfg.mailDomain}" = {
-        group = "mailservice";
-      };
     };
 
     services.nginx = {
@@ -224,9 +221,9 @@ in
         }
       '';
     };
-    systemd.services.dovecot2.after = [ "mailservice-api.service" "postfix-setup.service" "acme-mail.${cfg.mailDomain}.service" ];
-    systemd.services.dovecot2.wants = [ "mailservice-api.service" "postfix-setup.service" "acme-mail.${cfg.mailDomain}.service" ];
-    security.acme.certs."mail.${cfg.mailDomain}".reloadServices = [ "dovecot2.service" ];
+    systemd.services.dovecot2.after = [ "mailservice-api.service" "postfix-setup.service" ];
+    systemd.services.dovecot2.wants = [ "mailservice-api.service" "postfix-setup.service" ];
+    systemd.services.dovecot2.serviceConfig.SupplementaryGroups = [ "acme" ];
 
     systemd.services.mailservice-cloudflared = {
       description = "Cloudflare Tunnel for mailservice";
