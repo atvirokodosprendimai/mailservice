@@ -71,18 +71,14 @@ resource "hcloud_server" "app" {
   user_data = local.server_user_data
 }
 
-data "cloudflare_zones" "domain" {
-  filter {
+data "cloudflare_zone" "domain" {
+  filter = {
     name = var.public_hostname
   }
 }
 
-locals {
-  cloudflare_zone_id = data.cloudflare_zones.domain.zones[0].id
-}
-
-resource "cloudflare_record" "mail_a" {
-  zone_id = local.cloudflare_zone_id
+resource "cloudflare_dns_record" "mail_a" {
+  zone_id = data.cloudflare_zone.domain.id
   name    = "mail"
   content = hcloud_server.app.ipv4_address
   type    = "A"
@@ -90,8 +86,8 @@ resource "cloudflare_record" "mail_a" {
   proxied = false
 }
 
-resource "cloudflare_record" "mx_primary" {
-  zone_id  = local.cloudflare_zone_id
+resource "cloudflare_dns_record" "mx_primary" {
+  zone_id  = data.cloudflare_zone.domain.id
   name     = var.public_hostname
   content  = "mail.${var.public_hostname}"
   type     = "MX"
@@ -112,5 +108,6 @@ output "public_hostname" {
 }
 
 output "mail_hostname" {
-  value = cloudflare_record.mail_a.hostname
+  description = "FQDN of the mail A record."
+  value       = cloudflare_dns_record.mail_a.name
 }
