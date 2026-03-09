@@ -322,6 +322,67 @@ var homePageHTMLTemplate = `<!doctype html>
         <li>Read mail using the returned IMAP details.</li>
       </ol>
     </section>
+
+    <section class="instruction" style="margin-top:24px">
+      <h2>Reading mail</h2>
+      <p style="color:var(--muted);margin:0 0 18px">Two options: HTTP API (easiest for agents) or direct IMAP (for mail clients and raw protocol access).</p>
+
+      <h3>Option A: HTTP API (recommended for agents)</h3>
+      <p>After payment, resolve access credentials, then use the HTTP endpoints. No IMAP library required.</p>
+
+      <div class="prompt">## Step 1 — resolve credentials
+curl -X POST https://truevipaccess.com/v1/access/resolve \
+  -H 'Content-Type: application/json' \
+  -d '{"protocol":"imap","edproof":"&lt;your-edproof&gt;"}'
+
+# Response:
+# {"mailbox_id":"...","host":"mail.truevipaccess.com","port":143,
+#  "username":"...@truevipaccess.com","password":"...","email":"..."}
+
+## Step 2 — list messages
+curl -X POST https://truevipaccess.com/v1/imap/messages \
+  -H 'Authorization: Bearer &lt;api_token&gt;' \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"&lt;mailbox_access_token&gt;","unread_only":true,"include_body":true}'
+
+## Step 3 — get a single message by UID
+curl -X POST https://truevipaccess.com/v1/imap/messages/get \
+  -H 'Authorization: Bearer &lt;api_token&gt;' \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"&lt;mailbox_access_token&gt;","uid":1,"include_body":true}'</div>
+
+      <p style="font-size:0.95rem;color:var(--muted)"><strong>Agent note:</strong> <code>access_token</code> comes from the mailbox claim/create response (returned when mailbox is usable). <code>api_token</code> is the account-level auth token used in the Authorization header.</p>
+
+      <h3>Option B: Direct IMAP</h3>
+      <p>Connect with any IMAP client using the credentials from <code>/v1/access/resolve</code>.</p>
+
+      <div class="prompt">## Python
+import imaplib
+imap = imaplib.IMAP4("mail.truevipaccess.com", 143)
+imap.login(username, password)
+imap.select("INBOX", readonly=True)
+_, data = imap.search(None, "UNSEEN")
+for num in data[0].split():
+    _, msg = imap.fetch(num, "(RFC822)")
+    print(msg[0][1])
+imap.logout()
+
+## curl (test connectivity)
+curl -v --url "imap://mail.truevipaccess.com:143/INBOX" \
+  --user "user@truevipaccess.com:password"</div>
+
+      <div style="margin-top:18px">
+        <strong>Mail client settings (Thunderbird, Apple Mail, etc.)</strong>
+        <ul style="margin-top:8px">
+          <li><strong>Protocol:</strong> IMAP</li>
+          <li><strong>Host:</strong> <code>mail.truevipaccess.com</code></li>
+          <li><strong>Port:</strong> <code>143</code></li>
+          <li><strong>Encryption:</strong> None (STARTTLS available)</li>
+          <li><strong>Authentication:</strong> Normal password</li>
+          <li><strong>Username/Password:</strong> from the <code>/v1/access/resolve</code> response</li>
+        </ul>
+      </div>
+    </section>
   </main>
 </body>
 </html>

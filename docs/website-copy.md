@@ -149,17 +149,24 @@ Do not ask the operator unless key generation is impossible or the same mailbox 
    - `edproof`
 6. Read mail using the returned IMAP details.
 
-## Connect with IMAP
+## Reading mail
 
-After payment, call `POST /v1/access/resolve` with your key proof:
+Two options: HTTP API (easiest for agents) or direct IMAP (for mail clients and raw protocol access).
+
+### Option A: HTTP API (recommended for agents)
+
+No IMAP library required.
+Uses the account `api_token` (Authorization header) and the mailbox `access_token`.
+
+#### Step 1 — resolve credentials
 
 ```bash
 curl -X POST https://truevipaccess.com/v1/access/resolve \
   -H 'Content-Type: application/json' \
-  -d '{"protocol":"imap","edproof":"<your-public-key>"}'
+  -d '{"protocol":"imap","edproof":"<your-edproof>"}'
 ```
 
-The response contains everything you need to connect:
+Response:
 
 ```json
 {
@@ -167,27 +174,54 @@ The response contains everything you need to connect:
   "host": "mail.truevipaccess.com",
   "port": 143,
   "username": "your-mailbox@truevipaccess.com",
-  "password": "generated-password"
+  "password": "generated-password",
+  "email": "your-mailbox@truevipaccess.com"
 }
 ```
 
-### Mail client settings
+#### Step 2 — list messages
 
-| Setting | Value |
-|---------|-------|
-| Protocol | IMAP |
-| Host | from `host` field |
-| Port | from `port` field |
-| Username | from `username` field |
-| Password | from `password` field |
-| Encryption | None (plaintext IMAP) |
+```bash
+curl -X POST https://truevipaccess.com/v1/imap/messages \
+  -H 'Authorization: Bearer <api_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"<mailbox_access_token>","unread_only":true,"include_body":true}'
+```
 
-### Agent example (Python)
+Parameters:
+- `access_token` (required) — from the mailbox claim/create response
+- `limit` (optional) — max messages to return
+- `unread_only` (optional, default true) — only return unseen messages
+- `include_body` (optional, default false) — include message body in response
+
+#### Step 3 — get a single message by UID
+
+```bash
+curl -X POST https://truevipaccess.com/v1/imap/messages/get \
+  -H 'Authorization: Bearer <api_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{"access_token":"<mailbox_access_token>","uid":1,"include_body":true}'
+```
+
+Parameters:
+- `access_token` (required)
+- `uid` (required) — IMAP message UID
+- `include_body` (optional, default true)
+
+**Token types:**
+- `api_token` — account-level auth token, used in Authorization header
+- `access_token` — mailbox-level token, returned when mailbox is usable (paid)
+
+### Option B: Direct IMAP
+
+Connect with any IMAP client using credentials from `/v1/access/resolve`.
+
+#### Agent example (Python)
 
 ```python
 import imaplib
 
-imap = imaplib.IMAP4(host, port)
+imap = imaplib.IMAP4("mail.truevipaccess.com", 143)
 imap.login(username, password)
 imap.select("INBOX", readonly=True)
 _, data = imap.search(None, "UNSEEN")
@@ -197,7 +231,7 @@ for num in data[0].split():
 imap.logout()
 ```
 
-### Agent example (Go)
+#### Agent example (Go)
 
 ```go
 c, _ := client.Dial(net.JoinHostPort(host, strconv.Itoa(port)))
@@ -207,9 +241,24 @@ c.Select("INBOX", true)
 c.Logout()
 ```
 
-### Thunderbird / Apple Mail
+#### curl (test connectivity)
 
-Use the host, port, username, and password from the resolve response. Set the connection security to "None" and authentication to "Normal password".
+```bash
+curl -v --url "imap://mail.truevipaccess.com:143/INBOX" \
+  --user "user@truevipaccess.com:password"
+```
+
+#### Mail client settings (Thunderbird, Apple Mail)
+
+| Setting | Value |
+|---------|-------|
+| Protocol | IMAP |
+| Host | `mail.truevipaccess.com` |
+| Port | `143` |
+| Encryption | None (STARTTLS available) |
+| Authentication | Normal password |
+| Username | from `/v1/access/resolve` response |
+| Password | from `/v1/access/resolve` response |
 
 ## FAQ
 
