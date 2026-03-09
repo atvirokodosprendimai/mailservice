@@ -111,6 +111,7 @@ in
       environment = {
         HTTP_ADDR = "127.0.0.1:8080";
         DATABASE_DSN = mailDbPath;
+        MAIL_DOMAIN = cfg.mailDomain;
       };
     };
 

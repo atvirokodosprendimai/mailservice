@@ -129,7 +129,7 @@ If your verifier expects a different proof blob, pass `--edproof` or `--edproof-
 
 On the NixOS production host:
 - the API runs as a native systemd service built by Nix
-- only `mailreceive` still depends on a container image
+- Postfix and Dovecot handle inbound mail and IMAP as native NixOS services
 
 ## Environment variables
 
