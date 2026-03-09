@@ -11,7 +11,7 @@ The reason is simple:
 
 - host package drift caused real deploy failures
 - mutable shell assumptions made rollouts fragile
-- Git should describe both the host runtime and the pinned application artifact
+- Git should describe the host runtime and the application it runs
 
 ## Shape
 
@@ -24,10 +24,9 @@ Source of truth:
 Runtime model:
 
 - NixOS host
-- Docker backend managed declaratively through `virtualisation.oci-containers`
-- pinned API image ref in Git
-- pinned mailreceive image ref in Git
-- Cloudflare Tunnel container managed by NixOS using host networking; configure the tunnel origin to `http://127.0.0.1:8080`, not a Docker-internal hostname such as `http://api:8080`
+- native systemd service for the API
+- native Postfix and Dovecot services for inbound mail
+- native systemd service for Cloudflare Tunnel; configure the tunnel origin to `http://127.0.0.1:8080`, not a Docker-internal hostname such as `http://api:8080`
 - secrets kept out of Git in `/var/lib/secrets/mailservice.env`
 
 ## What Lives In Git
@@ -35,7 +34,8 @@ Runtime model:
 Git-managed:
 
 - host configuration
-- OCI image references
+- API package build and service definition
+- native mail service configuration
 - firewall/runtime shape
 - Cloudflare tunnel runtime definition
 - service topology
@@ -47,22 +47,20 @@ Not in Git:
 - `CLOUDFLARE_TUNNEL_TOKEN`
 - any other secret env values
 
-## Image Pinning
+## API Packaging
 
-Rollouts happen by changing the pinned image refs in
-[`nix/hosts/truevipaccess/configuration.nix`](../nix/hosts/truevipaccess/configuration.nix).
+The API is built directly from the repo as a Nix package and run under systemd.
 
 Example:
 
 ```nix
 services.mailserviceGitOps = {
   enable = true;
-  apiImage = "ghcr.io/atvirokodosprendimai/mailservice-api:sha-abc1234";
-  mailreceiveImage = "ghcr.io/atvirokodosprendimai/mailservice-mailreceive:sha-abc1234";
+  mailDomain = "truevipaccess.com";
 };
 ```
 
-That removes the mutable-`latest` race from deployment.
+That removes the runtime dependence on GHCR and Docker.
 
 ## Secrets File
 
@@ -99,10 +97,10 @@ TUNNEL_TOKEN=...
 
 Preferred future path: use NixOps to apply the host revision.
 
-1. Build and publish commit-pinned images.
-2. Update the pinned image refs in the NixOS host config.
-3. Commit that change to Git.
-4. Apply the new revision with NixOps.
+1. Commit the host and application changes to Git.
+2. CI builds `.#nixosConfigurations.truevipaccess.config.system.build.toplevel`.
+3. If S3 cache vars/secrets are configured, CI pushes the closure to Hetzner Object Storage.
+4. Apply the new revision with NixOps or `nixos-rebuild switch`.
 
 Example:
 
@@ -113,11 +111,31 @@ nix run .#nixops-deploy
 Manual `nixos-rebuild switch --flake .#truevipaccess` remains useful for local
 debugging on the host, but it is not the preferred multi-step rollout path.
 
+## Binary Cache
+
+Recommended production shape:
+
+- CI builds the NixOS closure on the runner
+- CI pushes that closure to a Hetzner S3-compatible bucket
+- the host switches using that cache (`s3://` substituter) instead of rebuilding locally
+
+Required GitHub configuration:
+
+- secret: `NIX_CACHE_S3_ACCESS_KEY_ID`
+- secret: `NIX_CACHE_S3_SECRET_ACCESS_KEY`
+- var: `NIX_CACHE_S3_BUCKET`
+- var: `NIX_CACHE_S3_ENDPOINT`
+- var: `NIX_CACHE_S3_REGION`
+
+The deploy workflow passes the configured `s3://` substituter directly to
+`nixos-rebuild`, so the host can consume the prebuilt closure without
+additional persistent Nix configuration.
+
 ## Rollback
 
 Rollback is revision-based:
 
-1. revert the Git commit that changed the host config or image refs
+1. revert the Git commit that changed the host config
 2. apply the previous revision again
 
 That is the key GitOps property this path is meant to provide.

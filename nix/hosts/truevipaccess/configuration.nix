@@ -28,12 +28,8 @@
 
   services.mailserviceGitOps = {
     enable = true;
+    mailDomain = "truevipaccess.com";
     environmentFile = "/var/lib/secrets/mailservice.env";
     cloudflaredEnvironmentFile = "/var/lib/secrets/cloudflared.env";
-
-    # Git is the source of truth for the deployed artifact.
-    # Update these pinned image refs in Git for each rollout.
-    apiImage = "ghcr.io/atvirokodosprendimai/mailservice-api:sha-31c9c4c";
-    mailreceiveImage = "ghcr.io/atvirokodosprendimai/mailservice-mailreceive:sha-31c9c4c";
   };
 }

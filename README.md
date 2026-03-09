@@ -105,8 +105,10 @@ docker compose -f compose.tunnel.yml up -d
 The service auto-loads `.env` from the project root (via `godotenv`).
 
 Production delivery:
-- merges to `main` build immutable GHCR images automatically
-- `Deploy Production App` runs after the Docker workflow succeeds for that `main` commit
+- production runs on a NixOS host with native API, Postfix, Dovecot, and cloudflared services
+- merges to `main` trigger `Deploy Production App`
+- CI builds the NixOS system closure first and can push it to Hetzner S3 binary cache when configured
+- the deploy workflow syncs the repo to the host and runs `nixos-rebuild switch --flake .#truevipaccess`
 - `Hetzner OpenTofu` remains the manual workflow for infrastructure changes
 
 Live smoke test helper:
@@ -125,6 +127,10 @@ The script:
 By default it sends the contents of `<work-dir>/identity.pub` as the `edproof` payload,
 or `<key-path>.pub` when a custom key path is used.
 If your verifier expects a different proof blob, pass `--edproof` or `--edproof-file`.
+
+On the NixOS production host:
+- the API runs as a native systemd service built by Nix
+- Postfix and Dovecot handle inbound mail and IMAP as native NixOS services
 
 ## Environment variables
 

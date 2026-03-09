@@ -1,14 +1,9 @@
 name: Deploy Production App
 
-env:
-  REGISTRY: ghcr.io
-
 on:
-  workflow_run:
-    workflows:
-      - Docker Build and Push
-    types:
-      - completed
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:
@@ -16,117 +11,119 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (
-        github.event_name == 'workflow_run' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_branch == 'main'
-      )
+  build:
+    outputs:
+      s3_cache_enabled: ${{ steps.s3cache.outputs.enabled }}
+      s3_cache_upload_enabled: ${{ steps.s3cache.outputs.upload_enabled }}
+      s3_cache_bucket: ${{ steps.s3cache.outputs.bucket }}
+      s3_cache_endpoint: ${{ steps.s3cache.outputs.endpoint }}
+      s3_cache_region: ${{ steps.s3cache.outputs.region }}
     runs-on: ubuntu-latest
     environment:
       name: production
     permissions:
       contents: read
-      packages: read
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Compute image refs
-        id: images
-        run: |
-          repo_lc="${GITHUB_REPOSITORY,,}"
-          commit_sha="${DEPLOY_SHA}"
-          short_sha="${commit_sha:0:7}"
-          cache_buster="${short_sha}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
-          echo "api=${{ env.REGISTRY }}/${repo_lc}-api:sha-${short_sha}" >> "$GITHUB_OUTPUT"
-          echo "mailreceive=${{ env.REGISTRY }}/${repo_lc}-mailreceive:sha-${short_sha}" >> "$GITHUB_OUTPUT"
-          echo "build_number=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
-          echo "cache_buster=${cache_buster}" >> "$GITHUB_OUTPUT"
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v1
+
+      - name: Detect S3 cache configuration
+        id: s3cache
         env:
-          DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Wait for published images
-        env:
-          API_IMAGE: ${{ steps.images.outputs.api }}
-          MAILRECEIVE_IMAGE: ${{ steps.images.outputs.mailreceive }}
+          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
+          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
+          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
+          NIX_CACHE_S3_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          NIX_CACHE_S3_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
+          TOFU_STATE_BUCKET: ${{ secrets.TOFU_STATE_BUCKET }}
+          TOFU_STATE_ENDPOINT: ${{ secrets.TOFU_STATE_ENDPOINT }}
+          TOFU_STATE_REGION: ${{ secrets.TOFU_STATE_REGION }}
+          TOFU_STATE_ACCESS_KEY: ${{ secrets.TOFU_STATE_ACCESS_KEY }}
+          TOFU_STATE_SECRET_KEY: ${{ secrets.TOFU_STATE_SECRET_KEY }}
         run: |
-          for image in "$API_IMAGE" "$MAILRECEIVE_IMAGE"; do
-            for attempt in $(seq 1 30); do
-              if docker manifest inspect "$image" >/dev/null 2>&1; then
-                break
-              fi
-              if [ "$attempt" -eq 30 ]; then
-                echo "image not available: $image" >&2
-                exit 1
-              fi
-              sleep 20
-            done
-          done
+          set -eu
 
-      - name: Write production env
+          bucket="${NIX_CACHE_S3_BUCKET:-}"
+          endpoint="${NIX_CACHE_S3_ENDPOINT:-}"
+          region="${NIX_CACHE_S3_REGION:-}"
+
+          if [ -z "$bucket" ] && [ -n "${TOFU_STATE_BUCKET:-}" ]; then
+            bucket="${TOFU_STATE_BUCKET}-nix-cache"
+          fi
+
+          if [ -z "$endpoint" ] && [ -n "${TOFU_STATE_ENDPOINT:-}" ]; then
+            endpoint="$TOFU_STATE_ENDPOINT"
+          fi
+
+          if [ -z "$region" ] && [ -n "${TOFU_STATE_REGION:-}" ]; then
+            region="$TOFU_STATE_REGION"
+          fi
+
+          endpoint="${endpoint#http://}"
+          endpoint="${endpoint#https://}"
+
+          if [ -z "$region" ] && [ -n "$endpoint" ]; then
+            region="${endpoint%%.*}"
+          fi
+          if [ "$region" = "eu-central-1" ] || [ "$region" = "eu-central" ]; then
+            region="${endpoint%%.*}"
+          fi
+
+          if [ -n "$bucket" ] && [ -n "$endpoint" ] && [ -n "$region" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          access_key="${NIX_CACHE_S3_ACCESS_KEY_ID:-${TOFU_STATE_ACCESS_KEY:-}}"
+          secret_key="${NIX_CACHE_S3_SECRET_ACCESS_KEY:-${TOFU_STATE_SECRET_KEY:-}}"
+          if [ -n "$bucket" ] && [ -n "$endpoint" ] && [ -n "$region" ] && [ -n "$access_key" ] && [ -n "$secret_key" ]; then
+            echo "upload_enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload_enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+          echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
+          echo "region=$region" >> "$GITHUB_OUTPUT"
+
+      - name: Build production system closure
         run: |
-          umask 077
-          cat > production.env <<EOF
-          API_IMAGE=${API_IMAGE}
-          MAILRECEIVE_IMAGE=${MAILRECEIVE_IMAGE}
-          BUILD_NUMBER=${BUILD_NUMBER}
-          CACHE_BUSTER=${CACHE_BUSTER}
-          PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
-          MAIL_DOMAIN=${MAIL_DOMAIN}
-          IMAP_HOST=${IMAP_HOST}
-          IMAP_PORT=${IMAP_PORT}
-          MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
-          POLAR_TOKEN=${POLAR_TOKEN}
-          POLAR_PRICE_ID=${POLAR_PRICE_ID}
-          POLAR_SERVER_URL=${POLAR_SERVER_URL}
-          POLAR_SUCCESS_URL=${POLAR_SUCCESS_URL}
-          POLAR_RETURN_URL=${POLAR_RETURN_URL}
-          POLAR_WEBHOOK_SECRET=${POLAR_WEBHOOK_SECRET}
-          STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
-          STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
-          STRIPE_SUCCESS_URL=${STRIPE_SUCCESS_URL}
-          STRIPE_CANCEL_URL=${STRIPE_CANCEL_URL}
-          STRIPE_CURRENCY=${STRIPE_CURRENCY}
-          MAILBOX_PRICE_CENTS=${MAILBOX_PRICE_CENTS}
-          CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
-          EOF
-          chmod 600 production.env
+          nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel
+
+      - name: Upload closure to Hetzner S3 cache
+        if: ${{ steps.s3cache.outputs.upload_enabled == 'true' }}
         env:
-          API_IMAGE: ${{ steps.images.outputs.api }}
-          MAILRECEIVE_IMAGE: ${{ steps.images.outputs.mailreceive }}
-          BUILD_NUMBER: ${{ steps.images.outputs.build_number }}
-          CACHE_BUSTER: ${{ steps.images.outputs.cache_buster }}
-          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
-          MAIL_DOMAIN: ${{ vars.MAIL_DOMAIN }}
-          IMAP_HOST: ${{ vars.IMAP_HOST }}
-          IMAP_PORT: ${{ vars.IMAP_PORT }}
-          MAX_CONCURRENT_REQUESTS: ${{ vars.MAX_CONCURRENT_REQUESTS }}
-          POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
-          POLAR_PRICE_ID: ${{ vars.POLAR_PRICE_ID }}
-          POLAR_SERVER_URL: ${{ vars.POLAR_SERVER_URL }}
-          POLAR_SUCCESS_URL: ${{ vars.POLAR_SUCCESS_URL }}
-          POLAR_RETURN_URL: ${{ vars.POLAR_RETURN_URL }}
-          POLAR_WEBHOOK_SECRET: ${{ secrets.POLAR_WEBHOOK_SECRET }}
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-          STRIPE_SUCCESS_URL: ${{ vars.STRIPE_SUCCESS_URL }}
-          STRIPE_CANCEL_URL: ${{ vars.STRIPE_CANCEL_URL }}
-          STRIPE_CURRENCY: ${{ vars.STRIPE_CURRENCY }}
-          MAILBOX_PRICE_CENTS: ${{ vars.MAILBOX_PRICE_CENTS }}
-          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID != '' && secrets.NIX_CACHE_S3_ACCESS_KEY_ID || secrets.TOFU_STATE_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY != '' && secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY || secrets.TOFU_STATE_SECRET_KEY }}
+          NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
+          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+        run: |
+          closure_path="$(nix path-info .#nixosConfigurations.truevipaccess.config.system.build.toplevel)"
+          nix copy --to "s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}" "$closure_path"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute build metadata
+        run: |
+          short_sha="${GITHUB_SHA:0:7}"
+          echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "CACHE_BUSTER=${short_sha}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
 
       - name: Start ssh-agent
         uses: webfactory/ssh-agent@v0.9.0
@@ -141,46 +138,58 @@ jobs:
         env:
           DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
 
-      - name: Upload runtime files
+      - name: Upload repo to host
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
-            install -d -m 700 /opt/mailservice
-          '
-          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
-            compose.tunnel.yml.example "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/compose.yml"
-          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
-            production.env "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/mailservice/production.env"
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
-            chmod 600 /opt/mailservice/production.env
-          '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'install -d -m 700 /root/mailservice'
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'result' \
+            --exclude '.direnv' \
+            -e 'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts' \
+            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:/root/mailservice/"
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
-      - name: Deploy compose stack
+      - name: Write build metadata on host
         run: |
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
-            cd /opt/mailservice
-            set -a
-            . ./production.env
-            set +a
-
-            if docker compose version >/dev/null 2>&1; then
-              compose_cmd="docker compose"
-            elif command -v docker-compose >/dev/null 2>&1; then
-              compose_cmd="docker-compose"
-            else
-              echo "docker compose is not available on the target host" >&2
-              exit 1
+            env_file="/var/lib/secrets/mailservice.env"
+            tmp_file="$(mktemp)"
+            if [ -f "$env_file" ]; then
+              awk "!/^BUILD_NUMBER=|^CACHE_BUSTER=/" "$env_file" > "$tmp_file"
             fi
-
-            $compose_cmd -f compose.yml pull
-            $compose_cmd -f compose.yml up -d
+            printf "BUILD_NUMBER=%s\n" "$BUILD_NUMBER" >> "$tmp_file"
+            printf "CACHE_BUSTER=%s\n" "$CACHE_BUSTER" >> "$tmp_file"
+            install -m 640 -o root -g mailservice "$tmp_file" "$env_file"
+            rm -f "$tmp_file"
           '
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
+          CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
+
+      - name: Apply NixOS configuration
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
+            set -eu
+            cd /root/mailservice
+            if [ -n \"${NIX_CACHE_S3_BUCKET}\" ] && [ -n \"${NIX_CACHE_S3_ENDPOINT}\" ] && [ -n \"${NIX_CACHE_S3_REGION}\" ]; then
+              nixos-rebuild switch --flake .#truevipaccess \
+                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\"
+            else
+              nixos-rebuild switch --flake .#truevipaccess
+            fi
+          "
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          NIX_CACHE_S3_BUCKET: ${{ needs.build.outputs.s3_cache_bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ needs.build.outputs.s3_cache_endpoint }}
+          NIX_CACHE_S3_REGION: ${{ needs.build.outputs.s3_cache_region }}
 
       - name: Health check
         run: |
@@ -196,10 +205,10 @@ jobs:
       - name: Verify public build version
         env:
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
-          BUILD_NUMBER: ${{ steps.images.outputs.build_number }}
-          CACHE_BUSTER: ${{ steps.images.outputs.cache_buster }}
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
+          CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
         run: |
-          page="$(curl --fail --silent --show-error --location "${PUBLIC_BASE_URL}/?cb=${CACHE_BUSTER}")"
+          page="$(curl --fail --silent --show-error --location --retry 5 --retry-delay 5 --retry-connrefused "${PUBLIC_BASE_URL}/?cb=${CACHE_BUSTER}")"
           expected_build="Build: <code>${BUILD_NUMBER}</code>"
           expected_buster="Cache buster: <code>${CACHE_BUSTER}</code>"
 
