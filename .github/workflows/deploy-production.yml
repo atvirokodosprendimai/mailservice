@@ -177,8 +177,13 @@ jobs:
       - name: Assert S3 cache read had no auth/path errors
         if: ${{ steps.s3cache.outputs.enabled == 'true' }}
         run: |
-          if grep -nEi "(^|[[:space:]])error:|AWS authentication failed|AccessDenied|nix-cache-info" "$NIX_BUILD_LOG"; then
-            echo "Detected error-level diagnostics in nix build log." >&2
+          if [ -z "${NIX_BUILD_LOG:-}" ] || [ ! -s "$NIX_BUILD_LOG" ]; then
+            echo "Nix build log is missing or empty (NIX_BUILD_LOG='${NIX_BUILD_LOG:-unset}')." >&2
+            exit 1
+          fi
+
+          if grep -nEi "AWS authentication failed|AccessDenied|nix-cache-info" "$NIX_BUILD_LOG"; then
+            echo "Detected S3/cache-related error diagnostics in nix build log." >&2
             exit 1
           fi
 

@@ -61,9 +61,7 @@ jobs:
           SERVER_TYPE: ${{ github.event.inputs.server_type }}
           NIXOS_CHANNEL: ${{ github.event.inputs.nixos_channel }}
         run: |
-          set -o pipefail
           bash ./ops/hetzner-nixos-image/build_snapshot.sh | tee snapshot.txt
-        shell: bash
 
       - name: Ensure snapshot output exists
         run: |
