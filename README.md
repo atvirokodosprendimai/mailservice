@@ -126,6 +126,8 @@ The script:
 
 By default it sends the contents of `<work-dir>/identity.pub` as the `edproof` payload,
 or `<key-path>.pub` when a custom key path is used.
+The built-in verifier accepts OpenSSH Ed25519 public keys directly and derives the
+stable mailbox identity from their SHA-256 fingerprint.
 If your verifier expects a different proof blob, pass `--edproof` or `--edproof-file`.
 
 On the NixOS production host:

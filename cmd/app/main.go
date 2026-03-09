@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/httpapi"
+	"github.com/atvirokodosprendimai/mailservice/internal/adapters/identity/edproof"
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/imap"
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/notify"
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/payment"
@@ -85,6 +86,7 @@ func main() {
 		MaxConcurrentReqs:   cfg.MaxConcurrentReqs,
 		BuildNumber:         cfg.BuildNumber,
 		CacheBuster:         cfg.CacheBuster,
+		KeyProofVerifier:    newKeyProofVerifier(),
 		PaymentGateway:      paymentGateway,
 		MailboxService:      mailboxService,
 		AccountService:      accountService,
@@ -113,4 +115,8 @@ func main() {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Printf("server shutdown: %v", err)
 	}
+}
+
+func newKeyProofVerifier() ports.KeyProofVerifier {
+	return edproof.NewVerifier(nil)
 }

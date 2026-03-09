@@ -58,9 +58,15 @@ func TestVerifierRequiresBackend(t *testing.T) {
 
 	verifier := NewVerifier(nil)
 
-	_, err := verifier.Verify(context.Background(), "proof")
-	if !errors.Is(err, ErrVerifierNotConfigured) {
-		t.Fatalf("expected ErrVerifierNotConfigured, got %v", err)
+	key, err := verifier.Verify(context.Background(), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOB0H114bTlib+M0AuEoXJDWHzU52aMKtT8O1wtpk5WB entity@context")
+	if err != nil {
+		t.Fatalf("Verify failed: %v", err)
+	}
+	if key.Fingerprint != "sha256:rb+adyouqwajmg0bjdkbmcon1kqvvyl1mo4imupjv8a" {
+		t.Fatalf("expected local verifier fingerprint, got %q", key.Fingerprint)
+	}
+	if key.Algorithm != "ed25519" {
+		t.Fatalf("expected ed25519 algorithm, got %q", key.Algorithm)
 	}
 }
 
