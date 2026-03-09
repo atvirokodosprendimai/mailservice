@@ -107,6 +107,17 @@ jobs:
           printf 'StoreDir: /nix/store\nWantMassQuery: 1\nPriority: 40\n' > nix-cache-info
           aws s3 cp nix-cache-info "s3://${NIX_CACHE_S3_BUCKET}/nix-cache-info" --region "$NIX_CACHE_S3_REGION" --endpoint-url "$endpoint_url"
 
+      - name: Verify Nix can read cache metadata
+        if: ${{ steps.s3cache.outputs.upload_enabled == 'true' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
+          NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
+          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+        run: |
+          nix store info --store "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}" >/dev/null
+
       - name: Build production system closure
         env:
           S3_CACHE_ENABLED: ${{ steps.s3cache.outputs.enabled }}
@@ -118,7 +129,7 @@ jobs:
         run: |
           if [ "$S3_CACHE_ENABLED" = "true" ]; then
             nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel \
-              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
           else
             nix build .#nixosConfigurations.truevipaccess.config.system.build.toplevel
           fi
@@ -133,7 +144,7 @@ jobs:
           NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
         run: |
           closure_path="$(nix path-info .#nixosConfigurations.truevipaccess.config.system.build.toplevel)"
-          nix copy --to "s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}" "$closure_path"
+          nix copy --to "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}" "$closure_path"
 
   deploy:
     needs: build
@@ -207,7 +218,7 @@ jobs:
             cd /root/mailservice
             if [ -n \"${NIX_CACHE_S3_BUCKET}\" ] && [ -n \"${NIX_CACHE_S3_ENDPOINT}\" ] && [ -n \"${NIX_CACHE_S3_REGION}\" ]; then
               nixos-rebuild switch --flake .#truevipaccess \
-                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\"
+                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\"
             else
               nixos-rebuild switch --flake .#truevipaccess
             fi
