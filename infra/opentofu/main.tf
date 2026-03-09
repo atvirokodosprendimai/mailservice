@@ -90,7 +90,7 @@ resource "cloudflare_record" "mail_a" {
   proxied = false
 }
 
-resource "cloudflare_record" "mx" {
+resource "cloudflare_record" "mx_primary" {
   zone_id  = local.cloudflare_zone_id
   name     = var.public_hostname
   content  = "mail.${var.public_hostname}"
@@ -98,6 +98,11 @@ resource "cloudflare_record" "mx" {
   priority = 10
   ttl      = 300
 }
+
+# Note: existing Cloudflare Email Routing MX records (route1/2/3.mx.cloudflare.net)
+# must be removed manually in the Cloudflare dashboard after verifying direct
+# mail delivery works via mail.truevipaccess.com. Disable Email Routing for
+# this zone to remove them automatically.
 
 output "server_ipv4" {
   value = hcloud_server.app.ipv4_address
