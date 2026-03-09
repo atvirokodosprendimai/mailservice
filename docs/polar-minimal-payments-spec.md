@@ -203,36 +203,36 @@ This gives immediate value today without forcing a broad migration in one change
 
 ## Tasks
 
-- [ ] 1. Add or tighten the provider-neutral payment seam
-- [ ] 1.1 Confirm `PaymentGateway` and payment DTOs are sufficient for Polar checkout creation
+- [x] 1. Add or tighten the provider-neutral payment seam
+- [x] 1.1 Confirm `PaymentGateway` and payment DTOs are sufficient for Polar checkout creation
   - adjust naming only if needed without leaking provider types into core
   - _Requirements: 1, 2, 8_
-- [ ] 1.2 Wire app bootstrap to select Polar when `POLAR_TOKEN` is configured for the new flow
+- [x] 1.2 Wire app bootstrap to select Polar when `POLAR_TOKEN` is configured for the new flow
   - keep legacy provider wiring available during migration
   - _Requirements: 8_
 
-- [ ] 2. Implement Polar checkout creation
-- [ ] 2.1 Add Polar payment adapter under `internal/adapters/payment`
+- [x] 2. Implement Polar checkout creation
+- [x] 2.1 Add Polar payment adapter under `internal/adapters/payment`
   - create checkout/session and map response to `ports.PaymentLink`
   - _Requirements: 1, 2, 4_
-- [ ] 2.2 Cover successful and failing checkout creation with adapter tests
+- [x] 2.2 Cover successful and failing checkout creation with adapter tests
   - _Requirements: 1, 2_
 
-- [ ] 3. Connect claim flow to Polar checkout behavior
-- [ ] 3.1 Ensure key-bound claim creates or refreshes payment session data correctly
+- [x] 3. Connect claim flow to Polar checkout behavior
+- [x] 3.1 Ensure key-bound claim creates or refreshes payment session data correctly
   - _Requirements: 1, 2, 3_
-- [ ] 3.2 Ensure payment link notification/response works with Polar URLs
+- [x] 3.2 Ensure payment link notification/response works with Polar URLs
   - _Requirements: 4_
 
-- [ ] 4. Handle Polar payment completion
-- [ ] 4.1 Add minimal Polar webhook/callback endpoint
+- [x] 4. Handle Polar payment completion
+- [x] 4.1 Add minimal Polar webhook/callback endpoint
   - verify callback authenticity and extract session id
   - _Requirements: 5, 6, 7_
-- [ ] 4.2 Activate mailbox through `MarkMailboxPaid`
+- [x] 4.2 Activate mailbox through `MarkMailboxPaid`
   - _Requirements: 5_
-- [ ] 4.3 Add invalid and duplicate callback tests
+- [x] 4.3 Add invalid and duplicate callback tests
   - _Requirements: 6, 7_
 
-- [ ] 5. Update docs for the preferred payment path
-- [ ] 5.1 Update README and/or follow-up docs to describe Polar as the preferred key-bound payment path
+- [x] 5. Update docs for the preferred payment path
+- [x] 5.1 Update README and/or follow-up docs to describe Polar as the preferred key-bound payment path
   - _Requirements: 8_

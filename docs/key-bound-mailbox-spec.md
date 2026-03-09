@@ -235,36 +235,36 @@ Preferred migration path:
 
 ## Tasks
 
-- [ ] 1. Introduce key-bound mailbox data model
+- [x] 1. Introduce key-bound mailbox data model
   - Add `key_fingerprint` and `billing_email` to mailbox persistence.
   - Preserve current mailbox provisioning behavior.
   - _Requirements: 1, 2, 3, 6_
 
-- [ ] 2. Add `edproof` verification port and adapter
+- [x] 2. Add `edproof` verification port and adapter
   - Create a protocol adapter that verifies proofs and returns `VerifiedKey`.
   - Keep `edproof`-specific types out of the core domain.
   - _Requirements: 1, 2, 5, 6_
 
-- [ ] 3. Implement mailbox claim flow
+- [x] 3. Implement mailbox claim flow
   - Add `POST /v1/mailboxes/claim`.
   - Reuse existing mailbox for known keys.
   - Create new mailbox subscription for new keys.
   - _Requirements: 1, 2, 3_
 
-- [ ] 4. Implement key-based resolve flow
+- [x] 4. Implement key-based resolve flow
   - Add `POST /v1/access/resolve`.
   - Verify proof, enforce active subscription, return inbound access details.
   - _Requirements: 4, 5, 7_
 
-- [ ] 5. Keep legacy flow during migration
+- [x] 5. Keep legacy flow during migration
   - Preserve current account/token endpoints temporarily.
   - Mark them as legacy in docs.
   - _Requirements: 8_
 
-- [ ] 6. Document product boundaries and usage
+- [x] 6. Document product boundaries and usage
   - Explain key generation/bootstrap, billing-email role, and inbound-only scope.
   - _Requirements: 3, 7, 8_
 
-- [ ] 7. Design future POP3 and HTTP API access paths
+- [x] 7. Design future POP3 and HTTP API access paths
   - Ensure protocol additions reuse the same key-bound authorization model.
   - _Requirements: 8_

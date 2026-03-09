@@ -66,24 +66,24 @@ Add a new `notify` adapter for Unsend and wire it into notifier selection in `cm
 
 ## Phase 3: Task plan
 
-- [ ] 1. Add config support for Unsend
+- [x] 1. Add config support for Unsend
   - Add config fields/env loading for `UNSEND_KEY` and `UNSEND_BASE_URL`.
   - _Requirements: 1, 3, 6_
 
-- [ ] 2. Implement Unsend notifier adapter
+- [x] 2. Implement Unsend notifier adapter
   - Add `internal/adapters/notify/unsend.go` implementing `ports.Notifier`.
   - Add adapter unit tests for 2xx, non-2xx, and timeout/failure.
   - _Requirements: 2, 4, 5_
 
-- [ ] 3. Wire notifier selection in app bootstrap
+- [x] 3. Wire notifier selection in app bootstrap
   - Update `cmd/app/main.go` notifier selection precedence and logging.
   - Preserve fallback path to existing providers when Unsend absent.
   - _Requirements: 1, 3_
 
-- [ ] 4. Update docs and examples
+- [x] 4. Update docs and examples
   - Update `.env.example` and `README.md` for Unsend config.
   - _Requirements: 6_
 
-- [ ] 5. Validate end-to-end behavior
+- [x] 5. Validate end-to-end behavior
   - Run targeted tests and `go test ./...`.
   - _Requirements: 5_
