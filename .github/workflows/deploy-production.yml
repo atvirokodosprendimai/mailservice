@@ -368,7 +368,7 @@ jobs:
             if [ ! -f "$cert_dir/fullchain.pem" ]; then
               needs_renewal=true
             else
-              if ! issuer_output=$(openssl x509 -in "$cert_dir/fullchain.pem" -noout -issuer 2>/dev/null); then
+              if ! issuer_output=$(sudo openssl x509 -in "$cert_dir/fullchain.pem" -noout -issuer 2>/dev/null); then
                 needs_renewal=true
               elif echo "$issuer_output" | grep -qi minica; then
                 needs_renewal=true
@@ -376,23 +376,16 @@ jobs:
             fi
             if [ "$needs_renewal" = true ]; then
               echo "ACME cert missing, invalid, or self-signed, triggering renewal..."
-              echo "Cert directory before renewal:"
-              sudo ls -la "$cert_dir/" 2>/dev/null || echo "  directory does not exist"
-              sudo ls -la /var/lib/acme/ 2>/dev/null || echo "  /var/lib/acme/ does not exist"
               sudo systemctl reset-failed acme-mail.'"${MAIL_DOMAIN}"'.service 2>/dev/null || true
-              sudo journalctl -u acme-mail.'"${MAIL_DOMAIN}"'.service --no-pager -n 5 2>/dev/null || true
-              echo "Starting ACME renewal..."
               if sudo systemctl start acme-mail.'"${MAIL_DOMAIN}"'.service; then
-                echo "ACME service exited 0"
+                echo "ACME renewal completed"
               else
-                echo "ACME service failed"
+                echo "ACME renewal failed:"
+                sudo journalctl -u acme-mail.'"${MAIL_DOMAIN}"'.service --no-pager -n 20
+                exit 1
               fi
-              echo "Journal after renewal:"
-              sudo journalctl -u acme-mail.'"${MAIL_DOMAIN}"'.service --no-pager -n 20
-              echo "Cert directory after renewal:"
-              sudo ls -la "$cert_dir/" 2>/dev/null || echo "  directory does not exist"
-              echo "Certificate issuer after renewal:"
-              sudo openssl x509 -in "$cert_dir/fullchain.pem" -noout -issuer 2>/dev/null || echo "  cert file not readable"
+            else
+              echo "ACME cert is valid, no renewal needed"
             fi
           '
         env:

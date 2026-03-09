@@ -224,7 +224,7 @@ in
     };
     systemd.services.dovecot2.after = [ "mailservice-api.service" "postfix-setup.service" ];
     systemd.services.dovecot2.wants = [ "mailservice-api.service" "postfix-setup.service" ];
-    systemd.services.dovecot2.serviceConfig.SupplementaryGroups = [ "acme" ];
+    systemd.services.dovecot2.serviceConfig.SupplementaryGroups = [ "acme" "nginx" ];
 
     systemd.services.mailservice-cloudflared = {
       description = "Cloudflare Tunnel for mailservice";
