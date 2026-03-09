@@ -221,7 +221,7 @@ Connect with any IMAP client using credentials from `/v1/access/resolve`.
 ```python
 import imaplib
 
-imap = imaplib.IMAP4("mail.truevipaccess.com", 143)
+imap = imaplib.IMAP4_SSL("mail.truevipaccess.com", 993)
 imap.login(username, password)
 imap.select("INBOX", readonly=True)
 _, data = imap.search(None, "UNSEEN")
@@ -234,7 +234,7 @@ imap.logout()
 #### Agent example (Go)
 
 ```go
-c, _ := client.Dial(net.JoinHostPort(host, strconv.Itoa(port)))
+c, _ := client.DialTLS(net.JoinHostPort(host, "993"), nil)
 c.Login(username, password)
 c.Select("INBOX", true)
 // fetch messages...
@@ -244,7 +244,7 @@ c.Logout()
 #### curl (test connectivity)
 
 ```bash
-curl -v --url "imap://mail.truevipaccess.com:143/INBOX" \
+curl -v --url "imaps://mail.truevipaccess.com:993/INBOX" \
   --user "user@truevipaccess.com:password"
 ```
 
@@ -254,8 +254,8 @@ curl -v --url "imap://mail.truevipaccess.com:143/INBOX" \
 |---------|-------|
 | Protocol | IMAP |
 | Host | `mail.truevipaccess.com` |
-| Port | `143` |
-| Encryption | None (STARTTLS available) |
+| Port | `993` (TLS) or `143` (STARTTLS) |
+| Encryption | SSL/TLS (recommended) or STARTTLS |
 | Authentication | Normal password |
 | Username | from `/v1/access/resolve` response |
 | Password | from `/v1/access/resolve` response |

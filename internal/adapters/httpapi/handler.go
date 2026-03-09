@@ -356,9 +356,9 @@ curl -X POST https://truevipaccess.com/v1/imap/messages/get \
       <h3>Option B: Direct IMAP</h3>
       <p>Connect with any IMAP client using the credentials from <code>/v1/access/resolve</code>.</p>
 
-      <div class="prompt">## Python
+      <div class="prompt">## Python (TLS on port 993)
 import imaplib
-imap = imaplib.IMAP4("mail.truevipaccess.com", 143)
+imap = imaplib.IMAP4_SSL("mail.truevipaccess.com", 993)
 imap.login(username, password)
 imap.select("INBOX", readonly=True)
 _, data = imap.search(None, "UNSEEN")
@@ -368,7 +368,7 @@ for num in data[0].split():
 imap.logout()
 
 ## curl (test connectivity)
-curl -v --url "imap://mail.truevipaccess.com:143/INBOX" \
+curl -v --url "imaps://mail.truevipaccess.com:993/INBOX" \
   --user "user@truevipaccess.com:password"</div>
 
       <div style="margin-top:18px">
@@ -376,8 +376,8 @@ curl -v --url "imap://mail.truevipaccess.com:143/INBOX" \
         <ul style="margin-top:8px">
           <li><strong>Protocol:</strong> IMAP</li>
           <li><strong>Host:</strong> <code>mail.truevipaccess.com</code></li>
-          <li><strong>Port:</strong> <code>143</code></li>
-          <li><strong>Encryption:</strong> None (STARTTLS available)</li>
+          <li><strong>Port:</strong> <code>993</code> (TLS) or <code>143</code> (STARTTLS)</li>
+          <li><strong>Encryption:</strong> SSL/TLS (recommended) or STARTTLS</li>
           <li><strong>Authentication:</strong> Normal password</li>
           <li><strong>Username/Password:</strong> from the <code>/v1/access/resolve</code> response</li>
         </ul>
