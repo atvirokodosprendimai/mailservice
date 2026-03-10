@@ -1,0 +1,43 @@
+name: Polar Webhook Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment (smoke)"
+        required: true
+        default: "smoke"
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment }}
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create or verify webhook endpoint
+        id: webhook
+        env:
+          POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
+          POLAR_API: ${{ vars.POLAR_SERVER_URL }}
+          WEBHOOK_URL: "${{ vars.PUBLIC_BASE_URL }}/v1/webhooks/polar"
+        run: |
+          SECRET=$(ops/polar-setup-webhook.sh)
+          echo "::add-mask::$SECRET"
+          echo "secret=$SECRET" >> "$GITHUB_OUTPUT"
+
+      - name: Update POLAR_WEBHOOK_SECRET
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WEBHOOK_SECRET: ${{ steps.webhook.outputs.secret }}
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+        run: |
+          echo "$WEBHOOK_SECRET" | gh secret set POLAR_WEBHOOK_SECRET --env "$ENVIRONMENT"
+          echo "POLAR_WEBHOOK_SECRET updated in '$ENVIRONMENT' environment"
