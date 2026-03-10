@@ -24,7 +24,7 @@ status: active
 
 ## Phases
 
-### Phase 1 - Polar sandbox product setup - status: open
+### Phase 1 - Polar sandbox product setup - status: done
 
 1. [x] Create sandbox product on Polar matching production config
    - use Polar sandbox API with `POLAR_SANDBOX_TOKEN`
@@ -32,15 +32,17 @@ status: active
    - price: 1 EUR/month (matches production)
    - capture the sandbox product ID
    - => already existed: "TrueVip Mailbox" `bc05e94d-22f7-43b4-8a90-75d1062a6923` — 1 EUR/month recurring, EUR, not archived
-2. [ ] Create sandbox webhook endpoint on Polar
-   - point to `https://truevipaccess.com/smoke/v1/webhooks/polar` (or port-based routing)
+2. [x] Create sandbox webhook endpoint on Polar
+   - point to `https://smoke.truevipaccess.com/v1/webhooks/polar`
    - capture the webhook secret
-3. [ ] Set GitHub secrets/variables for sandbox config
-   - `POLAR_SANDBOX_PRODUCT_ID` (variable)
-   - `POLAR_SANDBOX_WEBHOOK_SECRET` (secret)
-   - `POLAR_SANDBOX_SERVER_URL` = `https://sandbox-api.polar.sh` (variable)
+   - => already configured — webhook delivers `checkout.updated` events to smoke server, confirmed working via manual claim+confirm test
+3. [x] Set GitHub secrets/variables for sandbox config
+   - `POLAR_PRODUCT_ID` = `ce03e78f-930b-4693-93a0-6b0ff67aff7c` (free sandbox product)
+   - `POLAR_WEBHOOK_SECRET` (secret, already set)
+   - `POLAR_SERVER_URL` = `https://sandbox-api.polar.sh`
+   - => all secrets/vars already set in `smoke` GitHub environment
 
-### Phase 2 - Smoke test server infrastructure - status: open
+### Phase 2 - Smoke test server infrastructure - status: done
 
 1. [x] Provision a second Hetzner server for smoke tests
    - small instance (CX22 or similar — minimal load)
@@ -70,7 +72,7 @@ status: active
    - `MAIL_DOMAIN` = `smoke.truevipaccess.com`
    - => created `.github/workflows/deploy-smoke.yml` — separate workflow, `smoke` GitHub environment, deploys on push to main + workflow_dispatch
 
-### Phase 3 - Smoke test script with auto-payment - status: open
+### Phase 3 - Smoke test script with auto-payment - status: done
 
 1. [x] Update `ops/smoke-test-periodic.sh` to support auto-payment mode
    - new flag: `--polar-token` / `SMOKE_POLAR_TOKEN` env var
@@ -81,9 +83,11 @@ status: active
    - => extracts `client_secret` from `payment_url` (last path segment), confirms via POST to Polar client API
    - => polls claim endpoint until mailbox activates (30s timeout, 2s interval)
    - => fresh Ed25519 key generated each run in auto-pay mode
-2. [ ] Test auto-payment flow against sandbox instance
+2. [x] Test auto-payment flow against sandbox instance
    - claim → auto-pay → webhook → activate → resolve → IMAP → messages
-   - => blocked on smoke server being provisioned
+   - => smoke server provisioned, EFI mount fixed, webhook secret synced from Polar
+   - => 6/6 checks pass: healthz, claim, auto-pay, resolve, IMAP login (TLS), HTTP messages
+   - => Polar sandbox webhook delivery can be slow — increased poll timeout to 90s
 3. [x] Update GitHub Actions workflow
    - point at smoke instance URL
    - pass `POLAR_SANDBOX_TOKEN` for auto-payment
@@ -92,8 +96,9 @@ status: active
 
 ### Phase 4 - Cleanup and verification - status: open
 
-1. [ ] Verify the full cycle runs green in CI
-   - trigger workflow manually, confirm 5/5 checks pass
+1. [x] Verify the full cycle runs green in CI
+   - trigger workflow manually, confirm 6/6 checks pass
+   - => run 22926602816: 6/6 checks passed (healthz, claim, auto-pay, resolve, IMAP, messages)
 2. [ ] Let the cron run for 30 minutes, check for flakiness
 3. [ ] Update the todo to solved
 4. [ ] Remove or archive the old key-caching smoke test approach if superseded
@@ -115,3 +120,4 @@ status: active
 - **2603101445** — Phase 1.1: sandbox product already exists (`bc05e94d-22f7-43b4-8a90-75d1062a6923`), marked complete
 - **2603101500** — Phase 2: OpenTofu, NixOS host, flake, and deploy workflow created for smoke server. Infrastructure code complete — actual provisioning requires creating `smoke` GitHub environment with secrets/vars
 - **2603101730** — Phase 3: smoke test script updated with auto-pay mode. Free sandbox product (`ce03e78f`). Workflow updated with dual jobs. Testing blocked on server provisioning.
+- **2603102312** — Phase 1+2+3 complete. Servers rebuilt (production + smoke) after outage, EFI mount fixed, webhook secret synced from Polar sandbox, increased activation timeout to 90s. Full E2E smoke test passes 6/6 in CI (run 22926602816).
