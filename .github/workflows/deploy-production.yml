@@ -258,7 +258,7 @@ jobs:
           MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
           MAILBOX_PRICE_CENTS=${MAILBOX_PRICE_CENTS}
           POLAR_TOKEN=${POLAR_TOKEN}
-          POLAR_PRICE_ID=${POLAR_PRICE_ID}
+          POLAR_PRODUCT_ID=${POLAR_PRODUCT_ID}
           POLAR_SERVER_URL=${POLAR_SERVER_URL}
           POLAR_SUCCESS_URL=${POLAR_SUCCESS_URL}
           POLAR_RETURN_URL=${POLAR_RETURN_URL}
@@ -288,7 +288,7 @@ jobs:
           MAX_CONCURRENT_REQUESTS: ${{ vars.MAX_CONCURRENT_REQUESTS }}
           MAILBOX_PRICE_CENTS: ${{ vars.MAILBOX_PRICE_CENTS }}
           POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
-          POLAR_PRICE_ID: ${{ vars.POLAR_PRICE_ID }}
+          POLAR_PRODUCT_ID: ${{ vars.POLAR_PRODUCT_ID }}
           POLAR_SERVER_URL: ${{ vars.POLAR_SERVER_URL }}
           POLAR_SUCCESS_URL: ${{ vars.POLAR_SUCCESS_URL }}
           POLAR_RETURN_URL: ${{ vars.POLAR_RETURN_URL }}
@@ -306,7 +306,7 @@ jobs:
             set -eu
             env_file="/var/lib/secrets/mailservice.env"
             missing=()
-            for var in POLAR_TOKEN POLAR_PRICE_ID POLAR_WEBHOOK_SECRET MAIL_DOMAIN IMAP_HOST IMAP_PORT PUBLIC_BASE_URL; do
+            for var in POLAR_TOKEN POLAR_PRODUCT_ID POLAR_WEBHOOK_SECRET MAIL_DOMAIN IMAP_HOST IMAP_PORT PUBLIC_BASE_URL; do
               if ! grep -q "^${var}=.\+" "$env_file" 2>/dev/null; then
                 missing+=("$var")
               fi

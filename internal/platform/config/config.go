@@ -29,7 +29,7 @@ type Config struct {
 	UnsendFromName      string
 	PolarToken          string
 	PolarServerURL      string
-	PolarPriceID        string
+	PolarProductID      string
 	PolarSuccessURL     string
 	PolarReturnURL      string
 	PolarWebhookSecret  string
@@ -72,7 +72,7 @@ func Load() (*Config, error) {
 		UnsendFromName:      getEnv("UNSEND_FROM_NAME", "MailService"),
 		PolarToken:          os.Getenv("POLAR_TOKEN"),
 		PolarServerURL:      getEnv("POLAR_SERVER_URL", "https://api.polar.sh"),
-		PolarPriceID:        getEnv("POLAR_PRICE_ID", ""),
+		PolarProductID:      getEnv("POLAR_PRODUCT_ID", getEnv("POLAR_PRICE_ID", "")),
 		PolarSuccessURL:     polarSuccessURL,
 		PolarReturnURL:      polarReturnURL,
 		PolarWebhookSecret:  os.Getenv("POLAR_WEBHOOK_SECRET"),

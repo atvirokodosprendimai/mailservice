@@ -15,7 +15,7 @@ import (
 type PolarConfig struct {
 	ServerURL  string
 	Token      string
-	PriceID    string
+	ProductID  string
 	SuccessURL string
 	ReturnURL  string
 	Client     *http.Client
@@ -24,7 +24,7 @@ type PolarConfig struct {
 type PolarGateway struct {
 	serverURL  string
 	token      string
-	priceID    string
+	productID  string
 	successURL string
 	returnURL  string
 	client     *http.Client
@@ -42,7 +42,7 @@ func NewPolarGateway(cfg PolarConfig) *PolarGateway {
 	return &PolarGateway{
 		serverURL:  serverURL,
 		token:      strings.TrimSpace(cfg.Token),
-		priceID:    strings.TrimSpace(cfg.PriceID),
+		productID:  strings.TrimSpace(cfg.ProductID),
 		successURL: strings.TrimSpace(cfg.SuccessURL),
 		returnURL:  strings.TrimSpace(cfg.ReturnURL),
 		client:     client,
@@ -51,9 +51,9 @@ func NewPolarGateway(cfg PolarConfig) *PolarGateway {
 
 func (g *PolarGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
 	payload := map[string]any{
-		"product_price_id": g.priceID,
-		"customer_email":   req.OwnerEmail,
-		"success_url":      g.successURL,
+		"products":       []string{g.productID},
+		"customer_email": req.OwnerEmail,
+		"success_url":    g.successURL,
 		"metadata": map[string]string{
 			"mailbox_id":  req.MailboxID,
 			"owner_email": req.OwnerEmail,
@@ -68,7 +68,7 @@ func (g *PolarGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentL
 		URL    string `json:"url"`
 		Status string `json:"status"`
 	}
-	if err := g.doJSON(ctx, http.MethodPost, "/v1/checkouts/custom/", payload, &resp); err != nil {
+	if err := g.doJSON(ctx, http.MethodPost, "/v1/checkouts/", payload, &resp); err != nil {
 		return nil, err
 	}
 	if resp.ID == "" || resp.URL == "" {
