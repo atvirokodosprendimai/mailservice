@@ -15,12 +15,12 @@ status: active
 
 ## Architecture
 
-- Second systemd service (`mailservice-api-smoke`) on port 8081
-- Separate SQLite DB (`/var/lib/mailservice/data/mailservice-smoke.db`)
-- Separate env file (`/var/lib/secrets/mailservice-smoke.env`)
-- Shared Postfix/Dovecot/IMAP stack (same mail domain, smoke mailboxes are regular mailboxes)
-- Polar sandbox config (`sandbox-api.polar.sh`, sandbox product, sandbox webhook secret)
-- Same binary artifact — only config differs
+- **Separate server** (second Hetzner instance) — fully isolated from production
+- Separate domain (e.g. `smoke.truevipaccess.com` or `test-mail.truevipaccess.com`)
+- Own Postfix/Dovecot/IMAP stack, own SQLite DB, own ACME certs
+- Own env file with Polar sandbox config (`sandbox-api.polar.sh`)
+- **Same NixOS flake and binary artifacts** — only config differs
+- Deployed from the same CI/CD pipeline (same GitHub Actions, different host target)
 
 ## Phases
 
@@ -39,21 +39,28 @@ status: active
    - `POLAR_SANDBOX_WEBHOOK_SECRET` (secret)
    - `POLAR_SANDBOX_SERVER_URL` = `https://sandbox-api.polar.sh` (variable)
 
-### Phase 2 - NixOS smoke test instance - status: open
+### Phase 2 - Smoke test server infrastructure - status: open
 
-1. [ ] Add `mailservice-api-smoke` systemd service to NixOS module
-   - same binary (`cfg.package`), different env file and DB path
-   - listen on `127.0.0.1:8081`
-   - `DATABASE_DSN` = `/var/lib/mailservice/data/mailservice-smoke.db`
-   - `EnvironmentFile` = `/var/lib/secrets/mailservice-smoke.env`
-   - separate tmpfiles rules for smoke DB directory
-2. [ ] Add nginx route for smoke instance
-   - `/smoke/` prefix proxied to `127.0.0.1:8081` (strip prefix)
-   - or subdomain — decide based on webhook URL constraints
-3. [ ] Update deploy workflow to write `mailservice-smoke.env`
-   - uses `POLAR_SANDBOX_TOKEN`, `POLAR_SANDBOX_PRODUCT_ID`, etc.
-   - same `MAIL_DOMAIN`, `IMAP_HOST`, `IMAP_PORT` as production
-   - `PUBLIC_BASE_URL` set to the smoke instance URL
+1. [ ] Provision a second Hetzner server for smoke tests
+   - small instance (CX22 or similar — minimal load)
+   - add to OpenTofu config alongside production server
+2. [ ] Create DNS records for smoke domain
+   - e.g. `smoke.truevipaccess.com` A record → smoke server IP
+   - MX record for the smoke domain → `mail.smoke.truevipaccess.com`
+   - `mail.smoke.truevipaccess.com` A record → smoke server IP
+3. [ ] Add NixOS host config for smoke server
+   - `nix/hosts/smoke/configuration.nix` — same flake, different host
+   - reuses `mailservice-gitops` module with `mailDomain = "smoke.truevipaccess.com"`
+   - same binary artifact from flake
+4. [ ] Add deploy workflow for smoke server
+   - separate workflow or job in existing workflow
+   - writes `mailservice.env` with sandbox Polar config
+   - `POLAR_TOKEN` = `POLAR_SANDBOX_TOKEN`
+   - `POLAR_PRODUCT_ID` = `POLAR_SANDBOX_PRODUCT_ID`
+   - `POLAR_WEBHOOK_SECRET` = `POLAR_SANDBOX_WEBHOOK_SECRET`
+   - `POLAR_SERVER_URL` = `https://sandbox-api.polar.sh`
+   - `PUBLIC_BASE_URL` = `https://smoke.truevipaccess.com`
+   - `MAIL_DOMAIN` = `smoke.truevipaccess.com`
 
 ### Phase 3 - Smoke test script with auto-payment - status: open
 
@@ -84,8 +91,11 @@ status: active
 - GitHub Actions `Periodic Smoke Test` workflow runs green every 5 minutes
 - Each run exercises: healthz → claim → pay (sandbox) → activate → resolve → IMAP login → HTTP API
 - No manual payment needed — fully automated
-- Smoke test mailboxes use separate DB, don't pollute production data
+- Smoke test runs on a completely separate server with its own domain — zero production impact
 
 ## Adjustments
+
+- **2603101317** — initial plan had shared server with separate DB
+- **2603101330** — revised: fully separate server with own domain, own mail stack, zero production coupling
 
 ## Progress Log
