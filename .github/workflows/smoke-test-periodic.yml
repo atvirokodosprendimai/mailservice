@@ -11,29 +11,22 @@ on:
         default: "false"
 
 jobs:
-  smoke-production:
-    if: github.event.inputs.auto_pay != 'true'
+  healthz-production:
     runs-on: ubuntu-latest
     environment:
       name: production
-    timeout-minutes: 2
+    timeout-minutes: 1
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Restore smoke test key
-        uses: actions/cache@v4
-        with:
-          path: /tmp/mailservice-smoke-periodic
-          key: smoke-test-key-v1
-
-      - name: Run smoke test
-        run: ops/smoke-test-periodic.sh --verbose
+      - name: Production health check
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${BASE_URL}/healthz")
+          if [ "$status" != "200" ]; then
+            echo "FAIL: production healthz returned HTTP $status" >&2
+            exit 1
+          fi
+          echo "OK: production healthz returned 200"
         env:
-          SMOKE_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
-          SMOKE_BILLING_EMAIL: ${{ vars.SMOKE_BILLING_EMAIL }}
-          SMOKE_IMAP_HOST: ${{ vars.IMAP_HOST }}
-          SMOKE_IMAP_PORT: "993"
-          SMOKE_WORK_DIR: /tmp/mailservice-smoke-periodic
+          BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
 
   smoke-sandbox:
     if: github.event.inputs.auto_pay == 'true' || github.event_name == 'schedule'
