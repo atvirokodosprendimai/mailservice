@@ -64,8 +64,8 @@ jobs:
             $SQLITE "$DB" "SELECT count(*) FROM mail_users;" 2>/dev/null || echo "(no mail_users table)"
 
             echo ""
-            echo "=== Recent mailboxes (last 5) ==="
-            $SQLITE "$DB" "SELECT id, status, billing_email, created_at FROM mailboxes ORDER BY created_at DESC LIMIT 5;"
+            echo "=== All mailboxes ==="
+            $SQLITE "$DB" "SELECT id, status, billing_email, created_at FROM mailboxes ORDER BY created_at DESC;"
 
             echo ""
             echo "=== Disk usage ==="
