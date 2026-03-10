@@ -6,6 +6,10 @@ on:
       server_name:
         description: "Server name to reboot (e.g. mailservice-nixos, mailservice-smoke)"
         required: true
+      mode:
+        description: "Action: reset (hard reboot), rescue (boot rescue + fix ssh), power-cycle (off then on)"
+        required: true
+        default: "reset"
 
 jobs:
   reboot:
@@ -22,7 +26,13 @@ jobs:
           curl -L https://github.com/hetznercloud/cli/releases/latest/download/hcloud-linux-amd64.tar.gz | tar -xz
           sudo install hcloud /usr/local/bin/hcloud
 
-      - name: Find and reboot server
+      - name: Start ssh-agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Find server
+        id: server
         env:
           HCLOUD_TOKEN: ${{ secrets.HCLOUD_API }}
         run: |
@@ -32,21 +42,127 @@ jobs:
             hcloud server list
             exit 1
           fi
-          echo "Rebooting server ${{ github.event.inputs.server_name }} (ID: $server_id)..."
-          hcloud server reset "$server_id"
-          echo "Hard reset initiated. Waiting 45s for server to come back..."
-          sleep 45
-          hcloud server list
-          echo ""
-          echo "Checking SSH connectivity..."
           server_ip=$(hcloud server ip "$server_id")
-          for i in 1 2 3 4 5 6; do
-            if nc -z -w 3 "$server_ip" 22 2>/dev/null; then
-              echo "SSH is up on $server_ip"
+          echo "id=$server_id" >> "$GITHUB_OUTPUT"
+          echo "ip=$server_ip" >> "$GITHUB_OUTPUT"
+          echo "Found server ${{ github.event.inputs.server_name }}: ID=$server_id IP=$server_ip"
+
+      - name: Execute action
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_API }}
+          SERVER_ID: ${{ steps.server.outputs.id }}
+          SERVER_IP: ${{ steps.server.outputs.ip }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: |
+          case "$MODE" in
+            reset)
+              echo "Hard resetting server $SERVER_ID..."
+              hcloud server reset "$SERVER_ID"
+              echo "Waiting 60s..."
+              sleep 60
+              ;;
+            rescue)
+              echo "Enabling rescue mode on server $SERVER_ID..."
+              hcloud server enable-rescue "$SERVER_ID" --ssh-key mailservice-deploy --type linux64
+              echo "Resetting server to boot into rescue..."
+              hcloud server reset "$SERVER_ID"
+              echo "Waiting 60s for rescue boot..."
+              sleep 60
+              ;;
+            power-cycle)
+              echo "Powering off server $SERVER_ID..."
+              hcloud server poweroff "$SERVER_ID"
+              echo "Waiting 15s..."
+              sleep 15
+              echo "Powering on server $SERVER_ID..."
+              hcloud server poweron "$SERVER_ID"
+              echo "Waiting 60s..."
+              sleep 60
+              ;;
+            *)
+              echo "Unknown mode: $MODE"
+              exit 1
+              ;;
+          esac
+
+      - name: Check SSH connectivity
+        env:
+          SERVER_IP: ${{ steps.server.outputs.ip }}
+        run: |
+          echo "Checking SSH connectivity to $SERVER_IP..."
+          for i in $(seq 1 12); do
+            if nc -z -w 3 "$SERVER_IP" 22 2>/dev/null; then
+              echo "SSH is up on $SERVER_IP"
               exit 0
             fi
-            echo "Attempt $i: SSH not ready, waiting 10s..."
+            echo "Attempt $i/12: SSH not ready, waiting 10s..."
             sleep 10
           done
-          echo "WARNING: SSH still not reachable on $server_ip after 60s"
+          echo "WARNING: SSH still not reachable on $SERVER_IP after 2 minutes"
+          exit 1
+
+      - name: Rescue - mount and fix NixOS
+        if: github.event.inputs.mode == 'rescue' && success()
+        env:
+          SERVER_IP: ${{ steps.server.outputs.ip }}
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_API }}
+          SERVER_ID: ${{ steps.server.outputs.id }}
+        run: |
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -t ed25519 "$SERVER_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keyscan -t rsa "$SERVER_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          echo "Mounting filesystem in rescue mode..."
+          ssh -o StrictHostKeyChecking=no "root@$SERVER_IP" '
+            set -eu
+            mount /dev/sda1 /mnt
+            mount /dev/disk/by-label/EFI /mnt/boot/efi 2>/dev/null || true
+
+            echo "=== Current NixOS system link ==="
+            ls -la /mnt/nix/var/nix/profiles/system
+
+            echo ""
+            echo "=== Available system profiles ==="
+            ls -la /mnt/nix/var/nix/profiles/ | grep system
+
+            echo ""
+            echo "=== Checking if previous generation exists ==="
+            prev=$(ls -d /mnt/nix/var/nix/profiles/system-*-link 2>/dev/null | sort -V | tail -2 | head -1)
+            if [ -n "$prev" ]; then
+              echo "Previous generation: $prev"
+              echo "Rolling back to previous generation..."
+              ln -sfn "$(readlink "$prev")" /mnt/nix/var/nix/profiles/system
+              echo "Rollback complete"
+            else
+              echo "No previous generation found"
+            fi
+
+            echo ""
+            echo "=== Checking SSH config ==="
+            grep -r "Port\|ListenAddress" /mnt/etc/ssh/ 2>/dev/null || echo "Default SSH config"
+
+            echo ""
+            echo "=== Checking firewall ==="
+            cat /mnt/etc/nixos-firewall-rules 2>/dev/null || echo "No explicit firewall rules file"
+
+            umount /mnt/boot/efi 2>/dev/null || true
+            umount /mnt
+          '
+
+          echo "Disabling rescue mode and rebooting normally..."
+          hcloud server disable-rescue "$SERVER_ID"
+          hcloud server reset "$SERVER_ID"
+          echo "Waiting 60s for normal boot..."
+          sleep 60
+
+          echo "Checking SSH after normal boot..."
+          for i in $(seq 1 12); do
+            if nc -z -w 3 "$SERVER_IP" 22 2>/dev/null; then
+              echo "SSH is up on $SERVER_IP after rollback!"
+              exit 0
+            fi
+            echo "Attempt $i/12: waiting 10s..."
+            sleep 10
+          done
+          echo "SSH still not up after rollback"
           exit 1
