@@ -12,6 +12,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Turso CLI
+        run: |
+          curl -sSfL https://get.tur.so/install.sh | bash
+          echo "$HOME/.turso" >> $GITHUB_PATH
+
       - name: Start ssh-agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -35,82 +40,43 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
-      - name: Dump data as SQL
+      - name: Extract and import data
         run: |
-          sqlite3 /tmp/mailservice-production.db ".dump" > /tmp/dump-full.sql
-          echo "=== Tables ==="
-          sqlite3 /tmp/mailservice-production.db ".tables"
-          echo "=== Row counts ==="
-          for t in mailboxes accounts mail_users mail_domains goose_db_version; do
+          echo "=== Source row counts ==="
+          for t in mailboxes accounts mail_users mail_domains; do
             echo "$t: $(sqlite3 /tmp/mailservice-production.db "SELECT count(*) FROM $t;" 2>/dev/null || echo 'N/A')"
           done
-          echo "=== Dump size ==="
-          wc -l /tmp/dump-full.sql
 
-      - name: Import to Turso via libsql HTTP API
-        run: |
-          TURSO_HTTP_URL="${TURSO_DATABASE_URL/libsql:\/\//https://}"
-
-          # Filter the dump: keep CREATE TABLE, INSERT, CREATE INDEX, CREATE UNIQUE INDEX
-          # Skip: BEGIN/COMMIT/DELETE (sqlite dump artifacts), goose version inserts (let goose manage itself)
-          grep -E '^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|INSERT INTO)' /tmp/dump-full.sql \
+          # Extract INSERT statements for data tables only (skip goose_db_version — already seeded with schema)
+          sqlite3 /tmp/mailservice-production.db ".dump" \
+            | grep -E '^INSERT INTO' \
             | grep -v 'goose_db_version' \
-            > /tmp/dump-filtered.sql || true
+            | grep -v 'sqlite_sequence' \
+            > /tmp/data-inserts.sql || true
 
-          # Add goose version inserts separately (needed so goose doesn't re-run migrations)
-          grep -E '^INSERT INTO "?goose_db_version"?' /tmp/dump-full.sql >> /tmp/dump-filtered.sql || true
+          echo "=== INSERT statements ==="
+          cat /tmp/data-inserts.sql
 
-          if [ ! -s /tmp/dump-filtered.sql ]; then
-            echo "No statements to import"
+          if [ ! -s /tmp/data-inserts.sql ]; then
+            echo "No data to import"
             exit 0
           fi
 
-          echo "=== Statements to import ==="
-          cat /tmp/dump-filtered.sql
-          echo "=== Total: $(wc -l < /tmp/dump-filtered.sql) statements ==="
-
-          # Execute each statement via Turso HTTP API
-          FAILED=0
-          while IFS= read -r stmt; do
-            # Skip empty lines
-            [ -z "$stmt" ] && continue
-            echo ">>> ${stmt:0:120}..."
-            response=$(curl -s -X POST "${TURSO_HTTP_URL}/v3/pipeline" \
-              -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
-              -H "Content-Type: application/json" \
-              -d "{\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":$(echo "$stmt" | jq -Rs .)}},{\"type\":\"close\"}]}")
-            result_type=$(echo "$response" | jq -r '.results[0].response.type // "error"' 2>/dev/null)
-            if [ "$result_type" = "error" ]; then
-              error_msg=$(echo "$response" | jq -r '.results[0].response.error.message // "unknown"' 2>/dev/null)
-              echo "  ERROR: $error_msg"
-              FAILED=$((FAILED + 1))
-            else
-              echo "  ok"
-            fi
-          done < /tmp/dump-filtered.sql
-
-          if [ "$FAILED" -gt 0 ]; then
-            echo "WARNING: $FAILED statements failed"
-          fi
+          echo "=== Importing to Turso ==="
+          $HOME/.turso/turso db shell production < /tmp/data-inserts.sql
+          echo "Import complete"
         env:
-          TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          TURSO_API_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
 
       - name: Verify Turso data
         run: |
-          TURSO_HTTP_URL="${TURSO_DATABASE_URL/libsql:\/\//https://}"
-          echo "=== Mailbox count ==="
-          curl -s -X POST "${TURSO_HTTP_URL}/v3/pipeline" \
-            -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{"requests":[{"type":"execute","stmt":{"sql":"SELECT count(*) as total FROM mailboxes"}},{"type":"close"}]}' \
-            | jq '.results[0].response.result.rows'
-          echo "=== All mailboxes ==="
-          curl -s -X POST "${TURSO_HTTP_URL}/v3/pipeline" \
-            -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{"requests":[{"type":"execute","stmt":{"sql":"SELECT id, status, billing_email FROM mailboxes"}},{"type":"close"}]}' \
-            | jq '.results[0].response.result.rows'
+          echo "=== Turso row counts ==="
+          for t in mailboxes accounts mail_users mail_domains; do
+            echo -n "$t: "
+            $HOME/.turso/turso db shell production "SELECT count(*) FROM $t;" 2>/dev/null || echo 'N/A'
+          done
+          echo ""
+          echo "=== Mailboxes ==="
+          $HOME/.turso/turso db shell production "SELECT id, status, billing_email FROM mailboxes ORDER BY created_at DESC;"
         env:
-          TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          TURSO_API_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
