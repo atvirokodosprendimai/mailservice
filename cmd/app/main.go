@@ -28,13 +28,25 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	db, err := database.OpenAndMigrate(cfg.DatabaseDSN)
+	// Local SQLite — always needed for Postfix/Dovecot mail_users and mail_domains tables
+	localDB, err := database.OpenAndMigrate(cfg.DatabaseDSN)
 	if err != nil {
-		log.Fatalf("database init: %v", err)
+		log.Fatalf("local database init: %v", err)
+	}
+
+	// App database — Turso if configured, otherwise local SQLite
+	var db = localDB
+	if cfg.TursoDatabaseURL != "" {
+		tursoDB, err := database.OpenTurso(cfg.TursoDatabaseURL, cfg.TursoAuthToken)
+		if err != nil {
+			log.Fatalf("turso database init: %v", err)
+		}
+		db = tursoDB
+		log.Printf("turso database enabled: %s", cfg.TursoDatabaseURL)
 	}
 
 	mailboxRepo := repository.NewMailboxRepository(db)
-	mailRuntimeProvisioner := repository.NewMailRuntimeProvisioner(db, cfg.MailDomain)
+	mailRuntimeProvisioner := repository.NewMailRuntimeProvisioner(localDB, cfg.MailDomain)
 	imapReader := imap.NewReader()
 	accountRepo := repository.NewAccountRepository(db)
 	accountRecoveryRepo := repository.NewAccountRecoveryRepository(db)

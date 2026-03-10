@@ -1,0 +1,72 @@
+name: Turso Seed from Production
+
+on:
+  workflow_dispatch:
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Turso CLI
+        run: curl -sSfL https://get.tur.so/install.sh | bash
+
+      - name: Start ssh-agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Trust deploy host
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${DEPLOY_HOST_KEY}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+        env:
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+
+      - name: Download production database
+        run: |
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${DEPLOY_USER}@${DEPLOY_HOST}:/var/lib/mailservice/data/mailservice.db" \
+            /tmp/mailservice-production.db
+          ls -la /tmp/mailservice-production.db
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Prepare database for import
+        run: |
+          sudo apt-get install -y sqlite3
+          sqlite3 /tmp/mailservice-production.db "PRAGMA journal_mode='wal';"
+          sqlite3 /tmp/mailservice-production.db "PRAGMA wal_checkpoint(truncate);"
+          sqlite3 /tmp/mailservice-production.db "PRAGMA journal_mode;"
+          echo "=== Tables ==="
+          sqlite3 /tmp/mailservice-production.db ".tables"
+          echo "=== Row counts ==="
+          for t in mailboxes accounts mail_users mail_domains; do
+            echo "$t: $(sqlite3 /tmp/mailservice-production.db "SELECT count(*) FROM $t;" 2>/dev/null || echo 'N/A')"
+          done
+
+      - name: Upload to Turso
+        run: |
+          TURSO_DB_URL="${TURSO_DATABASE_URL#libsql://}"
+          TURSO_DB_URL="https://${TURSO_DB_URL}"
+          echo "Uploading to: ${TURSO_DB_URL}/v1/upload"
+          curl -X POST "${TURSO_DB_URL}/v1/upload" \
+            -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
+            --data-binary @/tmp/mailservice-production.db \
+            -w '\nHTTP %{http_code}\n'
+        env:
+          TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+
+      - name: Verify Turso data
+        run: |
+          turso db shell production "SELECT count(*) AS mailboxes FROM mailboxes;"
+          turso db shell production "SELECT id, status, billing_email FROM mailboxes ORDER BY created_at DESC LIMIT 10;"
+        env:
+          TURSO_API_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
