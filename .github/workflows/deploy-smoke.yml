@@ -1,0 +1,282 @@
+name: Deploy Smoke Test Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: smoke-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    outputs:
+      s3_cache_enabled: ${{ steps.s3cache.outputs.enabled }}
+      s3_cache_bucket: ${{ steps.s3cache.outputs.bucket }}
+      s3_cache_endpoint: ${{ steps.s3cache.outputs.endpoint }}
+      s3_cache_region: ${{ steps.s3cache.outputs.region }}
+    runs-on: ubuntu-latest
+    environment:
+      name: smoke
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v1
+
+      - name: Detect S3 cache configuration
+        id: s3cache
+        env:
+          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
+          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
+          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
+          NIX_CACHE_S3_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          NIX_CACHE_S3_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
+          TOFU_STATE_BUCKET: ${{ secrets.TOFU_STATE_BUCKET }}
+          TOFU_STATE_ENDPOINT: ${{ secrets.TOFU_STATE_ENDPOINT }}
+          TOFU_STATE_REGION: ${{ secrets.TOFU_STATE_REGION }}
+        run: |
+          set -eu
+
+          bucket="${NIX_CACHE_S3_BUCKET:-}"
+          endpoint="${NIX_CACHE_S3_ENDPOINT:-}"
+          region="${NIX_CACHE_S3_REGION:-}"
+
+          if [ -z "$bucket" ] && [ -n "${TOFU_STATE_BUCKET:-}" ]; then
+            bucket="${TOFU_STATE_BUCKET}-nix-cache"
+          fi
+          if [ -z "$endpoint" ] && [ -n "${TOFU_STATE_ENDPOINT:-}" ]; then
+            endpoint="$TOFU_STATE_ENDPOINT"
+          fi
+          if [ -z "$region" ] && [ -n "${TOFU_STATE_REGION:-}" ]; then
+            region="$TOFU_STATE_REGION"
+          fi
+
+          endpoint="${endpoint#http://}"
+          endpoint="${endpoint#https://}"
+
+          if [ -z "$region" ] && [ -n "$endpoint" ]; then
+            region="${endpoint%%.*}"
+          fi
+
+          if [ -n "$bucket" ] && [ -n "$endpoint" ] && [ -n "$region" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+          echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
+          echo "region=$region" >> "$GITHUB_OUTPUT"
+
+      - name: Build smoke system closure
+        env:
+          S3_CACHE_ENABLED: ${{ steps.s3cache.outputs.enabled }}
+          NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
+          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+        run: |
+          if [ "$S3_CACHE_ENABLED" = "true" ]; then
+            nix build .#nixosConfigurations.smoke.config.system.build.toplevel \
+              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+          else
+            nix build .#nixosConfigurations.smoke.config.system.build.toplevel
+          fi
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: smoke
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute build metadata
+        run: |
+          short_sha="${GITHUB_SHA:0:7}"
+          echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "CACHE_BUSTER=${short_sha}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_ENV"
+
+      - name: Start ssh-agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Trust deploy host
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${DEPLOY_HOST_KEY}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+        env:
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+
+      - name: Upload repo to host
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'install -d -m 700 /root/mailservice'
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'result' \
+            --exclude '.direnv' \
+            -e 'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts' \
+            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:/root/mailservice/"
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Write environment file on host
+        run: |
+          tmp_file="$(mktemp)"
+          cat > "$tmp_file" <<ENVCONTENT
+          PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+          MAIL_DOMAIN=${MAIL_DOMAIN}
+          IMAP_HOST=${IMAP_HOST}
+          IMAP_PORT=${IMAP_PORT}
+          MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
+          MAILBOX_PRICE_CENTS=${MAILBOX_PRICE_CENTS}
+          POLAR_TOKEN=${POLAR_TOKEN}
+          POLAR_PRODUCT_ID=${POLAR_PRODUCT_ID}
+          POLAR_SERVER_URL=${POLAR_SERVER_URL}
+          POLAR_SUCCESS_URL=${POLAR_SUCCESS_URL}
+          POLAR_RETURN_URL=${POLAR_RETURN_URL}
+          POLAR_WEBHOOK_SECRET=${POLAR_WEBHOOK_SECRET}
+          BUILD_NUMBER=${BUILD_NUMBER}
+          CACHE_BUSTER=${CACHE_BUSTER}
+          ENVCONTENT
+          sed -i 's/^[[:space:]]*//' "$tmp_file"
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/mailservice-env-stage"
+          rm -f "$tmp_file"
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            set -eu
+            install -m 640 -o root -g mailservice /tmp/mailservice-env-stage /var/lib/secrets/mailservice.env
+            rm -f /tmp/mailservice-env-stage
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          MAIL_DOMAIN: ${{ vars.MAIL_DOMAIN }}
+          IMAP_HOST: ${{ vars.IMAP_HOST }}
+          IMAP_PORT: ${{ vars.IMAP_PORT }}
+          MAX_CONCURRENT_REQUESTS: ${{ vars.MAX_CONCURRENT_REQUESTS }}
+          MAILBOX_PRICE_CENTS: ${{ vars.MAILBOX_PRICE_CENTS }}
+          POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
+          POLAR_PRODUCT_ID: ${{ vars.POLAR_PRODUCT_ID }}
+          POLAR_SERVER_URL: ${{ vars.POLAR_SERVER_URL }}
+          POLAR_SUCCESS_URL: ${{ vars.POLAR_SUCCESS_URL }}
+          POLAR_RETURN_URL: ${{ vars.POLAR_RETURN_URL }}
+          POLAR_WEBHOOK_SECRET: ${{ secrets.POLAR_WEBHOOK_SECRET }}
+          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
+          CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
+
+      - name: Validate required env vars on host
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
+            set -eu
+            env_file="/var/lib/secrets/mailservice.env"
+            missing=()
+            for var in POLAR_TOKEN POLAR_PRODUCT_ID POLAR_WEBHOOK_SECRET MAIL_DOMAIN IMAP_HOST IMAP_PORT PUBLIC_BASE_URL; do
+              if ! grep -q "^${var}=.\+" "$env_file" 2>/dev/null; then
+                missing+=("$var")
+              fi
+            done
+            if [ ${#missing[@]} -gt 0 ]; then
+              printf 'FATAL: missing required vars in %s: %s\n' "$env_file" "${missing[*]}" >&2
+              exit 1
+            fi
+          EOF
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Apply NixOS configuration
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
+            set -eu
+            cd /root/mailservice
+            if [ -n \"${NIX_CACHE_S3_BUCKET}\" ] && [ -n \"${NIX_CACHE_S3_ENDPOINT}\" ] && [ -n \"${NIX_CACHE_S3_REGION}\" ]; then
+              nixos-rebuild switch --flake .#smoke \
+                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\"
+            else
+              nixos-rebuild switch --flake .#smoke
+            fi
+          "
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          NIX_CACHE_S3_BUCKET: ${{ needs.build.outputs.s3_cache_bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ needs.build.outputs.s3_cache_endpoint }}
+          NIX_CACHE_S3_REGION: ${{ needs.build.outputs.s3_cache_region }}
+
+      - name: Restart API to pick new env file
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            sudo systemctl restart mailservice-api.service
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Health check
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            curl --fail --silent --show-error \
+              --retry 10 --retry-delay 3 --retry-connrefused \
+              http://127.0.0.1:8080/healthz
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
+      - name: Ensure ACME certificates are current
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            set -eu
+            for domain in mail.'"${MAIL_DOMAIN}"' '"${MAIL_DOMAIN}"'; do
+              cert_dir="/var/lib/acme/${domain}"
+              [ -d "$cert_dir" ] || continue
+              needs_renewal=false
+              if [ ! -f "$cert_dir/fullchain.pem" ]; then
+                needs_renewal=true
+              else
+                if ! issuer_output=$(sudo openssl x509 -in "$cert_dir/fullchain.pem" -noout -issuer 2>/dev/null); then
+                  needs_renewal=true
+                elif echo "$issuer_output" | grep -qi minica; then
+                  needs_renewal=true
+                fi
+              fi
+              if [ "$needs_renewal" = true ]; then
+                echo "ACME cert for ${domain} missing or invalid, triggering renewal..."
+                sudo systemctl reset-failed "acme-${domain}.service" 2>/dev/null || true
+                if sudo systemctl start "acme-${domain}.service"; then
+                  echo "ACME renewal for ${domain} completed"
+                else
+                  echo "ACME renewal for ${domain} failed:"
+                  sudo journalctl -u "acme-${domain}.service" --no-pager -n 20
+                  exit 1
+                fi
+              else
+                echo "ACME cert for ${domain} is valid"
+              fi
+            done
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          MAIL_DOMAIN: ${{ vars.MAIL_DOMAIN }}

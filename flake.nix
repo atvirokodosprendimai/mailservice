@@ -58,6 +58,14 @@
         ];
       };
 
+      nixosConfigurations.smoke = nixpkgs.lib.nixosSystem {
+        system = nixosSystem;
+        specialArgs = { inherit self; };
+        modules = [
+          ./nix/hosts/smoke/configuration.nix
+        ];
+      };
+
       packages = forAllSystems (pkgs: {
         mailservice-api = mkMailserviceApi pkgs;
       });

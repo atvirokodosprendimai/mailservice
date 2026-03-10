@@ -37,9 +37,21 @@ on:
         description: "Host bootstrap mode"
         required: true
         default: "ubuntu-docker"
+      public_hostname:
+        description: "Public DNS hostname (e.g. smoke.truevipaccess.com)"
+        required: false
+        default: ""
+      cloudflare_zone_name:
+        description: "Cloudflare zone name (if different from public hostname)"
+        required: false
+        default: ""
+      create_domain_a_record:
+        description: "Create A record for the public hostname"
+        required: false
+        default: "false"
 
 concurrency:
-  group: production-deploy
+  group: infra-${{ github.event.inputs.environment || 'production' }}
   cancel-in-progress: false
 
 jobs:
@@ -152,6 +164,9 @@ jobs:
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
           TF_VAR_image: ${{ github.event.inputs.image }}
           TF_VAR_bootstrap_mode: ${{ github.event.inputs.bootstrap_mode }}
+          TF_VAR_public_hostname: ${{ github.event.inputs.public_hostname }}
+          TF_VAR_cloudflare_zone_name: ${{ github.event.inputs.cloudflare_zone_name }}
+          TF_VAR_create_domain_a_record: ${{ github.event.inputs.create_domain_a_record }}
         run: tofu plan -input=false -out=tfplan
 
       - name: Render plan summary
@@ -239,6 +254,9 @@ jobs:
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
           TF_VAR_image: ${{ github.event.inputs.image }}
           TF_VAR_bootstrap_mode: ${{ github.event.inputs.bootstrap_mode }}
+          TF_VAR_public_hostname: ${{ github.event.inputs.public_hostname }}
+          TF_VAR_cloudflare_zone_name: ${{ github.event.inputs.cloudflare_zone_name }}
+          TF_VAR_create_domain_a_record: ${{ github.event.inputs.create_domain_a_record }}
         run: tofu apply -input=false -auto-approve tfplan
 
   auto-apply:

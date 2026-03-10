@@ -4,10 +4,18 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+    inputs:
+      auto_pay:
+        description: "Enable auto-pay mode (sandbox only)"
+        required: false
+        default: "false"
 
 jobs:
-  smoke:
+  smoke-production:
+    if: github.event.inputs.auto_pay != 'true'
     runs-on: ubuntu-latest
+    environment:
+      name: production
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
@@ -26,3 +34,22 @@ jobs:
           SMOKE_IMAP_HOST: ${{ vars.IMAP_HOST }}
           SMOKE_IMAP_PORT: "993"
           SMOKE_WORK_DIR: /tmp/mailservice-smoke-periodic
+
+  smoke-sandbox:
+    if: github.event.inputs.auto_pay == 'true' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    environment:
+      name: smoke
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run smoke test (auto-pay)
+        run: ops/smoke-test-periodic.sh --verbose --auto-pay
+        env:
+          SMOKE_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          SMOKE_BILLING_EMAIL: ${{ vars.SMOKE_BILLING_EMAIL }}
+          SMOKE_IMAP_HOST: ${{ vars.IMAP_HOST }}
+          SMOKE_IMAP_PORT: "993"
+          SMOKE_POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
+          SMOKE_POLAR_API: ${{ vars.POLAR_SERVER_URL }}

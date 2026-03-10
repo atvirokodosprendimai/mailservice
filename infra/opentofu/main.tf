@@ -71,19 +71,33 @@ resource "hcloud_server" "app" {
   user_data = local.server_user_data
 }
 
+locals {
+  cloudflare_zone_name = var.cloudflare_zone_name != "" ? var.cloudflare_zone_name : var.public_hostname
+}
+
 data "cloudflare_zones" "domain" {
   filter {
-    name = var.public_hostname
+    name = local.cloudflare_zone_name
   }
 }
 
 locals {
-  cloudflare_zone_id = data.cloudflare_zones.domain.zones[0].id
+  zone_id = data.cloudflare_zones.domain.zones[0].id
+}
+
+resource "cloudflare_record" "domain_a" {
+  count   = var.create_domain_a_record ? 1 : 0
+  zone_id = local.zone_id
+  name    = var.public_hostname
+  content = hcloud_server.app.ipv4_address
+  type    = "A"
+  ttl     = 300
+  proxied = false
 }
 
 resource "cloudflare_record" "mail_a" {
-  zone_id = local.cloudflare_zone_id
-  name    = "mail"
+  zone_id = local.zone_id
+  name    = "mail.${var.public_hostname}"
   content = hcloud_server.app.ipv4_address
   type    = "A"
   ttl     = 300
@@ -91,7 +105,7 @@ resource "cloudflare_record" "mail_a" {
 }
 
 resource "cloudflare_record" "mx_primary" {
-  zone_id  = local.cloudflare_zone_id
+  zone_id  = local.zone_id
   name     = var.public_hostname
   content  = "mail.${var.public_hostname}"
   type     = "MX"
