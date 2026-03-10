@@ -32,6 +32,12 @@ jobs:
           echo "$SECRET" > /tmp/webhook-secret.txt
           echo "Webhook endpoint is ready."
 
+      - name: Check recent deliveries
+        env:
+          POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
+          POLAR_API: ${{ vars.POLAR_SERVER_URL }}
+        run: ops/polar-check-deliveries.sh
+
       - name: Upload secret as artifact
         uses: actions/upload-artifact@v4
         with:
