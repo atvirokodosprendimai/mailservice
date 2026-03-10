@@ -34,13 +34,29 @@ if [ -n "$EXISTING_ID" ]; then
   echo "Webhook already exists: $EXISTING_ID" >&2
   echo "URL: $WEBHOOK_URL" >&2
 
-  # Get the secret
+  # Get full details including events
   HTTP_CODE=$(curl -s --max-time 15 -L \
     -H "Authorization: Bearer $POLAR_TOKEN" \
     -o "$TMPBODY" -w '%{http_code}' \
     "${POLAR_API}/v1/webhooks/endpoints/$EXISTING_ID")
 
   if [ "$HTTP_CODE" = "200" ]; then
+    EVENTS=$(jq -r '.events // [] | join(", ")' "$TMPBODY")
+    echo "Events: $EVENTS" >&2
+
+    # Ensure checkout.updated is in events
+    if ! jq -e '.events | index("checkout.updated")' "$TMPBODY" >/dev/null 2>&1; then
+      echo "Adding checkout.updated to webhook events..." >&2
+      CURRENT_EVENTS=$(jq -c '.events + ["checkout.updated"] | unique' "$TMPBODY")
+      curl -s --max-time 15 -L -X PUT \
+        -H "Authorization: Bearer $POLAR_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg url "$WEBHOOK_URL" --argjson events "$CURRENT_EVENTS" '{url: $url, events: $events}')" \
+        -o "$TMPBODY" -w '%{http_code}' \
+        "${POLAR_API}/v1/webhooks/endpoints/$EXISTING_ID" >/dev/null
+      echo "Updated events: $(jq -r '.events // [] | join(", ")' "$TMPBODY")" >&2
+    fi
+
     SECRET=$(jq -r '.secret // empty' "$TMPBODY")
     if [ -n "$SECRET" ]; then
       echo "$SECRET"
