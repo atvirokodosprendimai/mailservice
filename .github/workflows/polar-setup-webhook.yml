@@ -22,22 +22,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create or verify webhook endpoint
-        id: webhook
+      - name: Setup webhook and get secret
         env:
           POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
           POLAR_API: ${{ vars.POLAR_SERVER_URL }}
           WEBHOOK_URL: "${{ vars.PUBLIC_BASE_URL }}/v1/webhooks/polar"
         run: |
           SECRET=$(ops/polar-setup-webhook.sh)
-          echo "::add-mask::$SECRET"
-          echo "secret=$SECRET" >> "$GITHUB_OUTPUT"
+          echo "$SECRET" > /tmp/webhook-secret.txt
+          echo "Webhook endpoint is ready."
 
-      - name: Update POLAR_WEBHOOK_SECRET
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WEBHOOK_SECRET: ${{ steps.webhook.outputs.secret }}
-          ENVIRONMENT: ${{ github.event.inputs.environment }}
+      - name: Upload secret as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: polar-webhook-secret
+          path: /tmp/webhook-secret.txt
+          retention-days: 1
+
+      - name: Instructions
         run: |
-          echo "$WEBHOOK_SECRET" | gh secret set POLAR_WEBHOOK_SECRET --env "$ENVIRONMENT"
-          echo "POLAR_WEBHOOK_SECRET updated in '$ENVIRONMENT' environment"
+          echo ""
+          echo "=== Next Steps ==="
+          echo "1. Download the 'polar-webhook-secret' artifact from this run"
+          echo "2. Set it as the POLAR_WEBHOOK_SECRET secret:"
+          echo "   gh secret set POLAR_WEBHOOK_SECRET --env ${{ github.event.inputs.environment }}"
+          echo "3. Paste the secret value from the artifact"
+          echo ""
