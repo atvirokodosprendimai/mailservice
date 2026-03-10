@@ -305,6 +305,24 @@ jobs:
           BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
           CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
 
+      - name: Write cloudflared environment file on host
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
+            set -eu
+            install -d -m 750 /var/lib/secrets
+            printf 'TUNNEL_TOKEN=%s\n' '${CLOUDFLARE_TUNNEL_TOKEN}' > /tmp/cloudflared-env-stage
+            if getent group mailservice >/dev/null 2>&1; then
+              install -m 640 -o root -g mailservice /tmp/cloudflared-env-stage /var/lib/secrets/cloudflared.env
+            else
+              install -m 640 -o root -g root /tmp/cloudflared-env-stage /var/lib/secrets/cloudflared.env
+            fi
+            rm -f /tmp/cloudflared-env-stage
+          "
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
+
       - name: Validate required env vars on host
         run: |
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
@@ -350,6 +368,7 @@ jobs:
             set -eu
             if getent group mailservice >/dev/null 2>&1; then
               chown root:mailservice /var/lib/secrets/mailservice.env
+              chown root:mailservice /var/lib/secrets/cloudflared.env
             fi
           '
         env:
