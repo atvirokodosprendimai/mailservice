@@ -42,18 +42,24 @@ status: active
 
 ### Phase 2 - Smoke test server infrastructure - status: open
 
-1. [ ] Provision a second Hetzner server for smoke tests
+1. [x] Provision a second Hetzner server for smoke tests
    - small instance (CX22 or similar — minimal load)
    - add to OpenTofu config alongside production server
-2. [ ] Create DNS records for smoke domain
+   - => OpenTofu updated with `cloudflare_zone_name` var (for subdomain zone lookup) and `create_domain_a_record` (for direct nginx access). Same TF, different state via `smoke` GitHub environment. Hetzner OpenTofu workflow updated with new inputs.
+   - => **server not yet created** — need to create `smoke` GitHub environment, set secrets/vars, then run OpenTofu workflow with `environment=smoke`, `name=mailservice-smoke`, `cloudflare_zone_name=truevipaccess.com`, `create_domain_a_record=true`
+2. [x] Create DNS records for smoke domain
    - e.g. `smoke.truevipaccess.com` A record → smoke server IP
    - MX record for the smoke domain → `mail.smoke.truevipaccess.com`
    - `mail.smoke.truevipaccess.com` A record → smoke server IP
-3. [ ] Add NixOS host config for smoke server
+   - => handled by OpenTofu: `domain_a` (conditional), `mail_a`, `mx_primary` resources. Will be created when OpenTofu runs.
+3. [x] Add NixOS host config for smoke server
    - `nix/hosts/smoke/configuration.nix` — same flake, different host
    - reuses `mailservice-gitops` module with `mailDomain = "smoke.truevipaccess.com"`
    - same binary artifact from flake
-4. [ ] Add deploy workflow for smoke server
+   - => created `nix/hosts/smoke/configuration.nix` and `hardware-configuration.nix`
+   - => disables cloudflared, adds nginx reverse proxy for `smoke.truevipaccess.com` with ACME + forceSSL
+   - => added `nixosConfigurations.smoke` to `flake.nix`
+4. [x] Add deploy workflow for smoke server
    - separate workflow or job in existing workflow
    - writes `mailservice.env` with sandbox Polar config
    - `POLAR_TOKEN` = `POLAR_SANDBOX_TOKEN`
@@ -62,6 +68,7 @@ status: active
    - `POLAR_SERVER_URL` = `https://sandbox-api.polar.sh`
    - `PUBLIC_BASE_URL` = `https://smoke.truevipaccess.com`
    - `MAIL_DOMAIN` = `smoke.truevipaccess.com`
+   - => created `.github/workflows/deploy-smoke.yml` — separate workflow, `smoke` GitHub environment, deploys on push to main + workflow_dispatch
 
 ### Phase 3 - Smoke test script with auto-payment - status: open
 
@@ -102,3 +109,4 @@ status: active
 ## Progress Log
 
 - **2603101445** — Phase 1.1: sandbox product already exists (`bc05e94d-22f7-43b4-8a90-75d1062a6923`), marked complete
+- **2603101500** — Phase 2: OpenTofu, NixOS host, flake, and deploy workflow created for smoke server. Infrastructure code complete — actual provisioning requires creating `smoke` GitHub environment with secrets/vars
