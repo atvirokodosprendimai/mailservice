@@ -133,15 +133,32 @@ jobs:
             ls -la /mnt/nix/var/nix/profiles/ | grep system
 
             echo ""
-            echo "=== Checking if previous generation exists ==="
-            prev=$(ls -d /mnt/nix/var/nix/profiles/system-*-link 2>/dev/null | sort -V | tail -2 | head -1)
-            if [ -n "$prev" ]; then
-              echo "Previous generation: $prev"
-              echo "Rolling back to previous generation..."
-              ln -sfn "$(readlink "$prev")" /mnt/nix/var/nix/profiles/system
+            echo "=== Finding last good production generation ==="
+            # Find the last generation that contains the correct hostname (not smoke)
+            server_name="${{ github.event.inputs.server_name }}"
+            good_gen=""
+            for gen in $(ls -d /mnt/nix/var/nix/profiles/system-*-link 2>/dev/null | sort -rV); do
+              target=$(readlink "$gen")
+              gen_name=$(basename "$target")
+              echo "  $gen -> $gen_name"
+              # Skip generations with wrong hostname (e.g. smoke config on production)
+              if echo "$gen_name" | grep -q "nixos-system-smoke" && echo "$server_name" | grep -qv "smoke"; then
+                echo "    SKIP: smoke config on non-smoke server"
+                continue
+              fi
+              if echo "$gen_name" | grep -q "nixos-system-truevipaccess" && echo "$server_name" | grep -q "smoke"; then
+                echo "    SKIP: production config on smoke server"
+                continue
+              fi
+              good_gen="$gen"
+              break
+            done
+            if [ -n "$good_gen" ]; then
+              echo "Rolling back to: $good_gen"
+              ln -sfn "$(readlink "$good_gen")" /mnt/nix/var/nix/profiles/system
               echo "Rollback complete"
             else
-              echo "No previous generation found"
+              echo "No suitable generation found!"
             fi
 
             echo ""
