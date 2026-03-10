@@ -249,8 +249,9 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
   detail "confirm status: $CONFIRM_STATUS"
 
   # Poll for mailbox activation (webhook delivery + processing)
-  ACTIVATE_TIMEOUT=30
-  ACTIVATE_INTERVAL=2
+  # Polar sandbox can take several minutes to deliver webhooks
+  ACTIVATE_TIMEOUT=90
+  ACTIVATE_INTERVAL=3
   ELAPSED=0
   while [[ "$ELAPSED" -lt "$ACTIVATE_TIMEOUT" ]]; do
     STATUS="$(http_json POST "$BASE_URL/v1/mailboxes/claim" "$CLAIM_PAYLOAD" "$TMPBODY")"
