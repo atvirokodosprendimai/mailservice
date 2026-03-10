@@ -60,3 +60,15 @@ variable "cloudflare_api_token" {
   type        = string
   sensitive   = true
 }
+
+variable "cloudflare_zone_name" {
+  description = "Cloudflare zone name for DNS records. Defaults to public_hostname. Set explicitly when public_hostname is a subdomain (e.g. smoke.example.com needs zone example.com)."
+  type        = string
+  default     = ""
+}
+
+variable "create_domain_a_record" {
+  description = "Create an A record for the base public_hostname. Enable for hosts not behind a Cloudflare tunnel."
+  type        = bool
+  default     = false
+}
