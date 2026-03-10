@@ -63,7 +63,14 @@ jobs:
               ;;
             rescue)
               echo "Enabling rescue mode on server $SERVER_ID..."
-              hcloud server enable-rescue "$SERVER_ID" --ssh-key mailservice-deploy --type linux64
+              ssh_key_id=$(hcloud ssh-key list -o noheader -o columns=id,fingerprint | grep "${{ secrets.HETZNER_SSH_KEY_FINGERPRINT }}" | awk '{print $1}')
+              if [ -z "$ssh_key_id" ]; then
+                echo "SSH key not found by fingerprint, listing all keys:"
+                hcloud ssh-key list
+                echo "Trying first available key..."
+                ssh_key_id=$(hcloud ssh-key list -o noheader -o columns=id | head -1)
+              fi
+              hcloud server enable-rescue "$SERVER_ID" --ssh-key "$ssh_key_id" --type linux64
               echo "Resetting server to boot into rescue..."
               hcloud server reset "$SERVER_ID"
               echo "Waiting 60s for rescue boot..."
