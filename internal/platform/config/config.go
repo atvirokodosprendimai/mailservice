@@ -10,6 +10,8 @@ import (
 type Config struct {
 	HTTPAddr            string
 	DatabaseDSN         string
+	TursoDatabaseURL    string
+	TursoAuthToken      string
 	MaxConcurrentReqs   int
 	BuildNumber         string
 	CacheBuster         string
@@ -53,6 +55,8 @@ func Load() (*Config, error) {
 	return &Config{
 		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
 		DatabaseDSN:         getEnv("DATABASE_DSN", "mailservice.db"),
+		TursoDatabaseURL:    os.Getenv("TURSO_DATABASE_URL"),
+		TursoAuthToken:      os.Getenv("TURSO_AUTH_TOKEN"),
 		MaxConcurrentReqs:   getEnvInt("MAX_CONCURRENT_REQUESTS", 100),
 		BuildNumber:         getEnv("BUILD_NUMBER", "dev"),
 		CacheBuster:         getEnv("CACHE_BUSTER", ""),

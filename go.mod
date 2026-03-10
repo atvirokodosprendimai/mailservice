@@ -10,10 +10,13 @@ require (
 	github.com/pressly/goose/v3 v3.27.0
 	github.com/sendgrid/sendgrid-go v3.16.1+incompatible
 	github.com/stripe/stripe-go/v83 v83.2.1
+	github.com/tursodatabase/libsql-client-go v0.0.0-20251219100830-236aa1ff8acc
 	gorm.io/gorm v1.31.1
 )
 
 require (
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/emersion/go-sasl v0.0.0-20200509203442-7bfe0ed36a21 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
