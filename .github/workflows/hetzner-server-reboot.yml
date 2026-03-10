@@ -33,7 +33,20 @@ jobs:
             exit 1
           fi
           echo "Rebooting server ${{ github.event.inputs.server_name }} (ID: $server_id)..."
-          hcloud server reboot "$server_id"
-          echo "Reboot initiated. Waiting 30s..."
-          sleep 30
+          hcloud server reset "$server_id"
+          echo "Hard reset initiated. Waiting 45s for server to come back..."
+          sleep 45
           hcloud server list
+          echo ""
+          echo "Checking SSH connectivity..."
+          server_ip=$(hcloud server ip "$server_id")
+          for i in 1 2 3 4 5 6; do
+            if nc -z -w 3 "$server_ip" 22 2>/dev/null; then
+              echo "SSH is up on $server_ip"
+              exit 0
+            fi
+            echo "Attempt $i: SSH not ready, waiting 10s..."
+            sleep 10
+          done
+          echo "WARNING: SSH still not reachable on $server_ip after 60s"
+          exit 1
