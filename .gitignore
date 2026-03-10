@@ -12,6 +12,7 @@
 # Build output
 bin/
 dist/
+result
 
 # OpenTofu local working files
 infra/opentofu/.terraform/
