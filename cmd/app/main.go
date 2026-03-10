@@ -45,16 +45,16 @@ func main() {
 	log.Printf("%s notifier enabled", notifierProvider)
 
 	var paymentGateway ports.PaymentGateway = payment.NewMockGateway(cfg.PublicBaseURL)
-	if cfg.PolarToken != "" && cfg.PolarPriceID != "" {
+	if cfg.PolarToken != "" && cfg.PolarProductID != "" {
 		paymentGateway = payment.NewPolarGateway(payment.PolarConfig{
 			ServerURL:  cfg.PolarServerURL,
 			Token:      cfg.PolarToken,
-			PriceID:    cfg.PolarPriceID,
+			ProductID:  cfg.PolarProductID,
 			SuccessURL: cfg.PolarSuccessURL,
 			ReturnURL:  cfg.PolarReturnURL,
 		})
 		log.Printf("polar enabled")
-	} else if cfg.PolarToken != "" || cfg.PolarPriceID != "" {
+	} else if cfg.PolarToken != "" || cfg.PolarProductID != "" {
 		log.Printf("polar partially configured, falling back to legacy payment provider selection")
 	} else if cfg.StripeSecretKey != "" {
 		paymentGateway = payment.NewStripeGateway(payment.StripeConfig{

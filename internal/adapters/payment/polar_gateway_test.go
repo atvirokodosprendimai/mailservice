@@ -17,7 +17,7 @@ func TestPolarGatewayCreatePaymentLink(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("expected POST, got %s", r.Method)
 		}
-		if r.URL.Path != "/v1/checkouts/custom/" {
+		if r.URL.Path != "/v1/checkouts/" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		if auth := r.Header.Get("Authorization"); auth != "Bearer polar-token" {
@@ -28,8 +28,9 @@ func TestPolarGatewayCreatePaymentLink(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
-		if body["product_price_id"] != "price_123" {
-			t.Fatalf("unexpected product_price_id: %#v", body["product_price_id"])
+		products, ok := body["products"].([]any)
+		if !ok || len(products) != 1 || products[0] != "prod_123" {
+			t.Fatalf("unexpected products: %#v", body["products"])
 		}
 		if body["customer_email"] != "billing@example.com" {
 			t.Fatalf("unexpected customer_email: %#v", body["customer_email"])
@@ -47,7 +48,7 @@ func TestPolarGatewayCreatePaymentLink(t *testing.T) {
 	gateway := NewPolarGateway(PolarConfig{
 		ServerURL:  server.URL,
 		Token:      "polar-token",
-		PriceID:    "price_123",
+		ProductID:  "prod_123",
 		SuccessURL: "http://localhost/success?checkout_id={CHECKOUT_ID}",
 		ReturnURL:  "http://localhost",
 	})
@@ -89,7 +90,7 @@ func TestPolarGatewayGetPaymentSession(t *testing.T) {
 	gateway := NewPolarGateway(PolarConfig{
 		ServerURL: server.URL,
 		Token:     "polar-token",
-		PriceID:   "price_123",
+		ProductID: "prod_123",
 	})
 
 	session, err := gateway.GetPaymentSession(context.Background(), "polar_123")

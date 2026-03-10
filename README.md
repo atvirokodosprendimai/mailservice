@@ -147,7 +147,7 @@ On the NixOS production host:
 - `IMAP_PORT` (default `143`)
 - `MAILBOX_PRICE_CENTS` (default `299`)
 - `POLAR_TOKEN` (optional; enable Polar for the preferred key-bound flow)
-- `POLAR_PRICE_ID` (required when Polar is enabled)
+- `POLAR_PRODUCT_ID` (required when Polar is enabled)
 - `POLAR_SERVER_URL` (default `https://api.polar.sh`)
 - `POLAR_SUCCESS_URL` (default `PUBLIC_BASE_URL/v1/payments/polar/success?checkout_id={CHECKOUT_ID}`)
 - `POLAR_RETURN_URL` (default `PUBLIC_BASE_URL`)
