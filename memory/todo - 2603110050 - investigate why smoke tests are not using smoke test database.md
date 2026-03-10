@@ -1,28 +1,32 @@
 ---
-tldr: Smoke test instances may not be using an isolated database — investigate data flow
+tldr: Silent SQLite fallback when Turso vars missing — make database selection explicit
 category: ops
 ---
 
-# Todo: Investigate why smoke tests are not using smoke test database
+# Todo: Make database selection explicit, not a silent fallback
 
-## Context
+Silent fallbacks are an antipattern.
+The current code (`cmd/app/main.go:38-46`) silently falls back to local SQLite when `TURSO_DATABASE_URL` is empty.
+A misconfigured production deploy would silently write to a local file instead of failing.
 
-- Smoke server (`smoke.truevipaccess.com`) deploys without `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` — uses local SQLite at default `mailservice.db`
-- Production server uses Turso cloud database
-- Smoke test workflow (`smoke-test-periodic.yml`) hits `smoke` environment's `PUBLIC_BASE_URL`
-- Each smoke run claims a new mailbox with a fresh Ed25519 key (auto-pay mode)
+## The fix
 
-## Questions to investigate
+Add a `DATABASE_MODE` env var (or similar) that explicitly declares intent:
+- `DATABASE_MODE=turso` — requires `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`, fails if missing
+- `DATABASE_MODE=local` — uses local SQLite at `DATABASE_DSN`
+- No default — app refuses to start without explicit selection
 
-1. Is the smoke server correctly using its own local SQLite (not production Turso)?
-2. Are smoke test mailboxes accumulating in the smoke server's local DB without cleanup?
-3. Should the smoke server have its own Turso instance, or is local SQLite sufficient?
-4. Is the `db-check.yml` workflow showing smoke DB contents vs production DB contents correctly?
+Smoke server sets `DATABASE_MODE=local`.
+Production sets `DATABASE_MODE=turso`.
+
+## Also
+
+- Smoke test mailboxes accumulate in the smoke server's local DB without cleanup — add a TTL or cleanup job
+- `db-check.yml` should verify which database mode each environment is using
 
 ## Related files
 
-- Deploy smoke: `.github/workflows/deploy-smoke.yml` (no Turso env vars)
-- Deploy production: `.github/workflows/deploy-production.yml` (has Turso env vars)
-- Smoke test: `.github/workflows/smoke-test-periodic.yml`
-- Database init: `cmd/app/main.go:31-46` (dual DB logic)
+- Database init: `cmd/app/main.go:31-46`
 - Config: `internal/platform/config/config.go`
+- Deploy smoke: `.github/workflows/deploy-smoke.yml`
+- Deploy production: `.github/workflows/deploy-production.yml`
