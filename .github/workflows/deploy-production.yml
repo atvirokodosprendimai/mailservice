@@ -275,7 +275,12 @@ jobs:
           rm -f "$tmp_file"
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
-            install -m 640 -o root -g mailservice /tmp/mailservice-env-stage /var/lib/secrets/mailservice.env
+            install -d -m 750 /var/lib/secrets
+            if getent group mailservice >/dev/null 2>&1; then
+              install -m 640 -o root -g mailservice /tmp/mailservice-env-stage /var/lib/secrets/mailservice.env
+            else
+              install -m 640 -o root -g root /tmp/mailservice-env-stage /var/lib/secrets/mailservice.env
+            fi
             rm -f /tmp/mailservice-env-stage
           '
         env:
@@ -338,6 +343,18 @@ jobs:
           NIX_CACHE_S3_BUCKET: ${{ needs.build.outputs.s3_cache_bucket }}
           NIX_CACHE_S3_ENDPOINT: ${{ needs.build.outputs.s3_cache_endpoint }}
           NIX_CACHE_S3_REGION: ${{ needs.build.outputs.s3_cache_region }}
+
+      - name: Fix env file ownership after NixOS apply
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            set -eu
+            if getent group mailservice >/dev/null 2>&1; then
+              chown root:mailservice /var/lib/secrets/mailservice.env
+            fi
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
       - name: Restart API to pick new env file
         run: |
