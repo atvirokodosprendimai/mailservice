@@ -51,26 +51,47 @@ jobs:
         run: |
           TURSO_HTTP_URL="${TURSO_DATABASE_URL/libsql:\/\//https://}"
 
-          # Extract data-only INSERT statements (skip CREATE TABLE — migrations handle schema)
-          grep -E '^INSERT INTO' /tmp/dump-full.sql > /tmp/dump-inserts.sql || true
+          # Filter the dump: keep CREATE TABLE, INSERT, CREATE INDEX, CREATE UNIQUE INDEX
+          # Skip: BEGIN/COMMIT/DELETE (sqlite dump artifacts), goose version inserts (let goose manage itself)
+          grep -E '^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|INSERT INTO)' /tmp/dump-full.sql \
+            | grep -v 'goose_db_version' \
+            > /tmp/dump-filtered.sql || true
 
-          if [ ! -s /tmp/dump-inserts.sql ]; then
-            echo "No data to import"
+          # Add goose version inserts separately (needed so goose doesn't re-run migrations)
+          grep -E '^INSERT INTO "?goose_db_version"?' /tmp/dump-full.sql >> /tmp/dump-filtered.sql || true
+
+          if [ ! -s /tmp/dump-filtered.sql ]; then
+            echo "No statements to import"
             exit 0
           fi
 
-          echo "=== INSERT statements to import ==="
-          cat /tmp/dump-inserts.sql
+          echo "=== Statements to import ==="
+          cat /tmp/dump-filtered.sql
+          echo "=== Total: $(wc -l < /tmp/dump-filtered.sql) statements ==="
 
-          # Execute each INSERT via Turso HTTP API
+          # Execute each statement via Turso HTTP API
+          FAILED=0
           while IFS= read -r stmt; do
-            echo ">>> $stmt"
+            # Skip empty lines
+            [ -z "$stmt" ] && continue
+            echo ">>> ${stmt:0:120}..."
             response=$(curl -s -X POST "${TURSO_HTTP_URL}/v3/pipeline" \
               -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
               -H "Content-Type: application/json" \
               -d "{\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":$(echo "$stmt" | jq -Rs .)}},{\"type\":\"close\"}]}")
-            echo "$response" | jq -r '.results[0].response.type // .results[0].error.message // "ok"' 2>/dev/null || echo "$response"
-          done < /tmp/dump-inserts.sql
+            result_type=$(echo "$response" | jq -r '.results[0].response.type // "error"' 2>/dev/null)
+            if [ "$result_type" = "error" ]; then
+              error_msg=$(echo "$response" | jq -r '.results[0].response.error.message // "unknown"' 2>/dev/null)
+              echo "  ERROR: $error_msg"
+              FAILED=$((FAILED + 1))
+            else
+              echo "  ok"
+            fi
+          done < /tmp/dump-filtered.sql
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo "WARNING: $FAILED statements failed"
+          fi
         env:
           TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
