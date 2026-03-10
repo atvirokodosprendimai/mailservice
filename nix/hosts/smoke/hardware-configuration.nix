@@ -13,7 +13,7 @@
   };
 
   fileSystems."/boot/efi" = {
-    device = "/dev/disk/by-label/EFI";
+    device = "/dev/disk/by-uuid/0944-780D";
     fsType = "vfat";
   };
 
