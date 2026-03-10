@@ -38,34 +38,34 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             DB="/var/lib/mailservice/data/mailservice.db"
-            SQL="nix-shell -p sqlite --run"
+            SQLITE="nix --extra-experimental-features nix-command --extra-experimental-features flakes run nixpkgs#sqlite -- "
 
             echo "=== DB file ==="
             ls -la "$DB" 2>/dev/null || { echo "DB FILE NOT FOUND"; exit 1; }
 
             echo ""
             echo "=== Tables ==="
-            $SQL "sqlite3 \"$DB\" \".tables\""
+            $SQLITE "$DB" ".tables"
 
             echo ""
             echo "=== Mailbox count ==="
-            $SQL "sqlite3 \"$DB\" \"SELECT count(*) AS total FROM mailboxes;\""
+            $SQLITE "$DB" "SELECT count(*) AS total FROM mailboxes;"
 
             echo ""
             echo "=== Mailboxes by status ==="
-            $SQL "sqlite3 \"$DB\" \"SELECT status, count(*) FROM mailboxes GROUP BY status;\""
+            $SQLITE "$DB" "SELECT status, count(*) FROM mailboxes GROUP BY status;"
 
             echo ""
             echo "=== Account count ==="
-            $SQL "sqlite3 \"$DB\" \"SELECT count(*) AS total FROM accounts;\"" 2>/dev/null || echo "(no accounts table)"
+            $SQLITE "$DB" "SELECT count(*) AS total FROM accounts;" 2>/dev/null || echo "(no accounts table)"
 
             echo ""
             echo "=== Mail users count ==="
-            $SQL "sqlite3 \"$DB\" \"SELECT count(*) FROM mail_users;\"" 2>/dev/null || echo "(no mail_users table)"
+            $SQLITE "$DB" "SELECT count(*) FROM mail_users;" 2>/dev/null || echo "(no mail_users table)"
 
             echo ""
             echo "=== Recent mailboxes (last 5) ==="
-            $SQL "sqlite3 \"$DB\" \"SELECT id, status, billing_email, created_at FROM mailboxes ORDER BY created_at DESC LIMIT 5;\""
+            $SQLITE "$DB" "SELECT id, status, billing_email, created_at FROM mailboxes ORDER BY created_at DESC LIMIT 5;"
 
             echo ""
             echo "=== Disk usage ==="
