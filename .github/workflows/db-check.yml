@@ -1,0 +1,76 @@
+name: DB Health Check
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target environment"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - smoke
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.target }}
+    timeout-minutes: 2
+    steps:
+      - name: Start ssh-agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Trust deploy host
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "${DEPLOY_HOST_KEY}" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+        env:
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+
+      - name: Check database
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" '
+            set -eu
+            DB="/var/lib/mailservice/data/mailservice.db"
+
+            echo "=== DB file ==="
+            ls -la "$DB" 2>/dev/null || { echo "DB FILE NOT FOUND"; exit 1; }
+
+            echo ""
+            echo "=== Tables ==="
+            sqlite3 "$DB" ".tables"
+
+            echo ""
+            echo "=== Mailbox count ==="
+            sqlite3 "$DB" "SELECT count(*) AS total FROM mailboxes;"
+
+            echo ""
+            echo "=== Mailboxes by status ==="
+            sqlite3 "$DB" "SELECT status, count(*) FROM mailboxes GROUP BY status;"
+
+            echo ""
+            echo "=== Account count ==="
+            sqlite3 "$DB" "SELECT count(*) AS total FROM accounts;" 2>/dev/null || echo "(no accounts table)"
+
+            echo ""
+            echo "=== Mail users count ==="
+            sqlite3 "$DB" "SELECT count(*) FROM mail_users;" 2>/dev/null || echo "(no mail_users table)"
+
+            echo ""
+            echo "=== Recent mailboxes (last 5) ==="
+            sqlite3 "$DB" "SELECT id, status, billing_email, created_at FROM mailboxes ORDER BY created_at DESC LIMIT 5;"
+
+            echo ""
+            echo "=== Disk usage ==="
+            du -sh /var/lib/mailservice/data/
+            du -sh /var/lib/mailservice/vhosts/ 2>/dev/null || echo "(no vhosts dir)"
+          '
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
