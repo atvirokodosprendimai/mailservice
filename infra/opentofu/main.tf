@@ -4,9 +4,15 @@ locals {
   }) : null
 }
 
-resource "hcloud_ssh_key" "deploy" {
-  name       = "${var.name}-deploy"
-  public_key = var.ssh_public_key
+removed {
+  from = hcloud_ssh_key.deploy
+  lifecycle {
+    destroy = false
+  }
+}
+
+data "hcloud_ssh_key" "deploy" {
+  fingerprint = var.ssh_key_fingerprint
 }
 
 resource "hcloud_firewall" "mailservice" {
@@ -60,7 +66,7 @@ resource "hcloud_server" "app" {
   image        = var.image
   server_type  = var.server_type
   location     = var.location
-  ssh_keys     = [hcloud_ssh_key.deploy.id]
+  ssh_keys     = [data.hcloud_ssh_key.deploy.id]
   firewall_ids = [hcloud_firewall.mailservice.id]
 
   labels = {
