@@ -39,8 +39,8 @@ variable "bootstrap_mode" {
   }
 }
 
-variable "ssh_public_key" {
-  description = "SSH public key material for server access."
+variable "ssh_key_fingerprint" {
+  description = "Fingerprint of an existing Hetzner SSH key to attach to the server."
   type        = string
 }
 
