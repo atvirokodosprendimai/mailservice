@@ -7,9 +7,13 @@ on:
         description: "Server name to reboot (e.g. mailservice-nixos, mailservice-smoke)"
         required: true
       mode:
-        description: "Action: reset (hard reboot), rescue (boot rescue + fix ssh), power-cycle (off then on)"
+        description: "Action: reset, rescue, power-cycle, rebuild (reinstall from image)"
         required: true
         default: "reset"
+      image:
+        description: "Hetzner image/snapshot ID for rebuild mode"
+        required: false
+        default: "364897432"
 
 jobs:
   reboot:
@@ -85,6 +89,12 @@ jobs:
               hcloud server poweron "$SERVER_ID"
               echo "Waiting 60s..."
               sleep 60
+              ;;
+            rebuild)
+              echo "Rebuilding server $SERVER_ID from image ${{ github.event.inputs.image }}..."
+              hcloud server rebuild "$SERVER_ID" --image "${{ github.event.inputs.image }}"
+              echo "Rebuild initiated. Waiting 90s..."
+              sleep 90
               ;;
             *)
               echo "Unknown mode: $MODE"
