@@ -38,33 +38,34 @@ jobs:
             "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             DB="/var/lib/mailservice/data/mailservice.db"
+            SQL="nix-shell -p sqlite --run"
 
             echo "=== DB file ==="
             ls -la "$DB" 2>/dev/null || { echo "DB FILE NOT FOUND"; exit 1; }
 
             echo ""
             echo "=== Tables ==="
-            sqlite3 "$DB" ".tables"
+            $SQL "sqlite3 \"$DB\" \".tables\""
 
             echo ""
             echo "=== Mailbox count ==="
-            sqlite3 "$DB" "SELECT count(*) AS total FROM mailboxes;"
+            $SQL "sqlite3 \"$DB\" \"SELECT count(*) AS total FROM mailboxes;\""
 
             echo ""
             echo "=== Mailboxes by status ==="
-            sqlite3 "$DB" "SELECT status, count(*) FROM mailboxes GROUP BY status;"
+            $SQL "sqlite3 \"$DB\" \"SELECT status, count(*) FROM mailboxes GROUP BY status;\""
 
             echo ""
             echo "=== Account count ==="
-            sqlite3 "$DB" "SELECT count(*) AS total FROM accounts;" 2>/dev/null || echo "(no accounts table)"
+            $SQL "sqlite3 \"$DB\" \"SELECT count(*) AS total FROM accounts;\"" 2>/dev/null || echo "(no accounts table)"
 
             echo ""
             echo "=== Mail users count ==="
-            sqlite3 "$DB" "SELECT count(*) FROM mail_users;" 2>/dev/null || echo "(no mail_users table)"
+            $SQL "sqlite3 \"$DB\" \"SELECT count(*) FROM mail_users;\"" 2>/dev/null || echo "(no mail_users table)"
 
             echo ""
             echo "=== Recent mailboxes (last 5) ==="
-            sqlite3 "$DB" "SELECT id, status, billing_email, created_at FROM mailboxes ORDER BY created_at DESC LIMIT 5;"
+            $SQL "sqlite3 \"$DB\" \"SELECT id, status, billing_email, created_at FROM mailboxes ORDER BY created_at DESC LIMIT 5;\""
 
             echo ""
             echo "=== Disk usage ==="
