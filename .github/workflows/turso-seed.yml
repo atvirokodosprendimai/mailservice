@@ -12,9 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Turso CLI
-        run: curl -sSfL https://get.tur.so/install.sh | bash
-
       - name: Start ssh-agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
@@ -38,35 +35,61 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
-      - name: Prepare database for import
+      - name: Dump data as SQL
         run: |
-          sudo apt-get install -y sqlite3
-          sqlite3 /tmp/mailservice-production.db "PRAGMA journal_mode='wal';"
-          sqlite3 /tmp/mailservice-production.db "PRAGMA wal_checkpoint(truncate);"
-          sqlite3 /tmp/mailservice-production.db "PRAGMA journal_mode;"
+          sqlite3 /tmp/mailservice-production.db ".dump" > /tmp/dump-full.sql
           echo "=== Tables ==="
           sqlite3 /tmp/mailservice-production.db ".tables"
           echo "=== Row counts ==="
-          for t in mailboxes accounts mail_users mail_domains; do
+          for t in mailboxes accounts mail_users mail_domains goose_db_version; do
             echo "$t: $(sqlite3 /tmp/mailservice-production.db "SELECT count(*) FROM $t;" 2>/dev/null || echo 'N/A')"
           done
+          echo "=== Dump size ==="
+          wc -l /tmp/dump-full.sql
 
-      - name: Upload to Turso
+      - name: Import to Turso via libsql HTTP API
         run: |
-          TURSO_DB_URL="${TURSO_DATABASE_URL#libsql://}"
-          TURSO_DB_URL="https://${TURSO_DB_URL}"
-          echo "Uploading to: ${TURSO_DB_URL}/v1/upload"
-          curl -X POST "${TURSO_DB_URL}/v1/upload" \
-            -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
-            --data-binary @/tmp/mailservice-production.db \
-            -w '\nHTTP %{http_code}\n'
+          TURSO_HTTP_URL="${TURSO_DATABASE_URL/libsql:\/\//https://}"
+
+          # Extract data-only INSERT statements (skip CREATE TABLE — migrations handle schema)
+          grep -E '^INSERT INTO' /tmp/dump-full.sql > /tmp/dump-inserts.sql || true
+
+          if [ ! -s /tmp/dump-inserts.sql ]; then
+            echo "No data to import"
+            exit 0
+          fi
+
+          echo "=== INSERT statements to import ==="
+          cat /tmp/dump-inserts.sql
+
+          # Execute each INSERT via Turso HTTP API
+          while IFS= read -r stmt; do
+            echo ">>> $stmt"
+            response=$(curl -s -X POST "${TURSO_HTTP_URL}/v3/pipeline" \
+              -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{\"requests\":[{\"type\":\"execute\",\"stmt\":{\"sql\":$(echo "$stmt" | jq -Rs .)}},{\"type\":\"close\"}]}")
+            echo "$response" | jq -r '.results[0].response.type // .results[0].error.message // "ok"' 2>/dev/null || echo "$response"
+          done < /tmp/dump-inserts.sql
         env:
           TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
 
       - name: Verify Turso data
         run: |
-          turso db shell production "SELECT count(*) AS mailboxes FROM mailboxes;"
-          turso db shell production "SELECT id, status, billing_email FROM mailboxes ORDER BY created_at DESC LIMIT 10;"
+          TURSO_HTTP_URL="${TURSO_DATABASE_URL/libsql:\/\//https://}"
+          echo "=== Mailbox count ==="
+          curl -s -X POST "${TURSO_HTTP_URL}/v3/pipeline" \
+            -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"requests":[{"type":"execute","stmt":{"sql":"SELECT count(*) as total FROM mailboxes"}},{"type":"close"}]}' \
+            | jq '.results[0].response.result.rows'
+          echo "=== All mailboxes ==="
+          curl -s -X POST "${TURSO_HTTP_URL}/v3/pipeline" \
+            -H "Authorization: Bearer ${TURSO_AUTH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"requests":[{"type":"execute","stmt":{"sql":"SELECT id, status, billing_email FROM mailboxes"}},{"type":"close"}]}' \
+            | jq '.results[0].response.result.rows'
         env:
-          TURSO_API_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
