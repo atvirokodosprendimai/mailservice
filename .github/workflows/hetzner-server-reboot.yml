@@ -1,0 +1,39 @@
+name: Hetzner Server Reboot
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_name:
+        description: "Server name to reboot (e.g. mailservice-nixos, mailservice-smoke)"
+        required: true
+
+jobs:
+  reboot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+
+    steps:
+      - name: Install hcloud CLI
+        run: |
+          curl -L https://github.com/hetznercloud/cli/releases/latest/download/hcloud-linux-amd64.tar.gz | tar -xz
+          sudo install hcloud /usr/local/bin/hcloud
+
+      - name: Find and reboot server
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HCLOUD_API }}
+        run: |
+          server_id=$(hcloud server list -o noheader -o columns=id,name | grep "${{ github.event.inputs.server_name }}" | awk '{print $1}')
+          if [ -z "$server_id" ]; then
+            echo "Server '${{ github.event.inputs.server_name }}' not found"
+            hcloud server list
+            exit 1
+          fi
+          echo "Rebooting server ${{ github.event.inputs.server_name }} (ID: $server_id)..."
+          hcloud server reboot "$server_id"
+          echo "Reboot initiated. Waiting 30s..."
+          sleep 30
+          hcloud server list
