@@ -1,0 +1,28 @@
+name: Periodic Smoke Test
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore smoke test key
+        uses: actions/cache@v4
+        with:
+          path: /tmp/mailservice-smoke-periodic
+          key: smoke-test-key-v1
+
+      - name: Run smoke test
+        run: ops/smoke-test-periodic.sh --verbose
+        env:
+          SMOKE_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+          SMOKE_BILLING_EMAIL: ${{ vars.SMOKE_BILLING_EMAIL }}
+          SMOKE_IMAP_HOST: ${{ vars.IMAP_HOST }}
+          SMOKE_IMAP_PORT: "993"
+          SMOKE_WORK_DIR: /tmp/mailservice-smoke-periodic
