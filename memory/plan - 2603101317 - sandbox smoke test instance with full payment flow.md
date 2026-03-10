@@ -26,11 +26,12 @@ status: active
 
 ### Phase 1 - Polar sandbox product setup - status: open
 
-1. [ ] Create sandbox product on Polar matching production config
+1. [x] Create sandbox product on Polar matching production config
    - use Polar sandbox API with `POLAR_SANDBOX_TOKEN`
    - product name: "Mailbox (smoke test)"
    - price: 1 EUR/month (matches production)
    - capture the sandbox product ID
+   - => already existed: "TrueVip Mailbox" `bc05e94d-22f7-43b4-8a90-75d1062a6923` — 1 EUR/month recurring, EUR, not archived
 2. [ ] Create sandbox webhook endpoint on Polar
    - point to `https://truevipaccess.com/smoke/v1/webhooks/polar` (or port-based routing)
    - capture the webhook secret
@@ -99,3 +100,5 @@ status: active
 - **2603101330** — revised: fully separate server with own domain, own mail stack, zero production coupling
 
 ## Progress Log
+
+- **2603101445** — Phase 1.1: sandbox product already exists (`bc05e94d-22f7-43b4-8a90-75d1062a6923`), marked complete
