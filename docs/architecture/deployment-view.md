@@ -1,5 +1,9 @@
 # Deployment View
 
+![Deployment view diagram](images/deployment-view.svg)
+
+Diagram source: `docs/architecture/diagrams/deployment_view.py`
+
 ## Current Production Shape
 
 The current target is a single Hetzner host fronted by Cloudflare Tunnel for `truevipaccess.com`.

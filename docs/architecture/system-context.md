@@ -1,5 +1,9 @@
 # System Context
 
+![System context diagram](images/system-context.svg)
+
+Diagram source: `docs/architecture/diagrams/system_context.py`
+
 ## Purpose
 
 `mailservice` sells inbound-only mailboxes bound to a cryptographic key.

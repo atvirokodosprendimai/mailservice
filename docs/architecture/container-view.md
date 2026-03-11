@@ -1,5 +1,9 @@
 # Container View
 
+![Container view diagram](images/container-view.svg)
+
+Diagram source: `docs/architecture/diagrams/container_view.py`
+
 ## Main Containers
 
 | Container | Technology | Responsibility |
