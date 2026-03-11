@@ -350,7 +350,7 @@ jobs:
             set -eu
             env_file="/var/lib/secrets/mailservice.env"
             missing=()
-            for var in POLAR_TOKEN POLAR_PRODUCT_ID POLAR_WEBHOOK_SECRET MAIL_DOMAIN IMAP_HOST IMAP_PORT PUBLIC_BASE_URL; do
+            for var in POLAR_TOKEN POLAR_PRODUCT_ID POLAR_WEBHOOK_SECRET MAIL_DOMAIN IMAP_HOST IMAP_PORT PUBLIC_BASE_URL EDPROOF_HMAC_SECRET; do
               if ! grep -q "^${var}=.\+" "$env_file" 2>/dev/null; then
                 missing+=("$var")
               fi
