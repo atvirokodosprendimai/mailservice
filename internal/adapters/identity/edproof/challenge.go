@@ -1,10 +1,12 @@
 package edproof
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -97,7 +99,9 @@ func VerifyChallenge(challenge string, pubkey string, secret []byte, maxAge time
 }
 
 // VerifySignature verifies an Ed25519 signature of the challenge string.
-// The signature is base64-encoded. The signed message is the raw challenge string bytes.
+// Accepts two formats:
+//   - Raw Ed25519 signature: base64-encoded 64-byte signature over the raw challenge bytes
+//   - SSH signature (SSHSIG): base64-encoded binary blob from ssh-keygen -Y sign (namespace "edproof")
 func VerifySignature(challenge string, pubkey string, signatureB64 string) error {
 	rawKey, err := extractEd25519Key(pubkey)
 	if err != nil {
@@ -109,15 +113,167 @@ func VerifySignature(challenge string, pubkey string, signatureB64 string) error
 		return ErrSignatureInvalid
 	}
 
+	// Detect SSHSIG format (starts with "SSHSIG" magic)
+	if bytes.HasPrefix(sig, []byte(sshsigMagic)) {
+		return verifySSHSig(rawKey, []byte(challenge), sig)
+	}
+
+	// Raw Ed25519 signature
 	if len(sig) != ed25519.SignatureSize {
 		return ErrSignatureInvalid
 	}
-
 	if !ed25519.Verify(rawKey, []byte(challenge), sig) {
 		return ErrSignatureInvalid
 	}
-
 	return nil
+}
+
+const sshsigMagic = "SSHSIG"
+const sshsigNamespace = "edproof"
+
+// verifySSHSig verifies an SSH signature in SSHSIG binary format.
+// SSHSIG blob layout:
+//
+//	"SSHSIG" (6 bytes)
+//	uint32 version (1)
+//	string publickey (SSH wire format)
+//	string namespace
+//	string reserved
+//	string hash_algorithm
+//	string signature (SSH signature blob)
+//
+// The signed data is:
+//
+//	"SSHSIG" (6 bytes)
+//	string namespace
+//	string reserved (empty)
+//	string hash_algorithm
+//	string H(message)
+func verifySSHSig(pubkey ed25519.PublicKey, message []byte, blob []byte) error {
+	r := blob
+
+	// Magic
+	if len(r) < 6 || string(r[:6]) != sshsigMagic {
+		return ErrSignatureInvalid
+	}
+	r = r[6:]
+
+	// Version
+	if len(r) < 4 {
+		return ErrSignatureInvalid
+	}
+	version := binary.BigEndian.Uint32(r[:4])
+	if version != 1 {
+		return ErrSignatureInvalid
+	}
+	r = r[4:]
+
+	// Public key (skip — we use the one from the request)
+	r, err := skipSSHString(r)
+	if err != nil {
+		return ErrSignatureInvalid
+	}
+
+	// Namespace
+	var namespace []byte
+	namespace, r, err = readSSHString(r)
+	if err != nil {
+		return ErrSignatureInvalid
+	}
+
+	// Reserved (skip)
+	r, err = skipSSHString(r)
+	if err != nil {
+		return ErrSignatureInvalid
+	}
+
+	// Hash algorithm
+	var hashAlgo []byte
+	hashAlgo, r, err = readSSHString(r)
+	if err != nil {
+		return ErrSignatureInvalid
+	}
+
+	// Signature blob (SSH signature wire format)
+	var sigBlob []byte
+	sigBlob, _, err = readSSHString(r)
+	if err != nil {
+		return ErrSignatureInvalid
+	}
+
+	// Extract raw Ed25519 signature from SSH signature blob
+	// SSH signature blob: string key_type + string signature_data
+	var keyType []byte
+	keyType, sigBlob, err = readSSHString(sigBlob)
+	if err != nil {
+		return ErrSignatureInvalid
+	}
+	if string(keyType) != "ssh-ed25519" {
+		return ErrSignatureInvalid
+	}
+	var rawSig []byte
+	rawSig, _, err = readSSHString(sigBlob)
+	if err != nil {
+		return ErrSignatureInvalid
+	}
+	if len(rawSig) != ed25519.SignatureSize {
+		return ErrSignatureInvalid
+	}
+
+	// Compute the hash of the message
+	var messageHash []byte
+	switch string(hashAlgo) {
+	case "sha512":
+		h := sha512.Sum512(message)
+		messageHash = h[:]
+	case "sha256":
+		h := sha256.Sum256(message)
+		messageHash = h[:]
+	default:
+		return ErrSignatureInvalid
+	}
+
+	// Reconstruct the signed data
+	signedData := buildSSHSigSignedData(string(namespace), string(hashAlgo), messageHash)
+
+	if !ed25519.Verify(pubkey, signedData, rawSig) {
+		return ErrSignatureInvalid
+	}
+	return nil
+}
+
+// buildSSHSigSignedData constructs the data that was actually signed.
+func buildSSHSigSignedData(namespace, hashAlgo string, messageHash []byte) []byte {
+	var buf bytes.Buffer
+	buf.WriteString(sshsigMagic)
+	writeSSHString(&buf, []byte(namespace))
+	writeSSHString(&buf, nil) // reserved (empty)
+	writeSSHString(&buf, []byte(hashAlgo))
+	writeSSHString(&buf, messageHash)
+	return buf.Bytes()
+}
+
+func readSSHString(data []byte) (value []byte, rest []byte, err error) {
+	if len(data) < 4 {
+		return nil, nil, errors.New("short read")
+	}
+	length := binary.BigEndian.Uint32(data[:4])
+	if uint32(len(data)-4) < length {
+		return nil, nil, errors.New("truncated string")
+	}
+	return data[4 : 4+length], data[4+length:], nil
+}
+
+func skipSSHString(data []byte) (rest []byte, err error) {
+	_, rest, err = readSSHString(data)
+	return rest, err
+}
+
+func writeSSHString(buf *bytes.Buffer, data []byte) {
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+	buf.Write(lenBuf)
+	buf.Write(data)
 }
 
 // extractPubkeyBlob returns the base64 key blob (field 2) from an SSH public key line.

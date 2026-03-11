@@ -1,7 +1,9 @@
 package edproof
 
 import (
+	"bytes"
 	"crypto/ed25519"
+	"crypto/sha512"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -394,6 +396,143 @@ func TestUniqueNonces(t *testing.T) {
 			t.Fatalf("duplicate nonce on iteration %d", i)
 		}
 		seen[nonce] = true
+	}
+}
+
+// buildTestSSHSig creates an SSHSIG binary blob for testing.
+func buildTestSSHSig(pub ed25519.PublicKey, priv ed25519.PrivateKey, message []byte, namespace string) []byte {
+	// Compute message hash
+	h := sha512.Sum512(message)
+
+	// Build signed data
+	var signedData bytes.Buffer
+	signedData.WriteString("SSHSIG")
+	writeTestSSHString(&signedData, []byte(namespace))
+	writeTestSSHString(&signedData, nil) // reserved
+	writeTestSSHString(&signedData, []byte("sha512"))
+	writeTestSSHString(&signedData, h[:])
+
+	// Sign it
+	sig := ed25519.Sign(priv, signedData.Bytes())
+
+	// Build SSH public key wire format
+	var pubKeyBlob bytes.Buffer
+	writeTestSSHString(&pubKeyBlob, []byte("ssh-ed25519"))
+	writeTestSSHString(&pubKeyBlob, pub)
+
+	// Build SSH signature blob (inside the SSHSIG)
+	var sigBlob bytes.Buffer
+	writeTestSSHString(&sigBlob, []byte("ssh-ed25519"))
+	writeTestSSHString(&sigBlob, sig)
+
+	// Build SSHSIG blob
+	var blob bytes.Buffer
+	blob.WriteString("SSHSIG")
+	versionBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(versionBuf, 1)
+	blob.Write(versionBuf)
+	writeTestSSHString(&blob, pubKeyBlob.Bytes())
+	writeTestSSHString(&blob, []byte(namespace))
+	writeTestSSHString(&blob, nil) // reserved
+	writeTestSSHString(&blob, []byte("sha512"))
+	writeTestSSHString(&blob, sigBlob.Bytes())
+
+	return blob.Bytes()
+}
+
+func writeTestSSHString(buf *bytes.Buffer, data []byte) {
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+	buf.Write(lenBuf)
+	buf.Write(data)
+}
+
+func TestVerifySignatureSSHSIGFormat(t *testing.T) {
+	t.Parallel()
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeTestSSHPubkey(pub)
+	now := time.Now().UTC()
+
+	challenge, _ := GenerateChallenge(pubkey, testSecret, now)
+
+	sshsig := buildTestSSHSig(pub, priv, []byte(challenge), "edproof")
+	sigB64 := base64.StdEncoding.EncodeToString(sshsig)
+
+	err := VerifySignature(challenge, pubkey, sigB64)
+	if err != nil {
+		t.Fatalf("VerifySignature with SSHSIG: %v", err)
+	}
+}
+
+func TestVerifySignatureSSHSIGWrongKey(t *testing.T) {
+	t.Parallel()
+
+	pub1, _, _ := ed25519.GenerateKey(nil)
+	_, priv2, _ := ed25519.GenerateKey(nil)
+	pubkey1 := makeTestSSHPubkey(pub1)
+
+	challenge := "test-challenge"
+	// Sign with wrong private key but claim pub1
+	sshsig := buildTestSSHSig(pub1, priv2, []byte(challenge), "edproof")
+	sigB64 := base64.StdEncoding.EncodeToString(sshsig)
+
+	err := VerifySignature(challenge, pubkey1, sigB64)
+	if err != ErrSignatureInvalid {
+		t.Fatalf("expected ErrSignatureInvalid, got %v", err)
+	}
+}
+
+func TestVerifySignatureSSHSIGAnyNamespace(t *testing.T) {
+	t.Parallel()
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeTestSSHPubkey(pub)
+	challenge := "test-challenge"
+
+	// Should accept any namespace (the server doesn't enforce a specific one)
+	sshsig := buildTestSSHSig(pub, priv, []byte(challenge), "file")
+	sigB64 := base64.StdEncoding.EncodeToString(sshsig)
+
+	err := VerifySignature(challenge, pubkey, sigB64)
+	if err != nil {
+		t.Fatalf("VerifySignature with namespace 'file': %v", err)
+	}
+}
+
+func TestFullFlowWithSSHSIG(t *testing.T) {
+	t.Parallel()
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeTestSSHPubkey(pub)
+	now := time.Now().UTC()
+
+	// 1. Generate challenge
+	challenge, err := GenerateChallenge(pubkey, testSecret, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Client signs with ssh-keygen style (SSHSIG)
+	sshsig := buildTestSSHSig(pub, priv, []byte(challenge), "edproof")
+	sigB64 := base64.StdEncoding.EncodeToString(sshsig)
+
+	// 3. Verify challenge
+	err = VerifyChallenge(challenge, pubkey, testSecret, 30*time.Second, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 4. Verify signature
+	err = VerifySignature(challenge, pubkey, sigB64)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 5. Fingerprint
+	fp, _ := FingerprintFromPubkey(pubkey)
+	if !strings.HasPrefix(fp, "sha256:") {
+		t.Fatalf("bad fingerprint: %s", fp)
 	}
 }
 
