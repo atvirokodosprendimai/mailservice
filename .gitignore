@@ -22,3 +22,6 @@ infra/opentofu/terraform.tfstate.backup
 
 # NixOps local state
 .nixops/
+
+# Dolt database files (added by bd init)
+.dolt/

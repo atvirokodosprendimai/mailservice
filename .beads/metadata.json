@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "mailservice",
+  "project_id": "9ca4da42-6f0c-4f1b-a0ac-f24368797e4b"
+}
