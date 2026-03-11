@@ -311,11 +311,11 @@ var homePageHTMLTemplate = `<!doctype html>
       </section>
       <section class="card">
         <h2>Claim a mailbox</h2>
-        <p>Call <code>POST /v1/mailboxes/claim</code> with <code>billing_email</code> and <code>edproof</code>.</p>
+        <p>Get a challenge from <code>POST /v1/auth/challenge</code>, sign it with your private key, then call <code>POST /v1/mailboxes/claim</code>.</p>
       </section>
       <section class="card">
         <h2>Pay and read mail</h2>
-        <p>Pay from the emailed link, then call <code>POST /v1/access/resolve</code> with the same key proof.</p>
+        <p>Pay from the emailed link. Get a new challenge, sign it, then call <code>POST /v1/access/resolve</code> to get IMAP credentials.</p>
       </section>
     </div>
 
@@ -325,9 +325,11 @@ var homePageHTMLTemplate = `<!doctype html>
       <ol>
         <li>If no EdProof key exists locally, generate one and continue.</li>
         <li>If you want the same mailbox later, keep the same EdProof key. A different key gets a different mailbox.</li>
-        <li>Call <code>POST /v1/mailboxes/claim</code> with <code>billing_email</code> and <code>edproof</code>.</li>
+        <li>Call <code>POST /v1/auth/challenge</code> with <code>public_key</code> to get a challenge string.</li>
+        <li>Sign the challenge with your Ed25519 private key.</li>
+        <li>Call <code>POST /v1/mailboxes/claim</code> with <code>billing_email</code>, <code>edproof</code>, <code>challenge</code>, and <code>signature</code>.</li>
         <li>Pay from the emailed payment link.</li>
-        <li>Call <code>POST /v1/access/resolve</code> with <code>protocol=imap</code> and <code>edproof</code>.</li>
+        <li>Request a new challenge, sign it, then call <code>POST /v1/access/resolve</code> with <code>protocol=imap</code>, <code>edproof</code>, <code>challenge</code>, and <code>signature</code>.</li>
         <li>Read mail using the returned IMAP details.</li>
       </ol>
     </section>
@@ -399,9 +401,14 @@ curl -v --url "imaps://mail.truevipaccess.com:993/INBOX" \
 
 const homePageAgentPrompt = `If no EdProof key exists locally, generate an Ed25519 key pair with: ssh-keygen -t ed25519 -f identity -C "entity@context"
 Use identity.pub as the public key and keep identity private.
-The SHA-256 fingerprint from ssh-keygen -l -E sha256 -f identity.pub is the stable EdProof identifier.
 EdProof is the key proof used to identify the mailbox.
 If the same mailbox is required, reuse the same EdProof key.
+
+To claim or resolve access:
+1. POST /v1/auth/challenge with {"public_key": "ssh-ed25519 AAAA..."} to get a challenge string.
+2. Sign the challenge with the private key: echo -n "$CHALLENGE" | ssh-keygen -Y sign -f identity -n edproof
+3. POST /v1/mailboxes/claim or /v1/access/resolve with {"edproof": "ssh-ed25519 AAAA...", "challenge": "$CHALLENGE", "signature": "$BASE64_SIG"}.
+The challenge expires after 30 seconds. Request a new one if it expires.
 Do not ask the operator unless key generation is impossible or the same mailbox is required but the existing key is unavailable.`
 
 type createAccountRequest struct {

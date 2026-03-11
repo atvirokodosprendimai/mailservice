@@ -110,10 +110,10 @@ Files: `internal/adapters/httpapi/handler.go`, `internal/adapters/identity/edpro
 ### Phase 4: Config, wiring, deploy
 
 - [x] Add `EDPROOF_HMAC_SECRET` to `.env.example`
-- [ ] Generate secret: `openssl rand -hex 32`
-- [ ] Add to GitHub secrets (`gh secret set EDPROOF_HMAC_SECRET --env production`)
+- [x] Generate secret: `openssl rand -hex 32`
+- [x] Add to GitHub secrets (`gh secret set EDPROOF_HMAC_SECRET --env production`)
 - [x] Update `deploy-production.yml` to pass the secret
-- [ ] Update homepage/agent prompt text to document the new flow
+- [x] Update homepage/agent prompt text to document the new flow
 - [ ] Smoke test: full challenge → sign → resolve on production
 
 ## Sources & References
