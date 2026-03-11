@@ -22,6 +22,7 @@ type Config struct {
 	MailDomain          string
 	IMAPHost            string
 	IMAPPort            int
+	NotifierProvider    string // "unsend", "resend", "sendgrid", "mailgun", "log", or "" (deprecated cascade)
 	SendGridAPIKey      string
 	SendGridFromEmail   string
 	SendGridFromName    string
@@ -32,6 +33,11 @@ type Config struct {
 	UnsendBaseURL       string
 	UnsendFromEmail     string
 	UnsendFromName      string
+	MailgunAPIKey       string
+	MailgunDomain       string
+	MailgunBaseURL      string
+	MailgunFromEmail    string
+	MailgunFromName     string
 	PolarToken          string
 	PolarServerURL      string
 	PolarProductID      string
@@ -71,6 +77,11 @@ func Load() (*Config, error) {
 		}
 	}
 
+	notifierProvider := os.Getenv("NOTIFIER_PROVIDER")
+	if err := validateNotifierProvider(notifierProvider); err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
 		DatabaseMode:        dbMode,
@@ -85,6 +96,7 @@ func Load() (*Config, error) {
 		MailDomain:          getEnv("MAIL_DOMAIN", "mail.local"),
 		IMAPHost:            getEnv("IMAP_HOST", getEnv("MAIL_DOMAIN", "mail.local")),
 		IMAPPort:            getEnvInt("IMAP_PORT", 143),
+		NotifierProvider:    notifierProvider,
 		SendGridAPIKey:      os.Getenv("SENDGRID_API_KEY"),
 		SendGridFromEmail:   getEnv("SENDGRID_FROM_EMAIL", ""),
 		SendGridFromName:    getEnv("SENDGRID_FROM_NAME", "MailService"),
@@ -95,6 +107,11 @@ func Load() (*Config, error) {
 		UnsendBaseURL:       getEnv("UNSEND_BASE_URL", "https://unsend.admin.lt/api"),
 		UnsendFromEmail:     getEnv("UNSEND_FROM_EMAIL", ""),
 		UnsendFromName:      getEnv("UNSEND_FROM_NAME", "MailService"),
+		MailgunAPIKey:       os.Getenv("MAILGUN_API_KEY"),
+		MailgunDomain:       os.Getenv("MAILGUN_DOMAIN"),
+		MailgunBaseURL:      getEnv("MAILGUN_BASE_URL", "https://api.mailgun.net"),
+		MailgunFromEmail:    getEnv("MAILGUN_FROM_EMAIL", ""),
+		MailgunFromName:     getEnv("MAILGUN_FROM_NAME", "MailService"),
 		PolarToken:          os.Getenv("POLAR_TOKEN"),
 		PolarServerURL:      getEnv("POLAR_SERVER_URL", "https://api.polar.sh"),
 		PolarProductID:      getEnv("POLAR_PRODUCT_ID", getEnv("POLAR_PRICE_ID", "")),
@@ -149,6 +166,42 @@ func getEnvInt64(key string, fallback int64) int64 {
 		return fallback
 	}
 	return n
+}
+
+var validNotifierProviders = map[string]bool{
+	"unsend":   true,
+	"resend":   true,
+	"sendgrid": true,
+	"mailgun":  true,
+	"log":      true,
+}
+
+func validateNotifierProvider(provider string) error {
+	if provider == "" {
+		return nil // empty means deprecated cascade
+	}
+	if !validNotifierProviders[provider] {
+		return fmt.Errorf("NOTIFIER_PROVIDER must be one of unsend, resend, sendgrid, mailgun, log — got %q", provider)
+	}
+	switch provider {
+	case "unsend":
+		if os.Getenv("UNSEND_KEY") == "" || os.Getenv("UNSEND_FROM_EMAIL") == "" {
+			return fmt.Errorf("NOTIFIER_PROVIDER=unsend requires UNSEND_KEY and UNSEND_FROM_EMAIL")
+		}
+	case "resend":
+		if os.Getenv("RESEND_API_KEY") == "" || os.Getenv("RESEND_FROM_EMAIL") == "" {
+			return fmt.Errorf("NOTIFIER_PROVIDER=resend requires RESEND_API_KEY and RESEND_FROM_EMAIL")
+		}
+	case "sendgrid":
+		if os.Getenv("SENDGRID_API_KEY") == "" || os.Getenv("SENDGRID_FROM_EMAIL") == "" {
+			return fmt.Errorf("NOTIFIER_PROVIDER=sendgrid requires SENDGRID_API_KEY and SENDGRID_FROM_EMAIL")
+		}
+	case "mailgun":
+		if os.Getenv("MAILGUN_API_KEY") == "" || os.Getenv("MAILGUN_DOMAIN") == "" || os.Getenv("MAILGUN_FROM_EMAIL") == "" {
+			return fmt.Errorf("NOTIFIER_PROVIDER=mailgun requires MAILGUN_API_KEY, MAILGUN_DOMAIN, and MAILGUN_FROM_EMAIL")
+		}
+	}
+	return nil
 }
 
 func getEnvInt(key string, fallback int) int {

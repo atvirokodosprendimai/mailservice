@@ -129,6 +129,37 @@ func newKeyProofVerifier() ports.KeyProofVerifier {
 }
 
 func selectNotifier(cfg *config.Config, logger *log.Logger) (ports.Notifier, string) {
+	if cfg.NotifierProvider != "" {
+		return selectNotifierExplicit(cfg, logger)
+	}
+
+	logger.Printf("DEPRECATED: implicit notifier cascade will be removed in a future version. Set NOTIFIER_PROVIDER explicitly.")
+	return selectNotifierCascade(cfg, logger)
+}
+
+func selectNotifierExplicit(cfg *config.Config, logger *log.Logger) (ports.Notifier, string) {
+	switch cfg.NotifierProvider {
+	case "unsend":
+		return notify.NewUnsendNotifier(cfg.UnsendBaseURL, cfg.UnsendKey, cfg.UnsendFromEmail, cfg.UnsendFromName), "unsend"
+	case "resend":
+		return notify.NewResendNotifier(cfg.ResendAPIKey, cfg.ResendFromEmail, cfg.ResendFromName), "resend"
+	case "sendgrid":
+		return notify.NewSendGridNotifier(cfg.SendGridAPIKey, cfg.SendGridFromEmail, cfg.SendGridFromName), "sendgrid"
+	case "mailgun":
+		n, err := notify.NewMailgunNotifier(cfg.MailgunAPIKey, cfg.MailgunDomain, cfg.MailgunBaseURL, cfg.MailgunFromEmail, cfg.MailgunFromName)
+		if err != nil {
+			log.Fatalf("mailgun notifier: %v", err)
+		}
+		return n, "mailgun"
+	case "log":
+		return notify.NewLogNotifier(logger), "log"
+	default:
+		log.Fatalf("unknown NOTIFIER_PROVIDER %q", cfg.NotifierProvider)
+		return nil, ""
+	}
+}
+
+func selectNotifierCascade(cfg *config.Config, logger *log.Logger) (ports.Notifier, string) {
 	if cfg.UnsendKey != "" && cfg.UnsendFromEmail != "" {
 		return notify.NewUnsendNotifier(cfg.UnsendBaseURL, cfg.UnsendKey, cfg.UnsendFromEmail, cfg.UnsendFromName), "unsend"
 	}
