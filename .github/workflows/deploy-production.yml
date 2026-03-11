@@ -11,7 +11,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  smoke-deploy:
+    uses: ./.github/workflows/deploy-smoke.yml
+    secrets: inherit
+
+  smoke-test:
+    needs: smoke-deploy
+    uses: ./.github/workflows/smoke-test-periodic.yml
+    secrets: inherit
+
   build:
+    needs: smoke-test
     outputs:
       s3_cache_enabled: ${{ steps.s3cache.outputs.enabled }}
       s3_cache_upload_enabled: ${{ steps.s3cache.outputs.upload_enabled }}

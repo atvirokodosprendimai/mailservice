@@ -1,9 +1,7 @@
 name: Periodic Smoke Test
 
 on:
-  # Disabled — smoke tests hitting production DB (see todo - 2603110050)
-  # schedule:
-  #   - cron: '*/5 * * * *'
+  workflow_call:
   workflow_dispatch:
     inputs:
       auto_pay:
@@ -30,7 +28,7 @@ jobs:
           BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
 
   smoke-sandbox:
-    if: github.event.inputs.auto_pay == 'true' || github.event_name == 'schedule'
+    if: github.event.inputs.auto_pay == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_call'
     runs-on: ubuntu-latest
     environment:
       name: smoke
