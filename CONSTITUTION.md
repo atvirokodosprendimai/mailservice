@@ -211,7 +211,7 @@ No lazy initialization. Normalize strings (trim, lowercase) during construction.
 
 ```yaml
 level: L1
-pattern: "(?:Timeout|TTL|Limit|Max|Min|Duration|Window).*=\\s+\\d{2,}"
+check: Timeouts, TTLs, size limits, and thresholds must be assigned to named const or var declarations — not used as inline literals in function bodies. Named constant definitions (e.g., const maxAge = 30 * time.Second) are compliant; the literal is the definition, not a magic number.
 scope: "**/*.go"
 exclude: "**/*_test.go, **/config.go"
 message: Magic number for timeout/limit/TTL. Extract to named const with comment.

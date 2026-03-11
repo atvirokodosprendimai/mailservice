@@ -134,7 +134,7 @@ func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
 
 	repo := &httpMailboxRepo{}
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
@@ -177,7 +177,7 @@ func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
 
 func TestHandleClaimMailboxRejectsMissingChallenge(t *testing.T) {
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
@@ -233,7 +233,7 @@ func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
 		},
 	}
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
@@ -291,7 +291,7 @@ func TestHandleResolveAccessReturnsWaitingPaymentForInactiveMailbox(t *testing.T
 		},
 	}
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
@@ -331,7 +331,7 @@ func TestHandleResolveAccessRejectsUnsupportedProtocol(t *testing.T) {
 	sigB64 := base64.StdEncoding.EncodeToString(sig)
 
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
@@ -617,7 +617,7 @@ func TestHandleResolveAccessIncludesAccessToken(t *testing.T) {
 		},
 	}
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
@@ -743,7 +743,7 @@ func TestHandleAuthChallengeReturnsChallenge(t *testing.T) {
 	pubkey := makeSSHPubkey(pub)
 
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		Logger:            log.New(io.Discard, "", 0),
 	})
 
@@ -773,7 +773,7 @@ func TestHandleAuthChallengeRejectsInvalidKey(t *testing.T) {
 	t.Parallel()
 
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		Logger:            log.New(io.Discard, "", 0),
 	})
 
@@ -797,7 +797,7 @@ func TestClaimWithChallengeResponseFullFlow(t *testing.T) {
 	fingerprint, _ := edproof.FingerprintFromPubkey(pubkey)
 
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
@@ -854,7 +854,7 @@ func TestClaimRejectsMissingChallenge(t *testing.T) {
 	pubkey := makeSSHPubkey(pub)
 
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
@@ -916,7 +916,7 @@ func TestResolveWithChallengeResponseFullFlow(t *testing.T) {
 	}
 
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
@@ -974,7 +974,7 @@ func TestResolveRejectsWrongSignature(t *testing.T) {
 	now := time.Now().UTC()
 
 	handler := NewHandler(Config{
-		EdproofHMACSecret: testHMACSecret,
+		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
 		KeyProofVerifier:  edproof.NewVerifier(nil),
 		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
