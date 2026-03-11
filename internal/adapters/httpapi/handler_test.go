@@ -2,7 +2,11 @@ package httpapi
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http/httptest"
@@ -10,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/atvirokodosprendimai/mailservice/internal/adapters/identity/edproof"
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/core/service"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
@@ -620,4 +625,321 @@ func (r *httpMailboxRepoWithAccessToken) GetByAccessToken(_ context.Context, tok
 		return item, nil
 	}
 	return nil, ports.ErrMailboxNotFound
+}
+
+// --- Challenge-response tests ---
+
+var testHMACSecret = []byte("test-hmac-secret-must-be-at-least-32-bytes!!")
+
+// makeSSHPubkey creates an SSH public key line from a raw ed25519 public key.
+func makeSSHPubkey(pub ed25519.PublicKey) string {
+	keyType := "ssh-ed25519"
+	blob := make([]byte, 0, 4+len(keyType)+4+len(pub))
+	typeLenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(typeLenBuf, uint32(len(keyType)))
+	blob = append(blob, typeLenBuf...)
+	blob = append(blob, keyType...)
+	keyLenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(keyLenBuf, uint32(len(pub)))
+	blob = append(blob, keyLenBuf...)
+	blob = append(blob, pub...)
+	return "ssh-ed25519 " + base64.StdEncoding.EncodeToString(blob) + " test@test"
+}
+
+func TestHandleAuthChallengeReturnsChallenge(t *testing.T) {
+	t.Parallel()
+
+	pub, _, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+
+	handler := NewHandler(Config{
+		EdproofHMACSecret: testHMACSecret,
+		Logger:            log.New(io.Discard, "", 0),
+	})
+
+	body := fmt.Sprintf(`{"public_key":%q}`, pubkey)
+	req := httptest.NewRequest("POST", "/v1/auth/challenge", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["challenge"] == nil || resp["challenge"] == "" {
+		t.Fatal("expected challenge in response")
+	}
+	if resp["expires_in"] != float64(30) {
+		t.Fatalf("expected expires_in=30, got %v", resp["expires_in"])
+	}
+}
+
+func TestHandleAuthChallengeRejectsInvalidKey(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(Config{
+		EdproofHMACSecret: testHMACSecret,
+		Logger:            log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("POST", "/v1/auth/challenge", strings.NewReader(`{"public_key":"not-a-key"}`))
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleAuthChallengeRejectsWhenNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(Config{
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("POST", "/v1/auth/challenge", strings.NewReader(`{"public_key":"ssh-ed25519 AAAA test"}`))
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 503 {
+		t.Fatalf("expected 503, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestClaimWithChallengeResponseFullFlow(t *testing.T) {
+	t.Parallel()
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+	now := time.Now().UTC()
+
+	fingerprint, _ := edproof.FingerprintFromPubkey(pubkey)
+
+	handler := NewHandler(Config{
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
+		MailboxService: service.NewMailboxService(
+			&httpMailboxRepo{},
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return now },
+	})
+
+	// Step 1: Get challenge
+	challengeBody := fmt.Sprintf(`{"public_key":%q}`, pubkey)
+	challengeReq := httptest.NewRequest("POST", "/v1/auth/challenge", strings.NewReader(challengeBody))
+	challengeRec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(challengeRec, challengeReq)
+
+	if challengeRec.Code != 200 {
+		t.Fatalf("challenge: expected 200, got %d body=%s", challengeRec.Code, challengeRec.Body.String())
+	}
+
+	var challengeResp map[string]any
+	json.Unmarshal(challengeRec.Body.Bytes(), &challengeResp)
+	challenge := challengeResp["challenge"].(string)
+
+	// Step 2: Sign challenge
+	sig := ed25519.Sign(priv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
+	// Step 3: Claim mailbox
+	claimBody := fmt.Sprintf(`{"billing_email":"test@example.com","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
+	claimReq := httptest.NewRequest("POST", "/v1/mailboxes/claim", strings.NewReader(claimBody))
+	claimRec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(claimRec, claimReq)
+
+	if claimRec.Code != 201 {
+		t.Fatalf("claim: expected 201, got %d body=%s", claimRec.Code, claimRec.Body.String())
+	}
+
+	_ = fingerprint // used for verification only
+}
+
+func TestClaimRejectsMissingChallengeWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	pub, _, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+
+	handler := NewHandler(Config{
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
+		MailboxService: service.NewMailboxService(
+			&httpMailboxRepo{},
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+	})
+
+	// No challenge or signature — should be rejected
+	body := fmt.Sprintf(`{"billing_email":"test@example.com","edproof":%q}`, pubkey)
+	req := httptest.NewRequest("POST", "/v1/mailboxes/claim", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]string
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if !strings.Contains(resp["error"], "challenge-response") {
+		t.Fatalf("expected challenge-response error message, got %q", resp["error"])
+	}
+}
+
+func TestResolveWithChallengeResponseFullFlow(t *testing.T) {
+	t.Parallel()
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+	now := time.Now().UTC()
+
+	fingerprint, _ := edproof.FingerprintFromPubkey(pubkey)
+	future := now.Add(time.Hour)
+
+	repo := &httpMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			fingerprint: {
+				ID:             "mbx-cr",
+				KeyFingerprint: fingerprint,
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(now.Add(-time.Hour)),
+				ExpiresAt:      &future,
+				IMAPHost:       "imap.example.com",
+				IMAPPort:       143,
+				IMAPUsername:    "mbx_cr",
+				IMAPPassword:   "secret",
+			},
+		},
+	}
+
+	handler := NewHandler(Config{
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
+		MailboxService: service.NewMailboxService(
+			repo,
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return now },
+	})
+
+	// Step 1: Get challenge
+	challengeBody := fmt.Sprintf(`{"public_key":%q}`, pubkey)
+	challengeReq := httptest.NewRequest("POST", "/v1/auth/challenge", strings.NewReader(challengeBody))
+	challengeRec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(challengeRec, challengeReq)
+
+	var challengeResp map[string]any
+	json.Unmarshal(challengeRec.Body.Bytes(), &challengeResp)
+	challenge := challengeResp["challenge"].(string)
+
+	// Step 2: Sign and resolve
+	sig := ed25519.Sign(priv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
+	resolveBody := fmt.Sprintf(`{"protocol":"imap","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
+	resolveReq := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(resolveBody))
+	resolveRec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(resolveRec, resolveReq)
+
+	if resolveRec.Code != 200 {
+		t.Fatalf("resolve: expected 200, got %d body=%s", resolveRec.Code, resolveRec.Body.String())
+	}
+
+	var resp map[string]any
+	json.Unmarshal(resolveRec.Body.Bytes(), &resp)
+	if resp["email"] != "mbx_cr@mail.test.local" {
+		t.Fatalf("expected email mbx_cr@mail.test.local, got %v", resp["email"])
+	}
+}
+
+func TestResolveRejectsWrongSignature(t *testing.T) {
+	t.Parallel()
+
+	pub, _, _ := ed25519.GenerateKey(nil)
+	_, wrongPriv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+	now := time.Now().UTC()
+
+	handler := NewHandler(Config{
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
+		MailboxService: service.NewMailboxService(
+			&httpMailboxRepo{},
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return now },
+	})
+
+	// Get challenge
+	challengeBody := fmt.Sprintf(`{"public_key":%q}`, pubkey)
+	challengeReq := httptest.NewRequest("POST", "/v1/auth/challenge", strings.NewReader(challengeBody))
+	challengeRec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(challengeRec, challengeReq)
+
+	var challengeResp map[string]any
+	json.Unmarshal(challengeRec.Body.Bytes(), &challengeResp)
+	challenge := challengeResp["challenge"].(string)
+
+	// Sign with wrong key
+	sig := ed25519.Sign(wrongPriv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
+	resolveBody := fmt.Sprintf(`{"protocol":"imap","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
+	resolveReq := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(resolveBody))
+	resolveRec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(resolveRec, resolveReq)
+
+	if resolveRec.Code != 401 {
+		t.Fatalf("expected 401, got %d body=%s", resolveRec.Code, resolveRec.Body.String())
+	}
 }

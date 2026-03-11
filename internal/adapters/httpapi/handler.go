@@ -34,6 +34,7 @@ type Config struct {
 	AccountService      *service.AccountService
 	Logger              *log.Logger
 	Now                 func() time.Time
+	EdproofHMACSecret   []byte
 }
 
 type Handler struct {
@@ -49,6 +50,7 @@ type Handler struct {
 	now                 func() time.Time
 	buildNumber         string
 	cacheBuster         string
+	edproofHMACSecret   []byte
 }
 
 type accountContextKey struct{}
@@ -72,6 +74,7 @@ func NewHandler(cfg Config) *Handler {
 		now:                 coalesceNow(cfg.Now),
 		buildNumber:         fallbackString(cfg.BuildNumber, "dev"),
 		cacheBuster:         fallbackString(cfg.CacheBuster, fallbackString(cfg.BuildNumber, "dev")),
+		edproofHMACSecret:   cfg.EdproofHMACSecret,
 	}
 }
 
@@ -86,6 +89,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/accounts/recovery/complete", h.handleCompleteRecoveryByLink)
 	mux.HandleFunc("GET /v1/mailboxes", h.withAccountToken(h.handleListMailboxes))
 	mux.HandleFunc("POST /v1/mailboxes", h.withAccountToken(h.handleCreateMailbox))
+	mux.HandleFunc("POST /v1/auth/challenge", h.handleAuthChallenge)
 	mux.HandleFunc("POST /v1/mailboxes/claim", h.handleClaimMailbox)
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
 	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
@@ -591,9 +595,39 @@ func (h *Handler) handleCreateMailbox(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, mailboxResponse(mailbox))
 }
 
+type authChallengeRequest struct {
+	PublicKey string `json:"public_key"`
+}
+
+func (h *Handler) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
+	if len(h.edproofHMACSecret) == 0 {
+		writeError(w, http.StatusServiceUnavailable, errors.New("challenge-response not configured"))
+		return
+	}
+
+	var req authChallengeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	challenge, err := edproof.GenerateChallenge(req.PublicKey, h.edproofHMACSecret, h.now())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"challenge":  challenge,
+		"expires_in": 30,
+	})
+}
+
 type claimMailboxRequest struct {
 	BillingEmail string `json:"billing_email"`
 	EDProof      string `json:"edproof"`
+	Challenge    string `json:"challenge"`
+	Signature    string `json:"signature"`
 }
 
 func (h *Handler) handleClaimMailbox(w http.ResponseWriter, r *http.Request) {
@@ -607,14 +641,9 @@ func (h *Handler) handleClaimMailbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, err := h.keyProofVerifier.Verify(r.Context(), req.EDProof)
+	key, err := h.verifyEdproof(r.Context(), req.EDProof, req.Challenge, req.Signature)
 	if err != nil {
-		switch {
-		case errors.Is(err, ports.ErrInvalidKeyProof):
-			writeError(w, http.StatusUnauthorized, err)
-		default:
-			writeError(w, http.StatusServiceUnavailable, err)
-		}
+		writeEdproofError(w, err)
 		return
 	}
 
@@ -687,8 +716,10 @@ type resolveIMAPRequest struct {
 }
 
 type resolveAccessRequest struct {
-	Protocol string `json:"protocol"`
-	EDProof  string `json:"edproof"`
+	Protocol  string `json:"protocol"`
+	EDProof   string `json:"edproof"`
+	Challenge string `json:"challenge"`
+	Signature string `json:"signature"`
 }
 
 func (h *Handler) handleResolveIMAP(w http.ResponseWriter, r *http.Request) {
@@ -729,14 +760,9 @@ func (h *Handler) handleResolveAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, err := h.keyProofVerifier.Verify(r.Context(), req.EDProof)
+	key, err := h.verifyEdproof(r.Context(), req.EDProof, req.Challenge, req.Signature)
 	if err != nil {
-		switch {
-		case errors.Is(err, ports.ErrInvalidKeyProof):
-			writeError(w, http.StatusUnauthorized, err)
-		default:
-			writeError(w, http.StatusServiceUnavailable, err)
-		}
+		writeEdproofError(w, err)
 		return
 	}
 
@@ -756,6 +782,46 @@ func (h *Handler) handleResolveAccess(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resolveAccessResponse(result))
+}
+
+// verifyEdproof handles challenge-response verification when HMAC secret is configured,
+// or falls back to passthrough verification when not configured.
+func (h *Handler) verifyEdproof(ctx context.Context, pubkey, challenge, signature string) (*ports.VerifiedKey, error) {
+	if len(h.edproofHMACSecret) > 0 {
+		// Challenge-response mode: challenge and signature are required
+		if challenge == "" || signature == "" {
+			return nil, errChallengeRequired
+		}
+		if err := edproof.VerifyChallenge(challenge, pubkey, h.edproofHMACSecret, 30*time.Second, h.now()); err != nil {
+			return nil, err
+		}
+		if err := edproof.VerifySignature(challenge, pubkey, signature); err != nil {
+			return nil, err
+		}
+	}
+	// Verify pubkey format and extract fingerprint (always needed)
+	return h.keyProofVerifier.Verify(ctx, pubkey)
+}
+
+var errChallengeRequired = errors.New("edproof now requires challenge-response — call POST /v1/auth/challenge first")
+
+func writeEdproofError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, errChallengeRequired):
+		writeError(w, http.StatusBadRequest, err)
+	case errors.Is(err, edproof.ErrChallengeExpired):
+		writeError(w, http.StatusUnauthorized, err)
+	case errors.Is(err, edproof.ErrChallengeTampered):
+		writeError(w, http.StatusUnauthorized, err)
+	case errors.Is(err, edproof.ErrChallengeFuture):
+		writeError(w, http.StatusUnauthorized, err)
+	case errors.Is(err, edproof.ErrSignatureInvalid):
+		writeError(w, http.StatusUnauthorized, err)
+	case errors.Is(err, ports.ErrInvalidKeyProof):
+		writeError(w, http.StatusUnauthorized, err)
+	default:
+		writeError(w, http.StatusServiceUnavailable, err)
+	}
 }
 
 type listMessagesRequest struct {
