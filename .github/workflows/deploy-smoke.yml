@@ -143,38 +143,43 @@ jobs:
 
       - name: Write environment file on host
         run: |
+          # Build env file using printf to avoid shell expansion of secret values.
+          # Piped directly into a private staging area on the remote host.
           tmp_file="$(mktemp)"
-          cat > "$tmp_file" <<ENVCONTENT
-          PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
-          MAIL_DOMAIN=${MAIL_DOMAIN}
-          IMAP_HOST=${IMAP_HOST}
-          IMAP_PORT=${IMAP_PORT}
-          MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
-          MAILBOX_PRICE_CENTS=${MAILBOX_PRICE_CENTS}
-          POLAR_TOKEN=${POLAR_TOKEN}
-          POLAR_PRODUCT_ID=${POLAR_PRODUCT_ID}
-          POLAR_SERVER_URL=${POLAR_SERVER_URL}
-          POLAR_SUCCESS_URL=${POLAR_SUCCESS_URL}
-          POLAR_RETURN_URL=${POLAR_RETURN_URL}
-          POLAR_WEBHOOK_SECRET=${POLAR_WEBHOOK_SECRET}
-          DATABASE_MODE=local
-          TURSO_DATABASE_URL=${TURSO_DATABASE_URL}
-          TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN}
-          BUILD_NUMBER=${BUILD_NUMBER}
-          CACHE_BUSTER=${CACHE_BUSTER}
-          ENVCONTENT
-          sed -i 's/^[[:space:]]*//' "$tmp_file"
-          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/mailservice-env-stage"
+          chmod 600 "$tmp_file"
+          {
+            printf 'PUBLIC_BASE_URL=%s\n' "$PUBLIC_BASE_URL"
+            printf 'MAIL_DOMAIN=%s\n' "$MAIL_DOMAIN"
+            printf 'IMAP_HOST=%s\n' "$IMAP_HOST"
+            printf 'IMAP_PORT=%s\n' "$IMAP_PORT"
+            printf 'MAX_CONCURRENT_REQUESTS=%s\n' "$MAX_CONCURRENT_REQUESTS"
+            printf 'MAILBOX_PRICE_CENTS=%s\n' "$MAILBOX_PRICE_CENTS"
+            printf 'POLAR_TOKEN=%s\n' "$POLAR_TOKEN"
+            printf 'POLAR_PRODUCT_ID=%s\n' "$POLAR_PRODUCT_ID"
+            printf 'POLAR_SERVER_URL=%s\n' "$POLAR_SERVER_URL"
+            printf 'POLAR_SUCCESS_URL=%s\n' "$POLAR_SUCCESS_URL"
+            printf 'POLAR_RETURN_URL=%s\n' "$POLAR_RETURN_URL"
+            printf 'POLAR_WEBHOOK_SECRET=%s\n' "$POLAR_WEBHOOK_SECRET"
+            printf 'DATABASE_MODE=local\n'
+            printf 'TURSO_DATABASE_URL=%s\n' "$TURSO_DATABASE_URL"
+            printf 'TURSO_AUTH_TOKEN=%s\n' "$TURSO_AUTH_TOKEN"
+            printf 'BUILD_NUMBER=%s\n' "$BUILD_NUMBER"
+            printf 'CACHE_BUSTER=%s\n' "$CACHE_BUSTER"
+          } > "$tmp_file"
+          # Stage env file into a private directory on the remote host (not /tmp).
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'install -d -m 700 /root/.mailservice-staging'
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/root/.mailservice-staging/env-stage"
           rm -f "$tmp_file"
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             install -d -m 750 /var/lib/secrets
+            chmod 600 /root/.mailservice-staging/env-stage
             if getent group mailservice >/dev/null 2>&1; then
-              install -m 640 -o root -g mailservice /tmp/mailservice-env-stage /var/lib/secrets/mailservice.env
+              install -m 640 -o root -g mailservice /root/.mailservice-staging/env-stage /var/lib/secrets/mailservice.env
             else
-              install -m 640 -o root -g root /tmp/mailservice-env-stage /var/lib/secrets/mailservice.env
+              install -m 640 -o root -g root /root/.mailservice-staging/env-stage /var/lib/secrets/mailservice.env
             fi
-            rm -f /tmp/mailservice-env-stage
+            rm -f /root/.mailservice-staging/env-stage
           '
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}

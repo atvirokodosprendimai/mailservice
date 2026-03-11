@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -110,7 +111,7 @@ func TestVerifyChallengeExpired(t *testing.T) {
 	}
 
 	err = VerifyChallenge(challenge, pubkey, testSecret, 30*time.Second, time.Now().UTC())
-	if err != ports.ErrChallengeExpired {
+	if !errors.Is(err, ports.ErrChallengeExpired) {
 		t.Fatalf("expected ports.ErrChallengeExpired, got %v", err)
 	}
 }
@@ -133,7 +134,7 @@ func TestVerifyChallengeTampered(t *testing.T) {
 	// Tamper with the HMAC
 	tampered := challenge[:len(challenge)-2] + "ff"
 	err = VerifyChallenge(tampered, pubkey, testSecret, 30*time.Second, now)
-	if err != ports.ErrChallengeTampered {
+	if !errors.Is(err, ports.ErrChallengeTampered) {
 		t.Fatalf("expected ports.ErrChallengeTampered, got %v", err)
 	}
 }
@@ -154,7 +155,7 @@ func TestVerifyChallengeWrongPubkey(t *testing.T) {
 
 	// Verify with different pubkey — HMAC won't match
 	err = VerifyChallenge(challenge, pubkey2, testSecret, 30*time.Second, now)
-	if err != ports.ErrChallengeTampered {
+	if !errors.Is(err, ports.ErrChallengeTampered) {
 		t.Fatalf("expected ports.ErrChallengeTampered, got %v", err)
 	}
 }
@@ -172,7 +173,7 @@ func TestVerifyChallengeFutureTimestamp(t *testing.T) {
 	}
 
 	err = VerifyChallenge(challenge, pubkey, testSecret, 30*time.Second, time.Now().UTC())
-	if err != ports.ErrChallengeFuture {
+	if !errors.Is(err, ports.ErrChallengeFuture) {
 		t.Fatalf("expected ports.ErrChallengeFuture, got %v", err)
 	}
 }
@@ -243,7 +244,7 @@ func TestVerifySignatureWrongKey(t *testing.T) {
 	sigB64 := base64.StdEncoding.EncodeToString(sig)
 
 	err := VerifySignature(challenge, pubkey1, sigB64)
-	if err != ports.ErrSignatureInvalid {
+	if !errors.Is(err, ports.ErrSignatureInvalid) {
 		t.Fatalf("expected ports.ErrSignatureInvalid, got %v", err)
 	}
 }
@@ -258,7 +259,7 @@ func TestVerifySignatureWrongMessage(t *testing.T) {
 	sigB64 := base64.StdEncoding.EncodeToString(sig)
 
 	err := VerifySignature("actual challenge", pubkey, sigB64)
-	if err != ports.ErrSignatureInvalid {
+	if !errors.Is(err, ports.ErrSignatureInvalid) {
 		t.Fatalf("expected ports.ErrSignatureInvalid, got %v", err)
 	}
 }
@@ -474,7 +475,7 @@ func TestVerifySignatureSSHSIGWrongKey(t *testing.T) {
 	sigB64 := base64.StdEncoding.EncodeToString(sshsig)
 
 	err := VerifySignature(challenge, pubkey1, sigB64)
-	if err != ports.ErrSignatureInvalid {
+	if !errors.Is(err, ports.ErrSignatureInvalid) {
 		t.Fatalf("expected ports.ErrSignatureInvalid, got %v", err)
 	}
 }

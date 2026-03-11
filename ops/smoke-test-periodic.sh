@@ -74,65 +74,28 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || { echo "missing required command: $1" >&2; exit 2; }
 }
 
+# Unified HTTP helper. Pass extra headers as additional arguments.
+# Usage: http_json METHOD URL DATA BODY_FILE [EXTRA_CURL_ARGS...]
 http_json() {
   local method="$1" url="$2" data="${3:-}" body_file="$4"
+  shift 4
+  local args=(--silent --show-error --max-time 15 --request "$method" --output "$body_file" --write-out '%{http_code}')
+  while [[ $# -gt 0 ]]; do args+=("$1"); shift; done
   if [[ -n "$data" ]]; then
-    curl --silent --show-error --max-time 15 \
-      --request "$method" \
-      --header 'Content-Type: application/json' \
-      --data "$data" \
-      --output "$body_file" \
-      --write-out '%{http_code}' \
-      "$url"
-  else
-    curl --silent --show-error --max-time 15 \
-      --request "$method" \
-      --output "$body_file" \
-      --write-out '%{http_code}' \
-      "$url"
+    args+=(--header 'Content-Type: application/json' --data "$data")
   fi
+  curl "${args[@]}" "$url"
 }
 
 http_json_polar() {
   local method="$1" path="$2" data="${3:-}" body_file="$4"
-  local url="${POLAR_API}${path}"
-  if [[ -n "$data" ]]; then
-    curl --silent --show-error --max-time 15 --location \
-      --request "$method" \
-      --header 'Content-Type: application/json' \
-      --header "Authorization: Bearer $POLAR_TOKEN" \
-      --data "$data" \
-      --output "$body_file" \
-      --write-out '%{http_code}' \
-      "$url"
-  else
-    curl --silent --show-error --max-time 15 --location \
-      --request "$method" \
-      --header "Authorization: Bearer $POLAR_TOKEN" \
-      --output "$body_file" \
-      --write-out '%{http_code}' \
-      "$url"
-  fi
+  http_json "$method" "${POLAR_API}${path}" "$data" "$body_file" \
+    --location --header "Authorization: Bearer $POLAR_TOKEN"
 }
 
 http_json_polar_client() {
   local method="$1" path="$2" data="${3:-}" body_file="$4"
-  local url="${POLAR_API}${path}"
-  if [[ -n "$data" ]]; then
-    curl --silent --show-error --max-time 15 --location \
-      --request "$method" \
-      --header 'Content-Type: application/json' \
-      --data "$data" \
-      --output "$body_file" \
-      --write-out '%{http_code}' \
-      "$url"
-  else
-    curl --silent --show-error --max-time 15 --location \
-      --request "$method" \
-      --output "$body_file" \
-      --write-out '%{http_code}' \
-      "$url"
-  fi
+  http_json "$method" "${POLAR_API}${path}" "$data" "$body_file" --location
 }
 
 json_escape() { jq -Rsa .; }
@@ -312,14 +275,22 @@ CHECKS_PASSED=$((CHECKS_PASSED + 1))
 # --- Check: IMAP login ---
 next_check
 log "Check $CHECK_NUM/$CHECKS_TOTAL: IMAP login (TLS, $IMAP_HOST:$IMAP_PORT)"
-IMAP_OUTPUT="$(printf 'a001 LOGIN %s %s\na002 LOGOUT\n' "$IMAP_USER" "$IMAP_PASS" \
-  | openssl s_client -connect "$IMAP_HOST:$IMAP_PORT" -quiet 2>/dev/null || true)"
+# Use timeout to prevent hangs; quote credentials for IMAP LOGIN.
+TIMEOUT_CMD=""
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_CMD="timeout 15"
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_CMD="gtimeout 15"
+fi
+IMAP_OUTPUT="$(printf 'a001 LOGIN "%s" "%s"\na002 LOGOUT\n' "$IMAP_USER" "$IMAP_PASS" \
+  | $TIMEOUT_CMD openssl s_client -connect "$IMAP_HOST:$IMAP_PORT" -quiet 2>/dev/null || true)"
 
 if echo "$IMAP_OUTPUT" | grep -q "a001 OK"; then
   detail "login ok"
   CHECKS_PASSED=$((CHECKS_PASSED + 1))
 else
-  fail "IMAP login failed: $(echo "$IMAP_OUTPUT" | head -5)"
+  # Strip LOGIN line to avoid leaking IMAP credentials in CI logs
+  fail "IMAP login failed: $(echo "$IMAP_OUTPUT" | grep -v 'LOGIN' | head -5)"
 fi
 
 # --- Check: HTTP message API ---

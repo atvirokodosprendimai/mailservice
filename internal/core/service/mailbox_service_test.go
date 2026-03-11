@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -305,7 +306,7 @@ func TestResolveIMAPRejectsExpiredMailbox(t *testing.T) {
 	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
 	_, err := service.ResolveIMAPByToken(context.Background(), "token-1")
-	if err != ports.ErrMailboxNotUsable {
+	if !errors.Is(err, ports.ErrMailboxNotUsable) {
 		t.Fatalf("expected ErrMailboxNotUsable, got %v", err)
 	}
 }
@@ -396,7 +397,7 @@ func TestResolveIMAPByKeyRejectsUnusableMailbox(t *testing.T) {
 		Fingerprint: "edproof:key-2",
 		Algorithm:   "ed25519",
 	})
-	if err != ports.ErrMailboxNotUsable {
+	if !errors.Is(err, ports.ErrMailboxNotUsable) {
 		t.Fatalf("expected ErrMailboxNotUsable, got %v", err)
 	}
 }
@@ -507,7 +508,7 @@ func TestResolveAccessByTokenRejectsExpiredKeyBoundMailbox(t *testing.T) {
 	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
 	_, err := service.ResolveIMAPByToken(context.Background(), "token-kb")
-	if err != ports.ErrMailboxNotUsable {
+	if !errors.Is(err, ports.ErrMailboxNotUsable) {
 		t.Fatalf("expected ErrMailboxNotUsable, got %v", err)
 	}
 }

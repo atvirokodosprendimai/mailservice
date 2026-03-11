@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -21,7 +22,7 @@ func TestCreateAccountFailsWhenAlreadyExists(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected account exists error")
 	}
-	if err != ports.ErrAccountExists {
+	if !errors.Is(err, ports.ErrAccountExists) {
 		t.Fatalf("expected ErrAccountExists, got %v", err)
 	}
 }
@@ -45,7 +46,7 @@ func TestStartRecoveryRateLimited(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected rate limit error")
 	}
-	if err != ports.ErrRateLimitReached {
+	if !errors.Is(err, ports.ErrRateLimitReached) {
 		t.Fatalf("expected ErrRateLimitReached, got %v", err)
 	}
 }
