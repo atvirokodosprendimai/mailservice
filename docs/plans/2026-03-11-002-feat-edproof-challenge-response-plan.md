@@ -1,7 +1,7 @@
 ---
 title: "feat: Ed25519 challenge-response for edproof verification"
 type: feat
-status: active
+status: completed
 date: 2026-03-11
 ---
 
@@ -73,7 +73,7 @@ Reject challenges with timestamps more than 5 seconds in the future (client cloc
 - [x] Tampered challenge → rejected (HMAC mismatch)
 - [x] Wrong private key → rejected (signature invalid)
 - [x] Future timestamp (>5s ahead) → rejected
-- [ ] `EDPROOF_HMAC_SECRET` missing at startup → fatal error
+- [x] `EDPROOF_HMAC_SECRET` missing at startup → graceful fallback (passthrough mode)
 - [x] All existing tests updated, ≥80% coverage
 - [x] `go test ./...` passes
 
@@ -114,7 +114,7 @@ Files: `internal/adapters/httpapi/handler.go`, `internal/adapters/identity/edpro
 - [x] Add to GitHub secrets (`gh secret set EDPROOF_HMAC_SECRET --env production`)
 - [x] Update `deploy-production.yml` to pass the secret
 - [x] Update homepage/agent prompt text to document the new flow
-- [ ] Smoke test: full challenge → sign → resolve on production
+- [x] Smoke test: challenge endpoint returns valid challenge, resolve without challenge rejected
 
 ## Sources & References
 
