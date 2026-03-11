@@ -51,9 +51,10 @@ func NewPolarGateway(cfg PolarConfig) *PolarGateway {
 
 func (g *PolarGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
 	payload := map[string]any{
-		"products":       []string{g.productID},
-		"customer_email": req.OwnerEmail,
-		"success_url":    g.successURL,
+		"products":             []string{g.productID},
+		"customer_email":       req.OwnerEmail,
+		"external_customer_id": req.MailboxID,
+		"success_url":          g.successURL,
 		"metadata": map[string]string{
 			"mailbox_id":  req.MailboxID,
 			"owner_email": req.OwnerEmail,

@@ -35,6 +35,9 @@ func TestPolarGatewayCreatePaymentLink(t *testing.T) {
 		if body["customer_email"] != "billing@example.com" {
 			t.Fatalf("unexpected customer_email: %#v", body["customer_email"])
 		}
+		if body["external_customer_id"] != "mbx-1" {
+			t.Fatalf("unexpected external_customer_id: %#v", body["external_customer_id"])
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
