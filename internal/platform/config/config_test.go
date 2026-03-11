@@ -8,7 +8,7 @@ import (
 
 func TestLoadReadsDotEnvFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	dotEnv := []byte("HTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\nMAX_CONCURRENT_REQUESTS=77\nMAIL_DOMAIN=mx.example.com\nIMAP_HOST=imap.example.com\nIMAP_PORT=1143\nSENDGRID_FROM_EMAIL=noreply@example.com\nRESEND_FROM_EMAIL=hello@example.com\nUNSEND_BASE_URL=https://unsend.admin.lt/api\nUNSEND_FROM_EMAIL=mail@example.com\n")
+	dotEnv := []byte("DATABASE_MODE=local\nHTTP_ADDR=:9090\nSTRIPE_CURRENCY=eur\nMAX_CONCURRENT_REQUESTS=77\nMAIL_DOMAIN=mx.example.com\nIMAP_HOST=imap.example.com\nIMAP_PORT=1143\nSENDGRID_FROM_EMAIL=noreply@example.com\nRESEND_FROM_EMAIL=hello@example.com\nUNSEND_BASE_URL=https://unsend.admin.lt/api\nUNSEND_FROM_EMAIL=mail@example.com\n")
 	if err := os.WriteFile(filepath.Join(tmpDir, ".env"), dotEnv, 0o600); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
@@ -27,6 +27,7 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 		t.Fatalf("chdir temp: %v", err)
 	}
 
+	t.Setenv("DATABASE_MODE", "")
 	t.Setenv("HTTP_ADDR", "")
 	t.Setenv("STRIPE_CURRENCY", "")
 	t.Setenv("MAX_CONCURRENT_REQUESTS", "")

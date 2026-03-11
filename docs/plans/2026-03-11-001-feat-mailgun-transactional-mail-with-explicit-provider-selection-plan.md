@@ -1,7 +1,7 @@
 ---
 title: "feat: Add Mailgun transactional mail with explicit provider selection"
 type: feat
-status: active
+status: completed
 date: 2026-03-11
 ---
 
@@ -50,17 +50,17 @@ The cascade remains as a deprecated fallback for backward compatibility.
 
 ## Acceptance Criteria
 
-- [ ] Mailgun adapter implements `ports.Notifier` (`SendPaymentLink`, `SendRecoveryLink`)
-- [ ] Raw HTTP with Basic Auth and form-urlencoded body
-- [ ] Configurable base URL (default: `https://api.mailgun.net`, EU: `https://api.eu.mailgun.net`)
-- [ ] `NOTIFIER_PROVIDER` env var selects notifier explicitly
-- [ ] Valid values: `unsend`, `resend`, `sendgrid`, `mailgun`, `log` (lowercase, case-sensitive)
-- [ ] When `NOTIFIER_PROVIDER` is set, required credentials for that provider are validated in `config.Load()` — missing credentials = startup error
-- [ ] When `NOTIFIER_PROVIDER` is unset, cascade runs with deprecation warning (logged once at startup)
-- [ ] Invalid `NOTIFIER_PROVIDER` value = startup error
-- [ ] httptest-based tests for Mailgun adapter (happy path, error responses, Basic Auth, form encoding, domain in URL, EU base URL)
-- [ ] Tests for `selectNotifier` with explicit `NOTIFIER_PROVIDER` values
-- [ ] `.env.example` updated with Mailgun vars and `NOTIFIER_PROVIDER`
+- [x] Mailgun adapter implements `ports.Notifier` (`SendPaymentLink`, `SendRecoveryLink`)
+- [x] Raw HTTP with Basic Auth and form-urlencoded body
+- [x] Configurable base URL (default: `https://api.mailgun.net`, EU: `https://api.eu.mailgun.net`)
+- [x] `NOTIFIER_PROVIDER` env var selects notifier explicitly
+- [x] Valid values: `unsend`, `resend`, `sendgrid`, `mailgun`, `log` (lowercase, case-sensitive)
+- [x] When `NOTIFIER_PROVIDER` is set, required credentials for that provider are validated in `config.Load()` — missing credentials = startup error
+- [x] When `NOTIFIER_PROVIDER` is unset, cascade runs with deprecation warning (logged once at startup)
+- [x] Invalid `NOTIFIER_PROVIDER` value = startup error
+- [x] httptest-based tests for Mailgun adapter (happy path, error responses, Basic Auth, form encoding, domain in URL, EU base URL)
+- [x] Tests for `selectNotifier` with explicit `NOTIFIER_PROVIDER` values
+- [x] `.env.example` updated with Mailgun vars and `NOTIFIER_PROVIDER`
 
 ## Environment Variables
 
