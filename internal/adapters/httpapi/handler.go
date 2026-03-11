@@ -15,6 +15,7 @@ import (
 	"github.com/stripe/stripe-go/v83"
 	"github.com/stripe/stripe-go/v83/webhook"
 
+	"github.com/atvirokodosprendimai/mailservice/internal/adapters/identity/edproof"
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/core/service"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
@@ -1159,17 +1160,22 @@ func (h *Handler) withAdminKey(next http.HandlerFunc) http.HandlerFunc {
 
 func (h *Handler) handleReprovisionMailbox(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		MailboxID      string `json:"mailbox_id"`
-		OwnerEmail     string `json:"owner_email"`
-		KeyFingerprint string `json:"key_fingerprint"`
-		ExpiresAt      string `json:"expires_at"`
+		MailboxID  string `json:"mailbox_id"`
+		OwnerEmail string `json:"owner_email"`
+		PublicKey  string `json:"public_key"`
+		ExpiresAt  string `json:"expires_at"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if req.MailboxID == "" || req.OwnerEmail == "" || req.KeyFingerprint == "" || req.ExpiresAt == "" {
-		writeError(w, http.StatusBadRequest, errors.New("mailbox_id, owner_email, key_fingerprint, and expires_at are required"))
+	if req.MailboxID == "" || req.OwnerEmail == "" || req.PublicKey == "" || req.ExpiresAt == "" {
+		writeError(w, http.StatusBadRequest, errors.New("mailbox_id, owner_email, public_key, and expires_at are required"))
+		return
+	}
+	fingerprint, err := edproof.FingerprintFromPubkey(req.PublicKey)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid public_key: %w", err))
 		return
 	}
 	expiresAt, err := time.Parse(time.RFC3339, req.ExpiresAt)
@@ -1181,7 +1187,7 @@ func (h *Handler) handleReprovisionMailbox(w http.ResponseWriter, r *http.Reques
 	mailbox, err := h.mailboxService.ReprovisionMailbox(r.Context(), service.ReprovisionRequest{
 		MailboxID:      req.MailboxID,
 		OwnerEmail:     req.OwnerEmail,
-		KeyFingerprint: req.KeyFingerprint,
+		KeyFingerprint: fingerprint,
 		ExpiresAt:      expiresAt,
 	})
 	if err != nil {
