@@ -87,6 +87,7 @@ func main() {
 	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen, cfg.PublicBaseURL)
 
 	handler := httpapi.NewHandler(httpapi.Config{
+		AdminAPIKey:         cfg.AdminAPIKey,
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
 		PolarWebhookSecret:  cfg.PolarWebhookSecret,
 		MaxConcurrentReqs:   cfg.MaxConcurrentReqs,

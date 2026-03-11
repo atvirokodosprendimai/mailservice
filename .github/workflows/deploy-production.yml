@@ -267,6 +267,7 @@ jobs:
           UNSEND_BASE_URL=${UNSEND_BASE_URL}
           UNSEND_FROM_EMAIL=${UNSEND_FROM_EMAIL}
           UNSEND_FROM_NAME=${UNSEND_FROM_NAME}
+          ADMIN_API_KEY=${ADMIN_API_KEY}
           DATABASE_MODE=turso
           TURSO_DATABASE_URL=${TURSO_DATABASE_URL}
           TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN}
@@ -289,6 +290,7 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
           MAIL_DOMAIN: ${{ vars.MAIL_DOMAIN }}
           IMAP_HOST: ${{ vars.IMAP_HOST }}
