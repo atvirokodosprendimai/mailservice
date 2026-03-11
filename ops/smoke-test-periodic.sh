@@ -100,6 +100,34 @@ http_json_polar_client() {
 
 json_escape() { jq -Rsa .; }
 
+# Fetch a challenge from the API and sign it with the Ed25519 key.
+# Sets CHALLENGE and SIGNATURE variables for the caller.
+fetch_and_sign_challenge() {
+  local challenge_payload
+  challenge_payload="$(printf '{"public_key":%s}' "$(printf '%s' "$EDPROOF" | json_escape)")"
+  local status
+  status="$(http_json POST "$BASE_URL/v1/auth/challenge" "$challenge_payload" "$TMPBODY")"
+  if [[ "$status" != "200" ]]; then
+    fail "auth/challenge returned HTTP $status: $(cat "$TMPBODY")"
+  fi
+  CHALLENGE="$(jq -r '.challenge // empty' "$TMPBODY")"
+  if [[ -z "$CHALLENGE" ]]; then
+    fail "auth/challenge: missing challenge in response"
+  fi
+  detail "challenge: ${CHALLENGE:0:30}..."
+
+  # Sign the challenge using ssh-keygen SSHSIG format, then base64-encode.
+  # The namespace must be "edproof" to match the server's verification.
+  local sig_file sig_armored
+  sig_file="$(mktemp)"
+  printf '%s' "$CHALLENGE" | ssh-keygen -Y sign -f "$KEY_PATH" -n edproof -q > "$sig_file" 2>/dev/null
+  # ssh-keygen outputs PEM-armored SSHSIG; extract the binary and base64-encode.
+  sig_armored="$(sed '1d;$d' "$sig_file")"
+  SIGNATURE="$(printf '%s' "$sig_armored" | tr -d '\n')"
+  rm -f "$sig_file"
+  detail "signature: ${SIGNATURE:0:30}..."
+}
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -173,9 +201,12 @@ fi
 # --- Check: Claim ---
 next_check
 log "Check $CHECK_NUM/$CHECKS_TOTAL: claim mailbox"
-CLAIM_PAYLOAD="$(printf '{"billing_email":%s,"edproof":%s}' \
+fetch_and_sign_challenge
+CLAIM_PAYLOAD="$(printf '{"billing_email":%s,"edproof":%s,"challenge":%s,"signature":%s}' \
   "$(printf '%s' "$BILLING_EMAIL" | json_escape)" \
-  "$(printf '%s' "$EDPROOF" | json_escape)")"
+  "$(printf '%s' "$EDPROOF" | json_escape)" \
+  "$(printf '%s' "$CHALLENGE" | json_escape)" \
+  "$(printf '%s' "$SIGNATURE" | json_escape)")"
 
 STATUS="$(http_json POST "$BASE_URL/v1/mailboxes/claim" "$CLAIM_PAYLOAD" "$TMPBODY")"
 if [[ "$STATUS" != "200" && "$STATUS" != "201" ]]; then
@@ -217,6 +248,13 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
   ACTIVATE_INTERVAL=3
   ELAPSED=0
   while [[ "$ELAPSED" -lt "$ACTIVATE_TIMEOUT" ]]; do
+    # Each re-claim needs a fresh challenge (challenges are single-use)
+    fetch_and_sign_challenge
+    CLAIM_PAYLOAD="$(printf '{"billing_email":%s,"edproof":%s,"challenge":%s,"signature":%s}' \
+      "$(printf '%s' "$BILLING_EMAIL" | json_escape)" \
+      "$(printf '%s' "$EDPROOF" | json_escape)" \
+      "$(printf '%s' "$CHALLENGE" | json_escape)" \
+      "$(printf '%s' "$SIGNATURE" | json_escape)")"
     STATUS="$(http_json POST "$BASE_URL/v1/mailboxes/claim" "$CLAIM_PAYLOAD" "$TMPBODY")"
     MAILBOX_STATUS="$(jq -r '.status // empty' "$TMPBODY")"
     if [[ "$MAILBOX_STATUS" == "active" ]]; then
@@ -253,8 +291,11 @@ fi
 # --- Check: Resolve ---
 next_check
 log "Check $CHECK_NUM/$CHECKS_TOTAL: resolve IMAP credentials"
-RESOLVE_PAYLOAD="$(printf '{"protocol":"imap","edproof":%s}' \
-  "$(printf '%s' "$EDPROOF" | json_escape)")"
+fetch_and_sign_challenge
+RESOLVE_PAYLOAD="$(printf '{"protocol":"imap","edproof":%s,"challenge":%s,"signature":%s}' \
+  "$(printf '%s' "$EDPROOF" | json_escape)" \
+  "$(printf '%s' "$CHALLENGE" | json_escape)" \
+  "$(printf '%s' "$SIGNATURE" | json_escape)")"
 
 STATUS="$(http_json POST "$BASE_URL/v1/access/resolve" "$RESOLVE_PAYLOAD" "$TMPBODY")"
 if [[ "$STATUS" != "200" ]]; then
