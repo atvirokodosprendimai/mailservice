@@ -16,7 +16,6 @@ import (
 	"github.com/stripe/stripe-go/v83"
 	"github.com/stripe/stripe-go/v83/webhook"
 
-	"github.com/atvirokodosprendimai/mailservice/internal/adapters/identity/edproof"
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/core/service"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
@@ -35,7 +34,7 @@ type Config struct {
 	AccountService      *service.AccountService
 	Logger              *log.Logger
 	Now                 func() time.Time
-	EdproofHMACSecret   []byte
+	ChallengeAuth       ports.ChallengeAuthenticator
 }
 
 type Handler struct {
@@ -51,7 +50,7 @@ type Handler struct {
 	now                 func() time.Time
 	buildNumber         string
 	cacheBuster         string
-	edproofHMACSecret   []byte
+	challengeAuth       ports.ChallengeAuthenticator
 }
 
 const challengeMaxAge = 30 * time.Second
@@ -77,7 +76,7 @@ func NewHandler(cfg Config) *Handler {
 		now:                 coalesceNow(cfg.Now),
 		buildNumber:         fallbackString(cfg.BuildNumber, "dev"),
 		cacheBuster:         fallbackString(cfg.CacheBuster, fallbackString(cfg.BuildNumber, "dev")),
-		edproofHMACSecret:   cfg.EdproofHMACSecret,
+		challengeAuth:       cfg.ChallengeAuth,
 	}
 }
 
@@ -644,7 +643,7 @@ func (h *Handler) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	challenge, err := edproof.GenerateChallenge(req.PublicKey, h.edproofHMACSecret, h.now())
+	challenge, err := h.challengeAuth.GenerateChallenge(req.PublicKey, h.now())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -823,10 +822,10 @@ func (h *Handler) verifyEdproof(ctx context.Context, pubkey, challenge, signatur
 	if challenge == "" || signature == "" {
 		return nil, errChallengeRequired
 	}
-	if err := edproof.VerifyChallenge(challenge, pubkey, h.edproofHMACSecret, challengeMaxAge, h.now()); err != nil {
+	if err := h.challengeAuth.VerifyChallenge(challenge, pubkey, challengeMaxAge, h.now()); err != nil {
 		return nil, err
 	}
-	if err := edproof.VerifySignature(challenge, pubkey, signature); err != nil {
+	if err := h.challengeAuth.VerifySignature(challenge, pubkey, signature); err != nil {
 		return nil, err
 	}
 	return h.keyProofVerifier.Verify(ctx, pubkey)
@@ -838,10 +837,10 @@ func writeEdproofError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errChallengeRequired):
 		writeError(w, http.StatusBadRequest, err)
-	case errors.Is(err, edproof.ErrChallengeExpired),
-		errors.Is(err, edproof.ErrChallengeTampered),
-		errors.Is(err, edproof.ErrChallengeFuture),
-		errors.Is(err, edproof.ErrSignatureInvalid),
+	case errors.Is(err, ports.ErrChallengeExpired),
+		errors.Is(err, ports.ErrChallengeTampered),
+		errors.Is(err, ports.ErrChallengeFuture),
+		errors.Is(err, ports.ErrSignatureInvalid),
 		errors.Is(err, ports.ErrInvalidKeyProof):
 		writeError(w, http.StatusUnauthorized, err)
 	default:
@@ -1266,7 +1265,7 @@ func (h *Handler) handleReprovisionMailbox(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, errors.New("mailbox_id, owner_email, public_key, and expires_at are required"))
 		return
 	}
-	fingerprint, err := edproof.FingerprintFromPubkey(req.PublicKey)
+	fingerprint, err := h.challengeAuth.FingerprintFromPubkey(req.PublicKey)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid public_key: %w", err))
 		return

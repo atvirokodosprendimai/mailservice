@@ -15,14 +15,26 @@ var (
 	ErrForbidden        = errors.New("forbidden")
 	ErrAccountExists    = errors.New("account already exists")
 	ErrRecoveryNotFound = errors.New("recovery not found")
-	ErrRecoveryInvalid  = errors.New("recovery code invalid")
-	ErrRecoveryExpired  = errors.New("recovery code expired")
+	ErrRecoveryInvalid  = errors.New("recovery failed")
+	ErrRecoveryExpired  = errors.New("recovery failed")
 	ErrRateLimitReached = errors.New("rate limit reached")
-	ErrRefreshNotFound  = errors.New("refresh token not found")
-	ErrRefreshExpired   = errors.New("refresh token expired")
+	ErrRefreshNotFound  = errors.New("authentication failed")
+	ErrRefreshExpired   = errors.New("authentication failed")
 	ErrMessageNotFound  = errors.New("message not found")
-	ErrInvalidKeyProof  = errors.New("invalid key proof")
+	ErrInvalidKeyProof   = errors.New("invalid key proof")
+	ErrChallengeExpired  = errors.New("challenge expired")
+	ErrChallengeTampered = errors.New("challenge tampered or invalid")
+	ErrChallengeFuture   = errors.New("challenge timestamp is in the future")
+	ErrSignatureInvalid  = errors.New("signature verification failed")
 )
+
+// ChallengeAuthenticator generates and verifies challenge-response proofs.
+type ChallengeAuthenticator interface {
+	GenerateChallenge(pubkey string, now time.Time) (string, error)
+	VerifyChallenge(challenge, pubkey string, maxAge time.Duration, now time.Time) error
+	VerifySignature(challenge, pubkey, signature string) error
+	FingerprintFromPubkey(pubkey string) (string, error)
+}
 
 type MailboxRepository interface {
 	Create(ctx context.Context, mailbox *domain.Mailbox) error

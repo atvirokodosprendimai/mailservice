@@ -100,7 +100,7 @@ func main() {
 		MailboxService:      mailboxService,
 		AccountService:      accountService,
 		Logger:              log.Default(),
-		EdproofHMACSecret:   []byte(cfg.EdproofHMACSecret),
+		ChallengeAuth:       edproof.NewAuthenticator([]byte(cfg.EdproofHMACSecret)),
 	})
 
 	httpServer := &http.Server{

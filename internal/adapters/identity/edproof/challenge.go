@@ -15,14 +15,35 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 )
 
-var (
-	ErrChallengeExpired  = errors.New("challenge expired")
-	ErrChallengeTampered = errors.New("challenge tampered or invalid")
-	ErrChallengeFuture   = errors.New("challenge timestamp is in the future")
-	ErrSignatureInvalid  = errors.New("signature verification failed")
-)
+// Authenticator implements ports.ChallengeAuthenticator using Ed25519 + HMAC-SHA256.
+type Authenticator struct {
+	secret []byte
+}
+
+// NewAuthenticator creates a ChallengeAuthenticator backed by the given HMAC secret.
+func NewAuthenticator(secret []byte) *Authenticator {
+	return &Authenticator{secret: secret}
+}
+
+func (a *Authenticator) GenerateChallenge(pubkey string, now time.Time) (string, error) {
+	return GenerateChallenge(pubkey, a.secret, now)
+}
+
+func (a *Authenticator) VerifyChallenge(challenge, pubkey string, maxAge time.Duration, now time.Time) error {
+	return verifyChallengeWithSecret(challenge, pubkey, a.secret, maxAge, now)
+}
+
+func (a *Authenticator) VerifySignature(challenge, pubkey, signature string) error {
+	return VerifySignature(challenge, pubkey, signature)
+}
+
+func (a *Authenticator) FingerprintFromPubkey(pubkey string) (string, error) {
+	return FingerprintFromPubkey(pubkey)
+}
 
 const (
 	challengeVersion  = "v1"
@@ -54,33 +75,38 @@ func GenerateChallenge(pubkey string, secret []byte, now time.Time) (string, err
 }
 
 // VerifyChallenge checks the HMAC authenticity and timestamp freshness of a challenge.
+// Deprecated: Use Authenticator.VerifyChallenge instead.
 func VerifyChallenge(challenge string, pubkey string, secret []byte, maxAge time.Duration, now time.Time) error {
+	return verifyChallengeWithSecret(challenge, pubkey, secret, maxAge, now)
+}
+
+func verifyChallengeWithSecret(challenge string, pubkey string, secret []byte, maxAge time.Duration, now time.Time) error {
 	parts := strings.SplitN(challenge, ".", 4)
 	if len(parts) != 4 {
-		return ErrChallengeTampered
+		return ports.ErrChallengeTampered
 	}
 	version, tsStr, nonceHex, macHex := parts[0], parts[1], parts[2], parts[3]
 
 	if version != challengeVersion {
-		return ErrChallengeTampered
+		return ports.ErrChallengeTampered
 	}
 
 	ts, err := strconv.ParseInt(tsStr, 10, 64)
 	if err != nil {
-		return ErrChallengeTampered
+		return ports.ErrChallengeTampered
 	}
 
 	challengeTime := time.Unix(ts, 0)
 	if now.Sub(challengeTime) > maxAge {
-		return ErrChallengeExpired
+		return ports.ErrChallengeExpired
 	}
 	if challengeTime.Sub(now) > maxClockSkew {
-		return ErrChallengeFuture
+		return ports.ErrChallengeFuture
 	}
 
 	blob, err := extractPubkeyBlob(pubkey)
 	if err != nil {
-		return ErrChallengeTampered
+		return ports.ErrChallengeTampered
 	}
 
 	hmacInput := challengeVersion + "." + tsStr + "." + nonceHex + "." + blob
@@ -88,11 +114,11 @@ func VerifyChallenge(challenge string, pubkey string, secret []byte, maxAge time
 
 	gotMAC, err := hex.DecodeString(macHex)
 	if err != nil {
-		return ErrChallengeTampered
+		return ports.ErrChallengeTampered
 	}
 
 	if !hmac.Equal(gotMAC, expectedMAC) {
-		return ErrChallengeTampered
+		return ports.ErrChallengeTampered
 	}
 
 	return nil
@@ -109,12 +135,12 @@ func VerifySignature(challenge string, pubkey string, signatureB64 string) error
 	}
 
 	if len(signatureB64) > 1024 {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 
 	sig, err := base64.StdEncoding.DecodeString(signatureB64)
 	if err != nil {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 
 	// Detect SSHSIG format (starts with "SSHSIG" magic)
@@ -124,10 +150,10 @@ func VerifySignature(challenge string, pubkey string, signatureB64 string) error
 
 	// Raw Ed25519 signature
 	if len(sig) != ed25519.SignatureSize {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	if !ed25519.Verify(rawKey, []byte(challenge), sig) {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	return nil
 }
@@ -158,54 +184,54 @@ func verifySSHSig(pubkey ed25519.PublicKey, message []byte, blob []byte) error {
 
 	// Magic
 	if len(r) < 6 || string(r[:6]) != sshsigMagic {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	r = r[6:]
 
 	// Version
 	if len(r) < 4 {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	version := binary.BigEndian.Uint32(r[:4])
 	if version != 1 {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	r = r[4:]
 
 	// Public key (skip — we use the one from the request)
 	r, err := skipSSHString(r)
 	if err != nil {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 
 	// Namespace
 	var namespace []byte
 	namespace, r, err = readSSHString(r)
 	if err != nil {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	if string(namespace) != sshsigNamespace {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 
 	// Reserved (skip)
 	r, err = skipSSHString(r)
 	if err != nil {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 
 	// Hash algorithm
 	var hashAlgo []byte
 	hashAlgo, r, err = readSSHString(r)
 	if err != nil {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 
 	// Signature blob (SSH signature wire format)
 	var sigBlob []byte
 	sigBlob, _, err = readSSHString(r)
 	if err != nil {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 
 	// Extract raw Ed25519 signature from SSH signature blob
@@ -213,18 +239,18 @@ func verifySSHSig(pubkey ed25519.PublicKey, message []byte, blob []byte) error {
 	var keyType []byte
 	keyType, sigBlob, err = readSSHString(sigBlob)
 	if err != nil {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	if string(keyType) != "ssh-ed25519" {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	var rawSig []byte
 	rawSig, _, err = readSSHString(sigBlob)
 	if err != nil {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	if len(rawSig) != ed25519.SignatureSize {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 
 	// Compute the hash of the message
@@ -237,14 +263,14 @@ func verifySSHSig(pubkey ed25519.PublicKey, message []byte, blob []byte) error {
 		h := sha256.Sum256(message)
 		messageHash = h[:]
 	default:
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 
 	// Reconstruct the signed data
 	signedData := buildSSHSigSignedData(string(namespace), string(hashAlgo), messageHash)
 
 	if !ed25519.Verify(pubkey, signedData, rawSig) {
-		return ErrSignatureInvalid
+		return ports.ErrSignatureInvalid
 	}
 	return nil
 }
