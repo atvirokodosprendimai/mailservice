@@ -9,9 +9,8 @@ import (
 	"github.com/atvirokodosprendimai/mailservice/internal/platform/database"
 )
 
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
 func TestMailboxRepositoryPersistsBillingEmailAndKeyFingerprint(t *testing.T) {
-	t.Parallel()
-
 	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
 	if err != nil {
 		t.Fatalf("OpenAndMigrate failed: %v", err)
@@ -58,9 +57,8 @@ func TestMailboxRepositoryPersistsBillingEmailAndKeyFingerprint(t *testing.T) {
 	}
 }
 
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
 func TestMailboxRepositoryFallsBackBillingEmailToOwnerEmail(t *testing.T) {
-	t.Parallel()
-
 	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
 	if err != nil {
 		t.Fatalf("OpenAndMigrate failed: %v", err)

@@ -70,7 +70,7 @@ http_json() {
   local status
 
   if [[ -n "$data" ]]; then
-    status="$(curl --silent --show-error \
+    status="$(curl --silent --show-error --max-time 30 \
       --request "$method" \
       --header 'Content-Type: application/json' \
       --data "$data" \
@@ -78,7 +78,7 @@ http_json() {
       --write-out '%{http_code}' \
       "$url")"
   else
-    status="$(curl --silent --show-error \
+    status="$(curl --silent --show-error --max-time 30 \
       --request "$method" \
       --output "$body_file" \
       --write-out '%{http_code}' \

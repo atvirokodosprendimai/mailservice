@@ -827,7 +827,9 @@ func TestClaimWithChallengeResponseFullFlow(t *testing.T) {
 	}
 
 	var challengeResp map[string]any
-	json.Unmarshal(challengeRec.Body.Bytes(), &challengeResp)
+	if err := json.Unmarshal(challengeRec.Body.Bytes(), &challengeResp); err != nil {
+		t.Fatalf("decode challenge response: %v", err)
+	}
 	challenge := challengeResp["challenge"].(string)
 
 	// Step 2: Sign challenge
@@ -883,7 +885,9 @@ func TestClaimRejectsMissingChallenge(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
 	if !strings.Contains(resp["error"], "challenge-response") {
 		t.Fatalf("expected challenge-response error message, got %q", resp["error"])
 	}
@@ -942,7 +946,9 @@ func TestResolveWithChallengeResponseFullFlow(t *testing.T) {
 	handler.Routes().ServeHTTP(challengeRec, challengeReq)
 
 	var challengeResp map[string]any
-	json.Unmarshal(challengeRec.Body.Bytes(), &challengeResp)
+	if err := json.Unmarshal(challengeRec.Body.Bytes(), &challengeResp); err != nil {
+		t.Fatalf("decode challenge response: %v", err)
+	}
 	challenge := challengeResp["challenge"].(string)
 
 	// Step 2: Sign and resolve
@@ -959,7 +965,9 @@ func TestResolveWithChallengeResponseFullFlow(t *testing.T) {
 	}
 
 	var resp map[string]any
-	json.Unmarshal(resolveRec.Body.Bytes(), &resp)
+	if err := json.Unmarshal(resolveRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode resolve response: %v", err)
+	}
 	if resp["email"] != "mbx_cr@mail.test.local" {
 		t.Fatalf("expected email mbx_cr@mail.test.local, got %v", resp["email"])
 	}
@@ -1000,7 +1008,9 @@ func TestResolveRejectsWrongSignature(t *testing.T) {
 	handler.Routes().ServeHTTP(challengeRec, challengeReq)
 
 	var challengeResp map[string]any
-	json.Unmarshal(challengeRec.Body.Bytes(), &challengeResp)
+	if err := json.Unmarshal(challengeRec.Body.Bytes(), &challengeResp); err != nil {
+		t.Fatalf("decode challenge response: %v", err)
+	}
 	challenge := challengeResp["challenge"].(string)
 
 	// Sign with wrong key
@@ -1014,5 +1024,71 @@ func TestResolveRejectsWrongSignature(t *testing.T) {
 
 	if resolveRec.Code != 401 {
 		t.Fatalf("expected 401, got %d body=%s", resolveRec.Code, resolveRec.Body.String())
+	}
+}
+
+func TestHandleStripeWebhookRejectsWhenSecretNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(Config{
+		MailboxService: service.NewMailboxService(
+			&httpMailboxRepo{},
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+		// StripeWebhookSecret intentionally empty
+	})
+
+	req := httptest.NewRequest("POST", "/v1/webhooks/stripe", strings.NewReader(`{}`))
+	req.Header.Set("Stripe-Signature", "t=1700000000,v1=fake")
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 503 {
+		t.Fatalf("expected 503 when stripe secret is empty, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlePolarWebhookRejectsWhenSecretNotConfigured(t *testing.T) {
+	t.Parallel()
+
+	handler := NewHandler(Config{
+		PolarWebhookSecret: "", // intentionally empty
+		PaymentGateway:     &httpPaymentGateway{},
+		MailboxService: service.NewMailboxService(
+			&httpMailboxRepo{},
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return time.Unix(1700000000, 0).UTC() },
+	})
+
+	req := httptest.NewRequest("POST", "/v1/webhooks/polar", strings.NewReader(`{"type":"checkout.updated","data":{"id":"polar_1"}}`))
+	req.Header.Set("webhook-id", "msg_1")
+	req.Header.Set("webhook-timestamp", "1700000000")
+	req.Header.Set("webhook-signature", "v1,anything")
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 401 && rec.Code != 500 && rec.Code != 503 {
+		t.Fatalf("expected rejection when polar secret is empty, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
