@@ -1,8 +1,9 @@
 name: Periodic Smoke Test
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
+  # Disabled — smoke tests hitting production DB (see todo - 2603110050)
+  # schedule:
+  #   - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       auto_pay:
