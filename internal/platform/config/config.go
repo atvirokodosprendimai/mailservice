@@ -14,6 +14,7 @@ type Config struct {
 	DatabaseDSN         string
 	TursoDatabaseURL    string
 	TursoAuthToken      string
+	AdminAPIKey         string
 	MaxConcurrentReqs   int
 	BuildNumber         string
 	CacheBuster         string
@@ -76,6 +77,7 @@ func Load() (*Config, error) {
 		DatabaseDSN:         getEnv("DATABASE_DSN", "mailservice.db"),
 		TursoDatabaseURL:    os.Getenv("TURSO_DATABASE_URL"),
 		TursoAuthToken:      os.Getenv("TURSO_AUTH_TOKEN"),
+		AdminAPIKey:         os.Getenv("ADMIN_API_KEY"),
 		MaxConcurrentReqs:   getEnvInt("MAX_CONCURRENT_REQUESTS", 100),
 		BuildNumber:         getEnv("BUILD_NUMBER", "dev"),
 		CacheBuster:         getEnv("CACHE_BUSTER", ""),

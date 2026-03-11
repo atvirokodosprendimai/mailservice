@@ -21,6 +21,7 @@ import (
 )
 
 type Config struct {
+	AdminAPIKey         string
 	StripeWebhookSecret string
 	PolarWebhookSecret  string
 	MaxConcurrentReqs   int
@@ -35,6 +36,7 @@ type Config struct {
 }
 
 type Handler struct {
+	adminAPIKey         string
 	stripeWebhookSecret string
 	polarWebhookSecret  string
 	concurrencySem      chan struct{}
@@ -57,6 +59,7 @@ func NewHandler(cfg Config) *Handler {
 	}
 
 	return &Handler{
+		adminAPIKey:         cfg.AdminAPIKey,
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
 		polarWebhookSecret:  cfg.PolarWebhookSecret,
 		concurrencySem:      sem,
@@ -91,6 +94,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/imap/messages", h.handleListIMAPMessages)
 	mux.HandleFunc("POST /v1/imap/messages/get", h.handleGetIMAPMessageByUID)
 	mux.HandleFunc("POST /v1/webhooks/stripe", h.handleStripeWebhook)
+	mux.HandleFunc("POST /admin/mailboxes/reprovision", h.withAdminKey(h.handleReprovisionMailbox))
 	mux.HandleFunc("GET /mock/pay/{sessionID}", h.handleMockPay)
 	handler := http.Handler(mux)
 	if h.concurrencySem != nil {
@@ -1135,6 +1139,62 @@ func coalesceNow(now func() time.Time) func() time.Time {
 	return func() time.Time {
 		return time.Now().UTC()
 	}
+}
+
+func (h *Handler) withAdminKey(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if h.adminAPIKey == "" {
+			writeError(w, http.StatusServiceUnavailable, errors.New("admin API not configured"))
+			return
+		}
+		auth := r.Header.Get("Authorization")
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if strings.TrimSpace(token) == "" || token != h.adminAPIKey {
+			writeError(w, http.StatusUnauthorized, errors.New("invalid admin key"))
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (h *Handler) handleReprovisionMailbox(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MailboxID      string `json:"mailbox_id"`
+		OwnerEmail     string `json:"owner_email"`
+		KeyFingerprint string `json:"key_fingerprint"`
+		ExpiresAt      string `json:"expires_at"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.MailboxID == "" || req.OwnerEmail == "" || req.KeyFingerprint == "" || req.ExpiresAt == "" {
+		writeError(w, http.StatusBadRequest, errors.New("mailbox_id, owner_email, key_fingerprint, and expires_at are required"))
+		return
+	}
+	expiresAt, err := time.Parse(time.RFC3339, req.ExpiresAt)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid expires_at (use RFC3339): %w", err))
+		return
+	}
+
+	mailbox, err := h.mailboxService.ReprovisionMailbox(r.Context(), service.ReprovisionRequest{
+		MailboxID:      req.MailboxID,
+		OwnerEmail:     req.OwnerEmail,
+		KeyFingerprint: req.KeyFingerprint,
+		ExpiresAt:      expiresAt,
+	})
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"id":         mailbox.ID,
+		"email":      mailbox.IMAPUsername + "@" + h.mailboxService.MailDomain(),
+		"status":     mailbox.Status,
+		"expires_at": mailbox.ExpiresAt,
+	})
 }
 
 func fallbackString(value string, fallback string) string {

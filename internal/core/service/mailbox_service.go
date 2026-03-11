@@ -513,6 +513,57 @@ func (s *MailboxService) GetMessageByUIDToken(ctx context.Context, accessToken s
 	return message, nil
 }
 
+type ReprovisionRequest struct {
+	MailboxID      string
+	OwnerEmail     string
+	KeyFingerprint string
+	ExpiresAt      time.Time
+}
+
+func (s *MailboxService) ReprovisionMailbox(ctx context.Context, req ReprovisionRequest) (*domain.Mailbox, error) {
+	if _, err := s.repo.GetByID(ctx, req.MailboxID); err == nil {
+		return nil, errors.New("mailbox already exists")
+	}
+
+	imapPassword, err := s.tokenGen.NewToken(16)
+	if err != nil {
+		return nil, fmt.Errorf("generate imap password: %w", err)
+	}
+	accessToken, err := s.tokenGen.NewToken(32)
+	if err != nil {
+		return nil, fmt.Errorf("generate access token: %w", err)
+	}
+
+	now := time.Now().UTC()
+	mailbox := &domain.Mailbox{
+		ID:             req.MailboxID,
+		OwnerEmail:     req.OwnerEmail,
+		BillingEmail:   req.OwnerEmail,
+		KeyFingerprint: req.KeyFingerprint,
+		IMAPHost:       s.imapHost,
+		IMAPPort:       s.imapPort,
+		IMAPUsername:   "mbx_" + strings.ReplaceAll(req.MailboxID[:12], "-", ""),
+		IMAPPassword:   imapPassword,
+		AccessToken:    accessToken,
+		Status:         domain.MailboxStatusActive,
+		PaidAt:         &now,
+		ExpiresAt:      &req.ExpiresAt,
+	}
+
+	if err := s.repo.Create(ctx, mailbox); err != nil {
+		return nil, fmt.Errorf("create mailbox: %w", err)
+	}
+	if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+		return nil, fmt.Errorf("provision mailbox: %w", err)
+	}
+
+	return mailbox, nil
+}
+
+func (s *MailboxService) MailDomain() string {
+	return s.mailDomain
+}
+
 func (s *MailboxService) shouldRewriteLegacyIMAPHost(value string) bool {
 	host := strings.TrimSpace(strings.ToLower(value))
 	if host == "" {
