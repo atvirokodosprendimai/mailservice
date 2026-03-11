@@ -83,6 +83,14 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	edproofSecret := os.Getenv("EDPROOF_HMAC_SECRET")
+	if edproofSecret == "" {
+		return nil, fmt.Errorf("EDPROOF_HMAC_SECRET is required (generate with: openssl rand -hex 32)")
+	}
+	if len(edproofSecret) < 32 {
+		return nil, fmt.Errorf("EDPROOF_HMAC_SECRET must be at least 32 bytes, got %d", len(edproofSecret))
+	}
+
 	return &Config{
 		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
 		DatabaseMode:        dbMode,
@@ -125,7 +133,7 @@ func Load() (*Config, error) {
 		StripeCancelURL:     getEnv("STRIPE_CANCEL_URL", "http://localhost:8080/payment/cancel"),
 		StripeCurrency:      getEnv("STRIPE_CURRENCY", "usd"),
 		MailboxPriceCents:   getEnvInt64("MAILBOX_PRICE_CENTS", 299),
-		EdproofHMACSecret:  os.Getenv("EDPROOF_HMAC_SECRET"),
+		EdproofHMACSecret:  edproofSecret,
 	}, nil
 }
 

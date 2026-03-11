@@ -3,7 +3,6 @@ package edproof
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -67,16 +66,9 @@ func (v *Verifier) Verify(ctx context.Context, rawProof string) (*ports.Verified
 // FingerprintFromPubkey computes the sha256:<hex> fingerprint from an SSH public key line
 // (e.g. "ssh-ed25519 AAAA... comment").
 func FingerprintFromPubkey(pubkey string) (string, error) {
-	parts := strings.Fields(pubkey)
-	if len(parts) < 2 {
-		return "", fmt.Errorf("invalid public key format")
-	}
-	if parts[0] != "ssh-ed25519" {
-		return "", fmt.Errorf("unsupported key type %q, expected ssh-ed25519", parts[0])
-	}
-	keyBlob, err := base64.StdEncoding.DecodeString(parts[1])
+	keyBlob, err := parseSSHPubkey(pubkey)
 	if err != nil {
-		return "", fmt.Errorf("invalid base64 in public key: %w", err)
+		return "", err
 	}
 	hash := sha256.Sum256(keyBlob)
 	return "sha256:" + hex.EncodeToString(hash[:]), nil
