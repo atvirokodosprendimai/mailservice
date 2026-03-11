@@ -48,8 +48,11 @@ func TestHandleHomeReturnsLandingPage(t *testing.T) {
 	if got := rec.Header().Get("Content-Type"); !strings.Contains(got, "text/html") {
 		t.Fatalf("expected text/html content type, got %q", got)
 	}
-	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
-		t.Fatalf("expected no-store cache control, got %q", got)
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("expected no-cache cache control, got %q", got)
+	}
+	if got := rec.Header().Get("ETag"); got != `"1234"` {
+		t.Fatalf("expected ETag %q, got %q", `"1234"`, got)
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
@@ -70,6 +73,53 @@ func TestHandleHomeReturnsLandingPage(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected homepage to contain %q, body=%s", want, body)
 		}
+	}
+}
+
+func TestHandleHomeReturns304OnMatchingETag(t *testing.T) {
+	handler := NewHandler(Config{
+		BuildNumber: "build-99",
+		Logger:      log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("If-None-Match", `"build-99"`)
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 304 {
+		t.Fatalf("expected 304, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("ETag"); got != `"build-99"` {
+		t.Fatalf("expected ETag %q, got %q", `"build-99"`, got)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("expected empty body on 304, got %d bytes", rec.Body.Len())
+	}
+}
+
+func TestHandleHomeReturns200OnStaleETag(t *testing.T) {
+	handler := NewHandler(Config{
+		BuildNumber: "build-100",
+		CacheBuster: "build-100",
+		Logger:      log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("If-None-Match", `"build-99"`)
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("ETag"); got != `"build-100"` {
+		t.Fatalf("expected ETag %q, got %q", `"build-100"`, got)
+	}
+	if !strings.Contains(rec.Body.String(), "Stable mailbox identity") {
+		t.Fatalf("expected full homepage body on 200")
 	}
 }
 
