@@ -34,15 +34,17 @@ func main() {
 		log.Fatalf("local database init: %v", err)
 	}
 
-	// App database — Turso if configured, otherwise local SQLite
+	// App database — explicit mode selection, no silent fallback
 	var db = localDB
-	if cfg.TursoDatabaseURL != "" {
+	if cfg.DatabaseMode == "turso" {
 		tursoDB, err := database.OpenTurso(cfg.TursoDatabaseURL, cfg.TursoAuthToken)
 		if err != nil {
 			log.Fatalf("turso database init: %v", err)
 		}
 		db = tursoDB
-		log.Printf("turso database enabled: %s", cfg.TursoDatabaseURL)
+		log.Printf("database mode: turso (%s)", cfg.TursoDatabaseURL)
+	} else {
+		log.Printf("database mode: local (%s)", cfg.DatabaseDSN)
 	}
 
 	mailboxRepo := repository.NewMailboxRepository(db)
