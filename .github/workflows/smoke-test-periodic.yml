@@ -33,7 +33,7 @@ jobs:
           BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
 
   smoke-sandbox:
-    if: github.event.inputs.auto_pay == 'true' || github.event_name == 'schedule'
+    if: inputs.auto_pay == 'true' || github.event.inputs.auto_pay == 'true' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     environment:
       name: smoke
