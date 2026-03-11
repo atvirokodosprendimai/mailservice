@@ -2,6 +2,11 @@ name: Periodic Smoke Test
 
 on:
   workflow_call:
+    inputs:
+      auto_pay:
+        type: string
+        required: false
+        default: "true"
   workflow_dispatch:
     inputs:
       auto_pay:
@@ -28,7 +33,7 @@ jobs:
           BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
 
   smoke-sandbox:
-    if: github.event.inputs.auto_pay == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_call'
+    if: github.event.inputs.auto_pay == 'true' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     environment:
       name: smoke
