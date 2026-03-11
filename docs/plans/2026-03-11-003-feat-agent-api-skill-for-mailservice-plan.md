@@ -54,17 +54,17 @@ A single markdown skill file at `docs/agent-api-skill.md` that an agent can load
 
 ## Acceptance Criteria
 
-- [ ] `docs/agent-api-skill.md` exists and covers the full lifecycle
-- [ ] Key generation: `ssh-keygen -t ed25519` with correct flags
-- [ ] Challenge-response: exact 3-step flow with all JSON fields
-- [ ] Signature handling: newline stripping, base64 armor removal, both raw and SSHSIG formats
-- [ ] Payment: what `payment_url` means, how to wait for activation
-- [ ] Access resolution: IMAP credentials extraction
-- [ ] Message reading: list and get endpoints with access tokens
-- [ ] Error reference: every error message the API returns → what to do
-- [ ] 30-second challenge TTL documented with retry guidance
+- [x] `docs/agent-api-skill.md` exists and covers the full lifecycle
+- [x] Key generation: `ssh-keygen -t ed25519` with correct flags
+- [x] Challenge-response: exact 3-step flow with all JSON fields
+- [x] Signature handling: newline stripping, base64 armor removal, both raw and SSHSIG formats
+- [x] Payment: what `payment_url` means, how to wait for activation
+- [x] Access resolution: IMAP credentials extraction
+- [x] Message reading: list and get endpoints with access tokens
+- [x] Error reference: every error message the API returns → what to do
+- [x] 30-second challenge TTL documented with retry guidance
 - [ ] Tested: an agent can follow the skill end-to-end against a running instance
-- [ ] Homepage prompt (`handler.go`) updated to reference the skill or include key improvements
+- [x] Homepage prompt (`handler.go`) updated to reference the skill or include key improvements
 
 ## Implementation Phases
 
@@ -72,22 +72,22 @@ A single markdown skill file at `docs/agent-api-skill.md` that an agent can load
 
 File: `docs/agent-api-skill.md`
 
-- [ ] Prerequisites section (key generation, key reuse rules)
-- [ ] Full claim flow with exact JSON payloads and curl commands
-- [ ] Signature creation section (both `ssh-keygen -Y sign` and raw Ed25519)
-- [ ] Payment handling (what to do with `payment_url`, polling for status)
-- [ ] Access resolution flow
-- [ ] Message reading (list messages, get message by UID)
-- [ ] Error reference table (HTTP status + error message → action)
-- [ ] Decision tree for "do I need a new key or reuse existing?"
+- [x] Prerequisites section (key generation, key reuse rules)
+- [x] Full claim flow with exact JSON payloads and curl commands
+- [x] Signature creation section (both `ssh-keygen -Y sign` and raw Ed25519)
+- [x] Payment handling (what to do with `payment_url`, polling for status)
+- [x] Access resolution flow
+- [x] Message reading (list messages, get message by UID)
+- [x] Error reference table (HTTP status + error message → action)
+- [x] Decision tree for "do I need a new key or reuse existing?"
 
 ### Phase 2: Update homepage prompt
 
 File: `internal/adapters/httpapi/handler.go`
 
-- [ ] Improve the embedded agent prompt (lines 404-414) with the most critical guidance
-- [ ] Add signature newline warning
-- [ ] Reference the skill document URL if the service has a docs endpoint
+- [x] Improve the embedded agent prompt (lines 404-414) with the most critical guidance
+- [x] Add signature newline warning
+- [x] Reference the skill document URL if the service has a docs endpoint
 
 ### Phase 3: Validate
 

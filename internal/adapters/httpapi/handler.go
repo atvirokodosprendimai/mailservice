@@ -401,16 +401,38 @@ curl -v --url "imaps://mail.truevipaccess.com:993/INBOX" \
 </html>
 `
 
-const homePageAgentPrompt = `If no EdProof key exists locally, generate an Ed25519 key pair with: ssh-keygen -t ed25519 -f identity -C "entity@context"
-Use identity.pub as the public key and keep identity private.
-EdProof is the key proof used to identify the mailbox.
-If the same mailbox is required, reuse the same EdProof key.
+const homePageAgentPrompt = `## Agent Instructions — TrueVIP Access Mailbox API
 
-To claim or resolve access:
-1. POST /v1/auth/challenge with {"public_key": "ssh-ed25519 AAAA..."} to get a challenge string.
-2. Sign the challenge with the private key: echo -n "$CHALLENGE" | ssh-keygen -Y sign -f identity -n edproof
-3. POST /v1/mailboxes/claim or /v1/access/resolve with {"edproof": "ssh-ed25519 AAAA...", "challenge": "$CHALLENGE", "signature": "$BASE64_SIG"}.
-The challenge expires after 30 seconds. Request a new one if it expires.
+Full skill document: GET /docs/agent-api-skill.md (or read docs/agent-api-skill.md from the repo).
+
+### Quick Start
+
+1. Generate an Ed25519 key (or reuse an existing one — same key = same mailbox):
+   ssh-keygen -t ed25519 -f identity -N "" -C "agent@context"
+
+2. Get a challenge (expires in 30 seconds):
+   POST /v1/auth/challenge {"public_key": "ssh-ed25519 AAAA..."}
+
+3. Sign the challenge — IMPORTANT: strip armor headers and newlines:
+   SIGNATURE=$(echo -n "$CHALLENGE" | ssh-keygen -Y sign -f identity -n edproof | sed '1d;$d' | tr -d '\n')
+   The namespace MUST be "edproof" (-n edproof). The signature MUST be a single base64 line without BEGIN/END headers.
+
+4. Claim a mailbox:
+   POST /v1/mailboxes/claim {"billing_email":"...","edproof":"ssh-ed25519 AAAA...","challenge":"...","signature":"..."}
+   If "usable":true → access_token is in the response. If "usable":false → present payment_url to user.
+
+5. After payment, get a NEW challenge, sign it, then resolve access:
+   POST /v1/access/resolve {"protocol":"imap","edproof":"ssh-ed25519 AAAA...","challenge":"...","signature":"..."}
+   Returns IMAP host, port, username, password, and access_token.
+
+6. Read messages (no IMAP library needed):
+   POST /v1/imap/messages {"access_token":"...","unread_only":true,"include_body":true}
+   POST /v1/imap/messages/get {"access_token":"...","uid":1,"include_body":true}
+
+### Common Errors
+- "challenge expired" → get a new challenge (30s TTL)
+- "signature verification failed" → check: (1) signed exact challenge string (2) used -n edproof (3) stripped armor+newlines
+- 409 "waiting_payment" → payment not yet completed
 Do not ask the operator unless key generation is impossible or the same mailbox is required but the existing key is unavailable.`
 
 type createAccountRequest struct {
