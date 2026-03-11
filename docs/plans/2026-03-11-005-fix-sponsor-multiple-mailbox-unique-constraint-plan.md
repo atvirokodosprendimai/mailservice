@@ -1,7 +1,7 @@
 ---
 title: "fix: Sponsor cannot create more than one mailbox"
 type: fix
-status: active
+status: completed
 date: 2026-03-11
 ---
 
@@ -50,12 +50,12 @@ The `stripe_session_id` needs the same treatment.
 
 ## Acceptance Criteria
 
-- [ ] An account with an active subscription can create 2+ mailboxes without error
-- [ ] Unique constraint still prevents duplicate non-empty `stripe_session_id` values
-- [ ] Existing migration is not modified (new migration only)
-- [ ] Service-level test `TestCreateMailboxMultipleForSponsoredAccount` passes
-- [ ] Integration test against real SQLite DB confirms no constraint violation
-- [ ] All existing tests still pass
+- [x] An account with an active subscription can create 2+ mailboxes without error
+- [x] Unique constraint still prevents duplicate non-empty `stripe_session_id` values
+- [x] Existing migration is not modified (new migration only)
+- [x] Service-level test `TestCreateMailboxMultipleForSponsoredAccount` passes
+- [x] Integration test against real SQLite DB confirms no constraint violation
+- [x] All existing tests still pass
 
 ## MVP
 

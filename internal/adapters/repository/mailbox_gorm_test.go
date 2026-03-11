@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -89,5 +90,39 @@ func TestMailboxRepositoryFallsBackBillingEmailToOwnerEmail(t *testing.T) {
 	}
 	if stored.BillingEmail != "owner@example.com" {
 		t.Fatalf("expected billing email fallback, got %q", stored.BillingEmail)
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryAllowsMultipleEmptyPaymentSessionIDs(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+	for i, id := range []string{"mbx-a", "mbx-b"} {
+		mailbox := &domain.Mailbox{
+			ID:           id,
+			AccountID:    "acc-sponsor",
+			OwnerEmail:   "sponsor@example.com",
+			IMAPHost:     "imap.example.com",
+			IMAPPort:     143,
+			IMAPUsername: fmt.Sprintf("mbx_%d", i),
+			IMAPPassword: "secret",
+			AccessToken:  fmt.Sprintf("access-%d", i),
+			Status:       domain.MailboxStatusActive,
+		}
+		if err := repo.Create(context.Background(), mailbox); err != nil {
+			t.Fatalf("Create mailbox %s failed: %v", id, err)
+		}
+	}
+
+	mailboxes, err := repo.ListByAccountID(context.Background(), "acc-sponsor")
+	if err != nil {
+		t.Fatalf("ListByAccountID failed: %v", err)
+	}
+	if len(mailboxes) != 2 {
+		t.Fatalf("expected 2 mailboxes, got %d", len(mailboxes))
 	}
 }

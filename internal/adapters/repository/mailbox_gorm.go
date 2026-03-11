@@ -23,7 +23,7 @@ type mailboxModel struct {
 	IMAPUsername     string `gorm:"not null;uniqueIndex"`
 	IMAPPassword     string `gorm:"not null"`
 	AccessToken      string `gorm:"not null;uniqueIndex"`
-	PaymentSessionID string `gorm:"column:stripe_session_id;not null;uniqueIndex"`
+	PaymentSessionID string `gorm:"column:stripe_session_id;not null"`
 	PaymentURL       string `gorm:"not null"`
 	Status           string `gorm:"not null;index"`
 	PaidAt           *time.Time

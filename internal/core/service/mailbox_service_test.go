@@ -634,6 +634,42 @@ func TestGetMessageByUIDTokenReturnsSingleMessage(t *testing.T) {
 	}
 }
 
+func TestCreateMailboxMultipleForSponsoredAccount(t *testing.T) {
+	now := time.Now().UTC().Add(24 * time.Hour)
+	repo := &fakeMailboxRepo{}
+	payment := &fakePaymentGateway{}
+	provisioner := &fakeMailRuntimeProvisioner{}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	account := &domain.Account{ID: "acc-1", OwnerEmail: "sponsor@example.com", SubscriptionExpiresAt: &now}
+
+	first, created1, err := svc.CreateMailbox(context.Background(), CreateMailboxRequest{Account: account})
+	if err != nil {
+		t.Fatalf("first CreateMailbox failed: %v", err)
+	}
+	if !created1 {
+		t.Fatalf("expected first mailbox to be newly created")
+	}
+
+	second, created2, err := svc.CreateMailbox(context.Background(), CreateMailboxRequest{Account: account})
+	if err != nil {
+		t.Fatalf("second CreateMailbox failed: %v", err)
+	}
+	if !created2 {
+		t.Fatalf("expected second mailbox to be newly created")
+	}
+
+	if first.ID == second.ID {
+		t.Fatalf("expected different mailbox IDs, both are %q", first.ID)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment link creation, got %d", payment.calls)
+	}
+	if provisioner.calls != 2 {
+		t.Fatalf("expected two provisions, got %d", provisioner.calls)
+	}
+}
+
 type fakeMailboxRepo struct {
 	pendingByAccount map[string]*domain.Mailbox
 	created          []*domain.Mailbox
