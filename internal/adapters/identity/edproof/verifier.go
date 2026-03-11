@@ -64,25 +64,33 @@ func (v *Verifier) Verify(ctx context.Context, rawProof string) (*ports.Verified
 	return key, nil
 }
 
+// FingerprintFromPubkey computes the sha256:<hex> fingerprint from an SSH public key line
+// (e.g. "ssh-ed25519 AAAA... comment").
+func FingerprintFromPubkey(pubkey string) (string, error) {
+	parts := strings.Fields(pubkey)
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid public key format")
+	}
+	if parts[0] != "ssh-ed25519" {
+		return "", fmt.Errorf("unsupported key type %q, expected ssh-ed25519", parts[0])
+	}
+	keyBlob, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", fmt.Errorf("invalid base64 in public key: %w", err)
+	}
+	hash := sha256.Sum256(keyBlob)
+	return "sha256:" + hex.EncodeToString(hash[:]), nil
+}
+
 type localBackend struct{}
 
 func (localBackend) Verify(_ context.Context, rawProof string) (*BackendResult, error) {
-	parts := strings.Fields(rawProof)
-	if len(parts) < 2 {
-		return nil, ports.ErrInvalidKeyProof
-	}
-	if parts[0] != "ssh-ed25519" {
-		return nil, ports.ErrInvalidKeyProof
-	}
-
-	keyBlob, err := base64.StdEncoding.DecodeString(parts[1])
+	fingerprint, err := FingerprintFromPubkey(rawProof)
 	if err != nil {
 		return nil, ports.ErrInvalidKeyProof
 	}
-
-	fingerprint := sha256.Sum256(keyBlob)
 	return &BackendResult{
-		Fingerprint: "sha256:" + hex.EncodeToString(fingerprint[:]),
+		Fingerprint: fingerprint,
 		Algorithm:   "ed25519",
 	}, nil
 }

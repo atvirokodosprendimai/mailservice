@@ -521,8 +521,22 @@ type ReprovisionRequest struct {
 }
 
 func (s *MailboxService) ReprovisionMailbox(ctx context.Context, req ReprovisionRequest) (*domain.Mailbox, error) {
-	if _, err := s.repo.GetByID(ctx, req.MailboxID); err == nil {
-		return nil, errors.New("mailbox already exists")
+	now := time.Now().UTC()
+
+	if existing, err := s.repo.GetByID(ctx, req.MailboxID); err == nil {
+		existing.OwnerEmail = req.OwnerEmail
+		existing.BillingEmail = req.OwnerEmail
+		existing.KeyFingerprint = req.KeyFingerprint
+		existing.Status = domain.MailboxStatusActive
+		existing.PaidAt = &now
+		existing.ExpiresAt = &req.ExpiresAt
+		if err := s.repo.Update(ctx, existing); err != nil {
+			return nil, fmt.Errorf("update mailbox: %w", err)
+		}
+		if err := s.provisioner.EnsureMailbox(ctx, existing); err != nil {
+			return nil, fmt.Errorf("provision mailbox: %w", err)
+		}
+		return existing, nil
 	}
 
 	imapPassword, err := s.tokenGen.NewToken(16)
@@ -534,7 +548,6 @@ func (s *MailboxService) ReprovisionMailbox(ctx context.Context, req Reprovision
 		return nil, fmt.Errorf("generate access token: %w", err)
 	}
 
-	now := time.Now().UTC()
 	mailbox := &domain.Mailbox{
 		ID:             req.MailboxID,
 		OwnerEmail:     req.OwnerEmail,
