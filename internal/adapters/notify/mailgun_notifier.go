@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -46,21 +47,21 @@ func NewMailgunNotifier(apiKey, domain, baseURL, fromEmail, fromName string) (*M
 
 func (n *MailgunNotifier) SendPaymentLink(ctx context.Context, ownerEmail string, paymentURL string, mailboxID string) error {
 	subject := "Action needed: complete mailbox payment"
-	html := fmt.Sprintf(
+	body := fmt.Sprintf(
 		"<p>Mailbox <strong>%s</strong> is waiting for payment.</p><p><a href=\"%s\">Complete payment</a></p>",
-		mailboxID,
-		paymentURL,
+		html.EscapeString(mailboxID),
+		html.EscapeString(paymentURL),
 	)
-	return n.send(ctx, ownerEmail, subject, html)
+	return n.send(ctx, ownerEmail, subject, body)
 }
 
 func (n *MailgunNotifier) SendRecoveryLink(ctx context.Context, ownerEmail string, recoveryURL string) error {
 	subject := "Account recovery link"
-	html := fmt.Sprintf(
+	body := fmt.Sprintf(
 		"<p>Open this one-time recovery link to restore access:</p><p><a href=\"%s\">Recover account access</a></p><p>This link expires in 10 minutes.</p>",
-		recoveryURL,
+		html.EscapeString(recoveryURL),
 	)
-	return n.send(ctx, ownerEmail, subject, html)
+	return n.send(ctx, ownerEmail, subject, body)
 }
 
 func (n *MailgunNotifier) send(ctx context.Context, to, subject, html string) error {
