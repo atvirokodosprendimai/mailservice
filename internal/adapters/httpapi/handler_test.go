@@ -74,12 +74,19 @@ func TestHandleHomeReturnsLandingPage(t *testing.T) {
 }
 
 func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+	now := time.Now().UTC()
+
+	challenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
+	sig := ed25519.Sign(priv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
 	repo := &httpMailboxRepo{}
 	handler := NewHandler(Config{
-		KeyProofVerifier: fakeKeyProofVerifier{
-			key: &ports.VerifiedKey{Fingerprint: "edproof:key-1", Algorithm: "ed25519"},
-		},
-		PaymentGateway: &httpPaymentGateway{},
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -93,9 +100,11 @@ func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
 			1143,
 		),
 		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return now },
 	})
 
-	req := httptest.NewRequest("POST", "/v1/mailboxes/claim", strings.NewReader(`{"billing_email":"billing@example.com","edproof":"proof"}`))
+	body := fmt.Sprintf(`{"billing_email":"billing@example.com","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/mailboxes/claim", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
 	handler.Routes().ServeHTTP(rec, req)
@@ -116,10 +125,11 @@ func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
 	}
 }
 
-func TestHandleClaimMailboxRejectsInvalidProof(t *testing.T) {
+func TestHandleClaimMailboxRejectsMissingChallenge(t *testing.T) {
 	handler := NewHandler(Config{
-		KeyProofVerifier: fakeKeyProofVerifier{err: ports.ErrInvalidKeyProof},
-		PaymentGateway:   &httpPaymentGateway{},
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			&httpMailboxRepo{},
 			&httpAccountRepo{},
@@ -140,20 +150,30 @@ func TestHandleClaimMailboxRejectsInvalidProof(t *testing.T) {
 
 	handler.Routes().ServeHTTP(rec, req)
 
-	if rec.Code != 401 {
-		t.Fatalf("expected status 401, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != 400 {
+		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
-	future := time.Now().UTC().Add(time.Hour)
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+	now := time.Now().UTC()
+	future := now.Add(time.Hour)
+
+	fingerprint, _ := edproof.FingerprintFromPubkey(pubkey)
+
+	challenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
+	sig := ed25519.Sign(priv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
 	repo := &httpMailboxRepo{
 		byKeyFingerprint: map[string]*domain.Mailbox{
-			"edproof:key-1": {
+			fingerprint: {
 				ID:             "mbx-1",
-				KeyFingerprint: "edproof:key-1",
+				KeyFingerprint: fingerprint,
 				Status:         domain.MailboxStatusActive,
-				PaidAt:         ptrTime(future.Add(-time.Hour)),
+				PaidAt:         ptrTime(now.Add(-time.Hour)),
 				ExpiresAt:      &future,
 				IMAPHost:       "imap.example.com",
 				IMAPPort:       143,
@@ -163,10 +183,9 @@ func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
 		},
 	}
 	handler := NewHandler(Config{
-		KeyProofVerifier: fakeKeyProofVerifier{
-			key: &ports.VerifiedKey{Fingerprint: "edproof:key-1", Algorithm: "ed25519"},
-		},
-		PaymentGateway: &httpPaymentGateway{},
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -180,9 +199,11 @@ func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
 			1143,
 		),
 		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return now },
 	})
 
-	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(`{"protocol":"imap","edproof":"proof"}`))
+	body := fmt.Sprintf(`{"protocol":"imap","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
 	handler.Routes().ServeHTTP(rec, req)
@@ -200,20 +221,29 @@ func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
 }
 
 func TestHandleResolveAccessReturnsWaitingPaymentForInactiveMailbox(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+	now := time.Now().UTC()
+
+	fingerprint, _ := edproof.FingerprintFromPubkey(pubkey)
+
+	challenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
+	sig := ed25519.Sign(priv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
 	repo := &httpMailboxRepo{
 		byKeyFingerprint: map[string]*domain.Mailbox{
-			"edproof:key-2": {
+			fingerprint: {
 				ID:             "mbx-2",
-				KeyFingerprint: "edproof:key-2",
+				KeyFingerprint: fingerprint,
 				Status:         domain.MailboxStatusPendingPayment,
 			},
 		},
 	}
 	handler := NewHandler(Config{
-		KeyProofVerifier: fakeKeyProofVerifier{
-			key: &ports.VerifiedKey{Fingerprint: "edproof:key-2", Algorithm: "ed25519"},
-		},
-		PaymentGateway: &httpPaymentGateway{},
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -227,9 +257,11 @@ func TestHandleResolveAccessReturnsWaitingPaymentForInactiveMailbox(t *testing.T
 			1143,
 		),
 		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return now },
 	})
 
-	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(`{"protocol":"imap","edproof":"proof"}`))
+	body := fmt.Sprintf(`{"protocol":"imap","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
 	handler.Routes().ServeHTTP(rec, req)
@@ -240,11 +272,18 @@ func TestHandleResolveAccessReturnsWaitingPaymentForInactiveMailbox(t *testing.T
 }
 
 func TestHandleResolveAccessRejectsUnsupportedProtocol(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+	now := time.Now().UTC()
+
+	challenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
+	sig := ed25519.Sign(priv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
 	handler := NewHandler(Config{
-		KeyProofVerifier: fakeKeyProofVerifier{
-			key: &ports.VerifiedKey{Fingerprint: "edproof:key-2", Algorithm: "ed25519"},
-		},
-		PaymentGateway: &httpPaymentGateway{},
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			&httpMailboxRepo{},
 			&httpAccountRepo{},
@@ -258,9 +297,11 @@ func TestHandleResolveAccessRejectsUnsupportedProtocol(t *testing.T) {
 			1143,
 		),
 		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return now },
 	})
 
-	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(`{"protocol":"pop3","edproof":"proof"}`))
+	body := fmt.Sprintf(`{"protocol":"pop3","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
 	handler.Routes().ServeHTTP(rec, req)
@@ -359,18 +400,6 @@ func TestHandlePolarSuccessRejectsUnpaidCheckout(t *testing.T) {
 	if rec.Code != 409 {
 		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
 	}
-}
-
-type fakeKeyProofVerifier struct {
-	key *ports.VerifiedKey
-	err error
-}
-
-func (f fakeKeyProofVerifier) Verify(_ context.Context, _ string) (*ports.VerifiedKey, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.key, nil
 }
 
 type httpMailboxRepo struct {
@@ -510,15 +539,25 @@ func (httpMailReader) GetMessageByUID(_ context.Context, _ string, _ int, _ stri
 }
 
 func TestHandleResolveAccessIncludesAccessToken(t *testing.T) {
-	future := time.Now().UTC().Add(time.Hour)
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+	now := time.Now().UTC()
+	future := now.Add(time.Hour)
+
+	fingerprint, _ := edproof.FingerprintFromPubkey(pubkey)
+
+	challenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
+	sig := ed25519.Sign(priv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
 	repo := &httpMailboxRepo{
 		byKeyFingerprint: map[string]*domain.Mailbox{
-			"edproof:key-1": {
+			fingerprint: {
 				ID:             "mbx-1",
-				KeyFingerprint: "edproof:key-1",
+				KeyFingerprint: fingerprint,
 				AccessToken:    "my-access-token",
 				Status:         domain.MailboxStatusActive,
-				PaidAt:         ptrTime(future.Add(-time.Hour)),
+				PaidAt:         ptrTime(now.Add(-time.Hour)),
 				ExpiresAt:      &future,
 				IMAPHost:       "imap.example.com",
 				IMAPPort:       143,
@@ -528,10 +567,9 @@ func TestHandleResolveAccessIncludesAccessToken(t *testing.T) {
 		},
 	}
 	handler := NewHandler(Config{
-		KeyProofVerifier: fakeKeyProofVerifier{
-			key: &ports.VerifiedKey{Fingerprint: "edproof:key-1", Algorithm: "ed25519"},
-		},
-		PaymentGateway: &httpPaymentGateway{},
+		EdproofHMACSecret: testHMACSecret,
+		KeyProofVerifier:  edproof.NewVerifier(nil),
+		PaymentGateway:    &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -545,9 +583,11 @@ func TestHandleResolveAccessIncludesAccessToken(t *testing.T) {
 			1143,
 		),
 		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return now },
 	})
 
-	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(`{"protocol":"imap","edproof":"proof"}`))
+	body := fmt.Sprintf(`{"protocol":"imap","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/access/resolve", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
 	handler.Routes().ServeHTTP(rec, req)
@@ -697,23 +737,6 @@ func TestHandleAuthChallengeRejectsInvalidKey(t *testing.T) {
 	}
 }
 
-func TestHandleAuthChallengeRejectsWhenNotConfigured(t *testing.T) {
-	t.Parallel()
-
-	handler := NewHandler(Config{
-		Logger: log.New(io.Discard, "", 0),
-	})
-
-	req := httptest.NewRequest("POST", "/v1/auth/challenge", strings.NewReader(`{"public_key":"ssh-ed25519 AAAA test"}`))
-	rec := httptest.NewRecorder()
-
-	handler.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != 503 {
-		t.Fatalf("expected 503, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestClaimWithChallengeResponseFullFlow(t *testing.T) {
 	t.Parallel()
 
@@ -774,7 +797,7 @@ func TestClaimWithChallengeResponseFullFlow(t *testing.T) {
 	_ = fingerprint // used for verification only
 }
 
-func TestClaimRejectsMissingChallengeWhenConfigured(t *testing.T) {
+func TestClaimRejectsMissingChallenge(t *testing.T) {
 	t.Parallel()
 
 	pub, _, _ := ed25519.GenerateKey(nil)

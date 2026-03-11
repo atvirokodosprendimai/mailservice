@@ -407,23 +407,23 @@ func buildTestSSHSig(pub ed25519.PublicKey, priv ed25519.PrivateKey, message []b
 	// Build signed data
 	var signedData bytes.Buffer
 	signedData.WriteString("SSHSIG")
-	writeTestSSHString(&signedData, []byte(namespace))
-	writeTestSSHString(&signedData, nil) // reserved
-	writeTestSSHString(&signedData, []byte("sha512"))
-	writeTestSSHString(&signedData, h[:])
+	writeSSHString(&signedData, []byte(namespace))
+	writeSSHString(&signedData, nil) // reserved
+	writeSSHString(&signedData, []byte("sha512"))
+	writeSSHString(&signedData, h[:])
 
 	// Sign it
 	sig := ed25519.Sign(priv, signedData.Bytes())
 
 	// Build SSH public key wire format
 	var pubKeyBlob bytes.Buffer
-	writeTestSSHString(&pubKeyBlob, []byte("ssh-ed25519"))
-	writeTestSSHString(&pubKeyBlob, pub)
+	writeSSHString(&pubKeyBlob, []byte("ssh-ed25519"))
+	writeSSHString(&pubKeyBlob, pub)
 
 	// Build SSH signature blob (inside the SSHSIG)
 	var sigBlob bytes.Buffer
-	writeTestSSHString(&sigBlob, []byte("ssh-ed25519"))
-	writeTestSSHString(&sigBlob, sig)
+	writeSSHString(&sigBlob, []byte("ssh-ed25519"))
+	writeSSHString(&sigBlob, sig)
 
 	// Build SSHSIG blob
 	var blob bytes.Buffer
@@ -431,21 +431,15 @@ func buildTestSSHSig(pub ed25519.PublicKey, priv ed25519.PrivateKey, message []b
 	versionBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(versionBuf, 1)
 	blob.Write(versionBuf)
-	writeTestSSHString(&blob, pubKeyBlob.Bytes())
-	writeTestSSHString(&blob, []byte(namespace))
-	writeTestSSHString(&blob, nil) // reserved
-	writeTestSSHString(&blob, []byte("sha512"))
-	writeTestSSHString(&blob, sigBlob.Bytes())
+	writeSSHString(&blob, pubKeyBlob.Bytes())
+	writeSSHString(&blob, []byte(namespace))
+	writeSSHString(&blob, nil) // reserved
+	writeSSHString(&blob, []byte("sha512"))
+	writeSSHString(&blob, sigBlob.Bytes())
 
 	return blob.Bytes()
 }
 
-func writeTestSSHString(buf *bytes.Buffer, data []byte) {
-	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
-	buf.Write(lenBuf)
-	buf.Write(data)
-}
 
 func TestVerifySignatureSSHSIGFormat(t *testing.T) {
 	t.Parallel()
@@ -483,20 +477,20 @@ func TestVerifySignatureSSHSIGWrongKey(t *testing.T) {
 	}
 }
 
-func TestVerifySignatureSSHSIGAnyNamespace(t *testing.T) {
+func TestVerifySignatureSSHSIGRejectsWrongNamespace(t *testing.T) {
 	t.Parallel()
 
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	pubkey := makeTestSSHPubkey(pub)
 	challenge := "test-challenge"
 
-	// Should accept any namespace (the server doesn't enforce a specific one)
+	// Must reject namespace != "edproof"
 	sshsig := buildTestSSHSig(pub, priv, []byte(challenge), "file")
 	sigB64 := base64.StdEncoding.EncodeToString(sshsig)
 
 	err := VerifySignature(challenge, pubkey, sigB64)
-	if err != nil {
-		t.Fatalf("VerifySignature with namespace 'file': %v", err)
+	if err != ErrSignatureInvalid {
+		t.Fatalf("expected ErrSignatureInvalid for wrong namespace, got %v", err)
 	}
 }
 

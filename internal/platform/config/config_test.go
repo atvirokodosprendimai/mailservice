@@ -39,6 +39,7 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 	t.Setenv("UNSEND_BASE_URL", "")
 	t.Setenv("UNSEND_FROM_EMAIL", "")
 	t.Setenv("UNSEND_KEY", "")
+	t.Setenv("EDPROOF_HMAC_SECRET", "0123456789abcdef0123456789abcdef")
 
 	cfg, err := Load()
 	if err != nil {

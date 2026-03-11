@@ -86,6 +86,8 @@ func main() {
 	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort)
 	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen, cfg.PublicBaseURL)
 
+	log.Printf("edproof challenge-response enabled")
+
 	handler := httpapi.NewHandler(httpapi.Config{
 		AdminAPIKey:         cfg.AdminAPIKey,
 		StripeWebhookSecret: cfg.StripeWebhookSecret,

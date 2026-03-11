@@ -53,6 +53,8 @@ type Handler struct {
 	edproofHMACSecret   []byte
 }
 
+const challengeMaxAge = 30 * time.Second
+
 type accountContextKey struct{}
 
 func NewHandler(cfg Config) *Handler {
@@ -607,11 +609,6 @@ type authChallengeRequest struct {
 }
 
 func (h *Handler) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
-	if len(h.edproofHMACSecret) == 0 {
-		writeError(w, http.StatusServiceUnavailable, errors.New("challenge-response not configured"))
-		return
-	}
-
 	var req authChallengeRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -626,7 +623,7 @@ func (h *Handler) handleAuthChallenge(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"challenge":  challenge,
-		"expires_in": 30,
+		"expires_in": int(challengeMaxAge.Seconds()),
 	})
 }
 
@@ -791,22 +788,18 @@ func (h *Handler) handleResolveAccess(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resolveAccessResponse(result))
 }
 
-// verifyEdproof handles challenge-response verification when HMAC secret is configured,
-// or falls back to passthrough verification when not configured.
+// verifyEdproof performs challenge-response verification: HMAC authenticity,
+// timestamp freshness, Ed25519 signature, then extracts the fingerprint.
 func (h *Handler) verifyEdproof(ctx context.Context, pubkey, challenge, signature string) (*ports.VerifiedKey, error) {
-	if len(h.edproofHMACSecret) > 0 {
-		// Challenge-response mode: challenge and signature are required
-		if challenge == "" || signature == "" {
-			return nil, errChallengeRequired
-		}
-		if err := edproof.VerifyChallenge(challenge, pubkey, h.edproofHMACSecret, 30*time.Second, h.now()); err != nil {
-			return nil, err
-		}
-		if err := edproof.VerifySignature(challenge, pubkey, signature); err != nil {
-			return nil, err
-		}
+	if challenge == "" || signature == "" {
+		return nil, errChallengeRequired
 	}
-	// Verify pubkey format and extract fingerprint (always needed)
+	if err := edproof.VerifyChallenge(challenge, pubkey, h.edproofHMACSecret, challengeMaxAge, h.now()); err != nil {
+		return nil, err
+	}
+	if err := edproof.VerifySignature(challenge, pubkey, signature); err != nil {
+		return nil, err
+	}
 	return h.keyProofVerifier.Verify(ctx, pubkey)
 }
 
@@ -816,18 +809,14 @@ func writeEdproofError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errChallengeRequired):
 		writeError(w, http.StatusBadRequest, err)
-	case errors.Is(err, edproof.ErrChallengeExpired):
-		writeError(w, http.StatusUnauthorized, err)
-	case errors.Is(err, edproof.ErrChallengeTampered):
-		writeError(w, http.StatusUnauthorized, err)
-	case errors.Is(err, edproof.ErrChallengeFuture):
-		writeError(w, http.StatusUnauthorized, err)
-	case errors.Is(err, edproof.ErrSignatureInvalid):
-		writeError(w, http.StatusUnauthorized, err)
-	case errors.Is(err, ports.ErrInvalidKeyProof):
+	case errors.Is(err, edproof.ErrChallengeExpired),
+		errors.Is(err, edproof.ErrChallengeTampered),
+		errors.Is(err, edproof.ErrChallengeFuture),
+		errors.Is(err, edproof.ErrSignatureInvalid),
+		errors.Is(err, ports.ErrInvalidKeyProof):
 		writeError(w, http.StatusUnauthorized, err)
 	default:
-		writeError(w, http.StatusServiceUnavailable, err)
+		writeError(w, http.StatusInternalServerError, err)
 	}
 }
 

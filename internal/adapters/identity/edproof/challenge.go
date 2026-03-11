@@ -108,6 +108,10 @@ func VerifySignature(challenge string, pubkey string, signatureB64 string) error
 		return fmt.Errorf("parse public key: %w", err)
 	}
 
+	if len(signatureB64) > 1024 {
+		return ErrSignatureInvalid
+	}
+
 	sig, err := base64.StdEncoding.DecodeString(signatureB64)
 	if err != nil {
 		return ErrSignatureInvalid
@@ -178,6 +182,9 @@ func verifySSHSig(pubkey ed25519.PublicKey, message []byte, blob []byte) error {
 	var namespace []byte
 	namespace, r, err = readSSHString(r)
 	if err != nil {
+		return ErrSignatureInvalid
+	}
+	if string(namespace) != sshsigNamespace {
 		return ErrSignatureInvalid
 	}
 
@@ -270,31 +277,15 @@ func skipSSHString(data []byte) (rest []byte, err error) {
 }
 
 func writeSSHString(buf *bytes.Buffer, data []byte) {
-	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
-	buf.Write(lenBuf)
+	var lenBuf [4]byte
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(data)))
+	buf.Write(lenBuf[:])
 	buf.Write(data)
 }
 
-// extractPubkeyBlob returns the base64 key blob (field 2) from an SSH public key line.
-func extractPubkeyBlob(pubkey string) (string, error) {
-	parts := strings.Fields(pubkey)
-	if len(parts) < 2 {
-		return "", fmt.Errorf("invalid public key format")
-	}
-	if parts[0] != "ssh-ed25519" {
-		return "", fmt.Errorf("unsupported key type %q", parts[0])
-	}
-	// Validate that the blob is valid base64
-	if _, err := base64.StdEncoding.DecodeString(parts[1]); err != nil {
-		return "", fmt.Errorf("invalid base64 in public key: %w", err)
-	}
-	return parts[1], nil
-}
-
-// extractEd25519Key parses an SSH public key line and returns the raw 32-byte Ed25519 public key.
-// SSH wire format for ed25519: [4-byte len]["ssh-ed25519"][4-byte len][32-byte key]
-func extractEd25519Key(pubkey string) (ed25519.PublicKey, error) {
+// parseSSHPubkey validates an SSH public key line and returns the decoded key blob.
+// Input format: "ssh-ed25519 <base64> [comment]"
+func parseSSHPubkey(pubkey string) ([]byte, error) {
 	parts := strings.Fields(pubkey)
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("invalid public key format")
@@ -302,10 +293,27 @@ func extractEd25519Key(pubkey string) (ed25519.PublicKey, error) {
 	if parts[0] != "ssh-ed25519" {
 		return nil, fmt.Errorf("unsupported key type %q", parts[0])
 	}
-
-	keyBlob, err := base64.StdEncoding.DecodeString(parts[1])
+	blob, err := base64.StdEncoding.DecodeString(parts[1])
 	if err != nil {
-		return nil, fmt.Errorf("invalid base64: %w", err)
+		return nil, fmt.Errorf("invalid base64 in public key: %w", err)
+	}
+	return blob, nil
+}
+
+// extractPubkeyBlob returns the base64 key blob (field 2) from an SSH public key line.
+func extractPubkeyBlob(pubkey string) (string, error) {
+	if _, err := parseSSHPubkey(pubkey); err != nil {
+		return "", err
+	}
+	return strings.Fields(pubkey)[1], nil
+}
+
+// extractEd25519Key parses an SSH public key line and returns the raw 32-byte Ed25519 public key.
+// SSH wire format for ed25519: [4-byte len]["ssh-ed25519"][4-byte len][32-byte key]
+func extractEd25519Key(pubkey string) (ed25519.PublicKey, error) {
+	keyBlob, err := parseSSHPubkey(pubkey)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse SSH wire format
