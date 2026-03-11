@@ -1,9 +1,9 @@
 ---
-tldr: Silent SQLite fallback when Turso vars missing — make database selection explicit
+tldr: DATABASE_MODE env var required — turso or local, no silent fallback
 category: ops
 ---
 
-# Todo: Make database selection explicit, not a silent fallback
+# Solved: Explicit database mode prevents silent fallback
 
 Silent fallbacks are an antipattern.
 The current code (`cmd/app/main.go:38-46`) silently falls back to local SQLite when `TURSO_DATABASE_URL` is empty.

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 
@@ -9,6 +10,7 @@ import (
 
 type Config struct {
 	HTTPAddr            string
+	DatabaseMode        string // "turso" or "local" — required, no default
 	DatabaseDSN         string
 	TursoDatabaseURL    string
 	TursoAuthToken      string
@@ -52,8 +54,25 @@ func Load() (*Config, error) {
 	polarSuccessURL := getEnv("POLAR_SUCCESS_URL", publicBaseURL+"/v1/payments/polar/success?checkout_id={CHECKOUT_ID}")
 	polarReturnURL := getEnv("POLAR_RETURN_URL", publicBaseURL)
 
+	dbMode := os.Getenv("DATABASE_MODE")
+	if dbMode == "" {
+		return nil, fmt.Errorf("DATABASE_MODE is required (set to \"turso\" or \"local\")")
+	}
+	if dbMode != "turso" && dbMode != "local" {
+		return nil, fmt.Errorf("DATABASE_MODE must be \"turso\" or \"local\", got %q", dbMode)
+	}
+	if dbMode == "turso" {
+		if os.Getenv("TURSO_DATABASE_URL") == "" {
+			return nil, fmt.Errorf("DATABASE_MODE=turso requires TURSO_DATABASE_URL")
+		}
+		if os.Getenv("TURSO_AUTH_TOKEN") == "" {
+			return nil, fmt.Errorf("DATABASE_MODE=turso requires TURSO_AUTH_TOKEN")
+		}
+	}
+
 	return &Config{
 		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
+		DatabaseMode:        dbMode,
 		DatabaseDSN:         getEnv("DATABASE_DSN", "mailservice.db"),
 		TursoDatabaseURL:    os.Getenv("TURSO_DATABASE_URL"),
 		TursoAuthToken:      os.Getenv("TURSO_AUTH_TOKEN"),
