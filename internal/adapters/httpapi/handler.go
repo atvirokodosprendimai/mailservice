@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -938,7 +939,7 @@ func (h *Handler) handleGetIMAPMessageByUID(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -1056,7 +1057,7 @@ func (h *Handler) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -1192,9 +1193,11 @@ func resolveAccessResponse(result *service.ResolveAccessResult) resolveAccessVie
 	}
 }
 
+const maxRequestBodyBytes = 1 << 20 // 1 MB
+
 func decodeJSON(r *http.Request, into any) error {
 	defer r.Body.Close()
-	decoder := json.NewDecoder(r.Body)
+	decoder := json.NewDecoder(io.LimitReader(r.Body, maxRequestBodyBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(into); err != nil {
 		return err
@@ -1240,7 +1243,7 @@ func (h *Handler) withAdminKey(next http.HandlerFunc) http.HandlerFunc {
 		}
 		auth := r.Header.Get("Authorization")
 		token := strings.TrimPrefix(auth, "Bearer ")
-		if strings.TrimSpace(token) == "" || token != h.adminAPIKey {
+		if strings.TrimSpace(token) == "" || subtle.ConstantTimeCompare([]byte(token), []byte(h.adminAPIKey)) != 1 {
 			writeError(w, http.StatusUnauthorized, errors.New("invalid admin key"))
 			return
 		}
