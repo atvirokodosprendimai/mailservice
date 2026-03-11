@@ -1,11 +1,13 @@
+# pyright: reportMissingImports=false
+
 import os
 
-from diagrams import Cluster, Diagram, Edge
-from diagrams.generic.compute import Rack
-from diagrams.generic.network import Firewall
-from diagrams.generic.place import Datacenter
-from diagrams.generic.storage import Storage
-from diagrams.onprem.ci import GithubActions
+from diagrams import Cluster, Diagram, Edge  # type: ignore
+from diagrams.generic.compute import Rack  # type: ignore
+from diagrams.generic.network import Firewall  # type: ignore
+from diagrams.generic.place import Datacenter  # type: ignore
+from diagrams.generic.storage import Storage  # type: ignore
+from diagrams.onprem.ci import GithubActions  # type: ignore
 
 
 graph_attr = {
@@ -27,8 +29,9 @@ with Diagram(
     graph_attr=graph_attr,
 ):
     github = GithubActions("GitHub Actions")
-    cloudflare = Firewall("Cloudflare Tunnel")
+    cloudflare = Firewall("Cloudflare Edge/Tunnel")
     polar = Rack("Polar")
+    turso = Storage("Turso (optional app DB mode)")
 
     with Cluster("Hetzner Cloud VM"):
         api = Rack("mailservice-api\nsystemd")
@@ -37,19 +40,19 @@ with Diagram(
         cloudflared = Rack("mailservice-cloudflared")
         sqlite = Storage("SQLite state")
 
-    with Cluster("NixOS deployment"):
+    with Cluster("NixOS deploy sequence"):
         repo_sync = Datacenter("git sync")
         rebuild = Datacenter("nixos-rebuild switch")
-        health = Datacenter("host health check")
+        health = Datacenter("host-local health check")
 
-    github >> Edge(label="sync repo") >> repo_sync >> rebuild >> health
-    github >> Edge(label="workflow + infra apply") >> api
+    github >> Edge(label="deploy app revision") >> repo_sync >> rebuild >> health
 
     cloudflare >> Edge(label="public ingress") >> cloudflared >> api
     api >> Edge(label="payment session lookup") >> polar
+    api >> Edge(label="app data when DB_MODE=turso") >> turso
 
     api >> Edge(label="provision mailbox") >> postfix
     api >> Edge(label="provision mailbox") >> dovecot
-    api >> sqlite
+    api >> Edge(label="local DB mode or runtime tables") >> sqlite
     postfix >> sqlite
     dovecot >> sqlite

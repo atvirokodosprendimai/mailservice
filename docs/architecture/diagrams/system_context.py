@@ -1,11 +1,13 @@
+# pyright: reportMissingImports=false
+
 import os
 
-from diagrams import Cluster, Diagram, Edge
-from diagrams.generic.compute import Rack
-from diagrams.generic.device import Mobile
-from diagrams.generic.network import Firewall
-from diagrams.generic.place import Datacenter
-from diagrams.generic.storage import Storage
+from diagrams import Cluster, Diagram, Edge  # type: ignore
+from diagrams.generic.compute import Rack  # type: ignore
+from diagrams.generic.device import Mobile  # type: ignore
+from diagrams.generic.network import Firewall  # type: ignore
+from diagrams.generic.place import Datacenter  # type: ignore
+from diagrams.generic.storage import Storage  # type: ignore
 
 
 graph_attr = {
@@ -30,18 +32,19 @@ with Diagram(
     billing_inbox = Storage("Billing inbox")
     operator = Rack("Operator")
 
-    with Cluster("mailservice"):
+    with Cluster("Product boundary: mailservice"):
         api = Datacenter("Mailservice API")
 
     with Cluster("External systems"):
-        polar = Rack("Polar")
-        stripe = Rack("Stripe (legacy)")
-        notifier = Rack("Resend / SendGrid / Unsend")
-        mail_runtime = Datacenter("Mail runtime\nPostfix + Dovecot")
         cloudflare = Firewall("Cloudflare Tunnel")
+        polar = Rack("Polar")
+        stripe = Rack("Stripe (legacy fallback)")
+        notifier = Rack("Unsend / Resend /\nSendGrid / Mailgun")
+        mail_runtime = Datacenter("Mail runtime\nPostfix + Dovecot")
 
-    agent >> Edge(label="claim + resolve") >> api
+    agent >> Edge(label="claim + resolve API calls") >> cloudflare >> api
     api >> Edge(label="payment link") >> billing_inbox
+    polar >> Edge(label="hosted checkout") >> agent
     operator >> Edge(label="deploy + configure") >> api
 
     api >> Edge(label="checkout") >> polar

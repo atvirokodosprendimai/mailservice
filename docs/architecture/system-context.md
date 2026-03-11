@@ -26,7 +26,7 @@ A different key gets a different mailbox.
 | --- | --- |
 | Polar | Checkout and payment session lookup for the preferred key-bound flow. |
 | Stripe | Legacy payment fallback kept during migration. |
-| Resend / SendGrid | Optional outbound notification delivery. |
+| Unsend / Resend / SendGrid / Mailgun | Optional outbound notification delivery (provider-selected at runtime). |
 | Mail runtime | Receive-only mail stack that stores incoming mail and exposes IMAP. |
 | Cloudflare Tunnel | Temporary public ingress path for `truevipaccess.com`. |
 

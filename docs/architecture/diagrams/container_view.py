@@ -1,10 +1,12 @@
+# pyright: reportMissingImports=false
+
 import os
 
-from diagrams import Cluster, Diagram, Edge
-from diagrams.generic.compute import Rack
-from diagrams.generic.database import SQL
-from diagrams.generic.network import Router
-from diagrams.onprem.client import User
+from diagrams import Cluster, Diagram, Edge  # type: ignore
+from diagrams.generic.compute import Rack  # type: ignore
+from diagrams.generic.database import SQL  # type: ignore
+from diagrams.generic.network import Router  # type: ignore
+from diagrams.onprem.client import User  # type: ignore
 
 
 graph_attr = {
@@ -38,20 +40,30 @@ with Diagram(
         identity = Rack("Identity\ninternal/adapters/identity/edproof")
         payments = Rack("Payments\ninternal/adapters/payment")
         notify = Rack("Notifier\ninternal/adapters/notify")
+        runtime_provisioner = Rack(
+            "Mail runtime provisioner\ninternal/adapters/repository"
+        )
         imap = Rack("IMAP reader\ninternal/adapters/imap")
         token = Rack("Token generator\ninternal/adapters/token")
 
-    db = SQL("SQLite / Turso")
+    app_db = SQL("App DB\nSQLite or Turso")
+    runtime_db = SQL("Local SQLite\nmail runtime tables")
 
     client >> Edge(label="HTTP JSON") >> http_api
     http_api >> core_services
     core_services >> domain_ports
 
     core_services >> Edge(label="CRUD") >> repositories
-    repositories >> db
+    repositories >> app_db
 
     core_services >> Edge(label="verify key proof") >> identity
     core_services >> Edge(label="create + verify session") >> payments
     core_services >> Edge(label="send email") >> notify
+    (
+        core_services
+        >> Edge(label="provision mailbox records")
+        >> runtime_provisioner
+        >> runtime_db
+    )
     core_services >> Edge(label="list/read messages") >> imap
     core_services >> Edge(label="mint tokens") >> token

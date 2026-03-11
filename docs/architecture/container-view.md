@@ -11,13 +11,14 @@ Diagram source: `docs/architecture/diagrams/container_view.py`
 | HTTP API | Go, `net/http` | Accepts mailbox claim, access resolve, legacy account APIs, payment callbacks, and health checks. |
 | Core services | Go packages in `internal/core/service` | Enforces mailbox, payment, account, and access rules. |
 | Domain and ports | Go packages in `internal/domain` and `internal/core/ports` | Defines business entities and adapter seams. |
-| Repository adapters | GORM + SQLite | Persist mailboxes, accounts, recovery state, and refresh tokens. |
+| Repository adapters | GORM + SQLite/Turso | Persist mailboxes, accounts, recovery state, and refresh tokens in the app database mode. |
 | Payment adapters | Polar, Stripe, mock | Create payment sessions and validate completion state. |
-| Notification adapters | Resend, SendGrid, log | Deliver payment and recovery notifications. |
+| Notification adapters | Unsend, Resend, SendGrid, Mailgun, log | Deliver payment and recovery notifications. |
 | Identity adapter | `edproof` verifier adapter | Verifies key proof and derives a stable key fingerprint. |
 | Mail runtime provisioner | GORM-backed adapter | Writes mailbox runtime records used by the receive-only mail stack. |
 | Message reader | IMAP adapter | Reads mailbox contents for future inbound-read APIs. |
-| SQLite database | SQLite | Stores durable service state. |
+| App database | SQLite or Turso | Stores durable API/account/mailbox state. |
+| Runtime SQLite database | SQLite (local) | Stores `mail_domains`/`mail_users` records used by Postfix/Dovecot. |
 
 ## Code Mapping
 

@@ -16,6 +16,7 @@ The current target is a single Hetzner host fronted by Cloudflare Tunnel for `tr
 | Hetzner Cloud VM | Main runtime host for the API and receive-only mail service. |
 | Cloudflare Tunnel | Public HTTP ingress to the API without directly exposing the API port. |
 | Polar | External payment system used during mailbox claim and payment confirmation. |
+| Turso (optional) | External app database when `DATABASE_MODE=turso`; local SQLite remains for mail runtime tables. |
 
 ## Runtime Services On The Host
 
