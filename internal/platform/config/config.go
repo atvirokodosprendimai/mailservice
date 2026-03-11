@@ -50,6 +50,7 @@ type Config struct {
 	StripeCancelURL     string
 	StripeCurrency      string
 	MailboxPriceCents   int64
+	EdproofHMACSecret  string
 }
 
 func Load() (*Config, error) {
@@ -124,6 +125,7 @@ func Load() (*Config, error) {
 		StripeCancelURL:     getEnv("STRIPE_CANCEL_URL", "http://localhost:8080/payment/cancel"),
 		StripeCurrency:      getEnv("STRIPE_CURRENCY", "usd"),
 		MailboxPriceCents:   getEnvInt64("MAILBOX_PRICE_CENTS", 299),
+		EdproofHMACSecret:  os.Getenv("EDPROOF_HMAC_SECRET"),
 	}, nil
 }
 
