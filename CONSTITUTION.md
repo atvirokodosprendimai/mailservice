@@ -348,6 +348,19 @@ message: List operation without pagination limit enforcement.
 
 Hard ceiling prevents memory exhaustion from oversized responses.
 
+## Workflow
+
+### WORK-001 Push After Merge
+
+```yaml
+level: L1
+check: After merging a task branch to main, push to origin immediately. Code that only exists locally is not shipped — it has zero value until it reaches production.
+scope: "git workflow"
+message: Merged to main but not pushed. Push immediately.
+```
+
+If it's not on production, we wasted time and resources.
+
 ## Custom Rules
 
 <!-- Project-specific rules can be added here -->
