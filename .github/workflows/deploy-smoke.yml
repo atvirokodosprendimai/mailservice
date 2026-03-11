@@ -1,9 +1,10 @@
 name: Deploy Smoke Test Server
 
 on:
-  push:
-    branches:
-      - main
+  # Disabled — smoke tests hitting production DB (see todo - 2603110050)
+  # push:
+  #   branches:
+  #     - main
   workflow_dispatch:
 
 concurrency:
