@@ -23,6 +23,7 @@ Product scope:
 
 Further reading:
 - [Architecture docs](docs/architecture/README.md)
+- [Glass Reef story](STORY.md)
 - [Key-bound mailbox spec](docs/key-bound-mailbox-spec.md)
 - [Use cases](docs/use-cases.md)
 - [Website copy](docs/website-copy.md)
