@@ -1,7 +1,7 @@
 ---
 title: "feat: Add gift coupon codes for 3-month free mailbox"
 type: feat
-status: active
+status: completed
 date: 2026-03-12
 origin: docs/brainstorms/2026-03-12-gift-coupons-brainstorm.md
 ---
