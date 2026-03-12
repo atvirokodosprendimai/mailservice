@@ -109,8 +109,8 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 			return existing, false, nil
 		}
 
-		// Per-user dedup: check if this key already used a coupon
-		if couponCode != "" && existing.GrantedMonths > 1 {
+		// Per-user dedup: check if this key already redeemed a coupon
+		if couponCode != "" && existing.CouponUsed {
 			return nil, false, ports.ErrCouponAlreadyUsed
 		}
 
@@ -129,6 +129,9 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		existing.PaymentURL = paymentLink.URL
 		existing.Status = domain.MailboxStatusPendingPayment
 		existing.GrantedMonths = grantedMonths
+		if couponCode != "" {
+			existing.CouponUsed = true
+		}
 		if err := s.repo.Update(ctx, existing); err != nil {
 			return nil, false, fmt.Errorf("update mailbox payment link: %w", err)
 		}
@@ -174,6 +177,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		PaymentURL:       paymentLink.URL,
 		Status:           domain.MailboxStatusPendingPayment,
 		GrantedMonths:    grantedMonths,
+		CouponUsed:       couponCode != "",
 	}
 
 	if err := s.repo.Create(ctx, mailbox); err != nil {

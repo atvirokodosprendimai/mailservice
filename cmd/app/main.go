@@ -83,13 +83,18 @@ func main() {
 		log.Printf("real payment providers disabled, using mock payment links")
 	}
 
+	// Gift coupons are only supported when Polar is the active payment gateway.
 	var giftOpts []service.GiftCouponConfig
-	if cfg.PolarGiftDiscountID != "" && cfg.PolarGiftCouponCode != "" {
+	if cfg.PolarToken != "" && cfg.PolarProductID != "" &&
+		cfg.PolarGiftDiscountID != "" && cfg.PolarGiftCouponCode != "" {
 		giftOpts = append(giftOpts, service.GiftCouponConfig{
 			DiscountID: cfg.PolarGiftDiscountID,
 			CouponCode: cfg.PolarGiftCouponCode,
 		})
 		log.Printf("gift coupon enabled (code: %s)", cfg.PolarGiftCouponCode)
+	} else if (cfg.PolarGiftDiscountID != "" || cfg.PolarGiftCouponCode != "") &&
+		!(cfg.PolarToken != "" && cfg.PolarProductID != "") {
+		log.Printf("gift coupon config present but Polar not fully configured; gift coupons disabled")
 	}
 	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort, giftOpts...)
 	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen, cfg.PublicBaseURL)

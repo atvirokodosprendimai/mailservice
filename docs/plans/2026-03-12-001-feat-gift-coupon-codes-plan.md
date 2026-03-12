@@ -108,7 +108,7 @@ Per-user enforcement uses the existing mailbox lookup by key fingerprint — no 
 - [ ] Exhausted coupon (Polar rejects discount) returns 410
 - [ ] Claim without coupon code works exactly as before (1 month)
 - [ ] Re-claim of expired gifted mailbox (no coupon) follows normal payment flow
-- [ ] Re-claim of expired mailbox WITH coupon code grants 3 months again
+- [ ] Re-claim of expired mailbox WITH coupon code returns 409 if coupon was already used by this key
 - [ ] `GrantedMonths` field on Mailbox domain persisted to database
 - [ ] MockGateway handles DiscountID gracefully for tests
 - [ ] Config: `POLAR_GIFT_DISCOUNT_ID` and `POLAR_GIFT_COUPON_CODE` env vars

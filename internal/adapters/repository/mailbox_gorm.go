@@ -27,6 +27,7 @@ type mailboxModel struct {
 	PaymentURL       string `gorm:"not null"`
 	Status           string `gorm:"not null;index"`
 	GrantedMonths    int    `gorm:"not null;default:0"`
+	CouponUsed       bool   `gorm:"not null;default:false"`
 	PaidAt           *time.Time
 	ExpiresAt        *time.Time
 	CreatedAt        time.Time
@@ -53,6 +54,7 @@ func toDomain(model *mailboxModel) *domain.Mailbox {
 		PaymentURL:       model.PaymentURL,
 		Status:           domain.MailboxStatus(model.Status),
 		GrantedMonths:    model.GrantedMonths,
+		CouponUsed:       model.CouponUsed,
 		PaidAt:           model.PaidAt,
 		ExpiresAt:        model.ExpiresAt,
 		CreatedAt:        model.CreatedAt,
@@ -80,6 +82,7 @@ func toModel(mailbox *domain.Mailbox) *mailboxModel {
 		PaymentURL:       mailbox.PaymentURL,
 		Status:           string(mailbox.Status),
 		GrantedMonths:    mailbox.GrantedMonths,
+		CouponUsed:       mailbox.CouponUsed,
 		PaidAt:           mailbox.PaidAt,
 		ExpiresAt:        mailbox.ExpiresAt,
 	}

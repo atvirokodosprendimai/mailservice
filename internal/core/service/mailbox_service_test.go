@@ -697,6 +697,9 @@ func TestClaimMailboxWithValidCouponSetsDiscountAndGrantedMonths(t *testing.T) {
 	if payment.lastReq.DiscountID != "disc-123" {
 		t.Fatalf("expected DiscountID=disc-123, got %q", payment.lastReq.DiscountID)
 	}
+	if !mailbox.CouponUsed {
+		t.Fatalf("expected CouponUsed=true")
+	}
 }
 
 func TestClaimMailboxWithInvalidCouponReturnsError(t *testing.T) {
@@ -737,7 +740,7 @@ func TestClaimMailboxCouponAlreadyUsedBySameKey(t *testing.T) {
 				ID:             "mbx-used",
 				KeyFingerprint: "edproof:used-key",
 				Status:         domain.MailboxStatusExpired,
-				GrantedMonths:  3,
+				CouponUsed:     true,
 			},
 		},
 	}
