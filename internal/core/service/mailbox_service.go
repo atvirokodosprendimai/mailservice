@@ -13,6 +13,11 @@ import (
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
 )
 
+type GiftCouponConfig struct {
+	DiscountID string
+	CouponCode string
+}
+
 type MailboxService struct {
 	repo        ports.MailboxRepository
 	accounts    ports.AccountRepository
@@ -24,9 +29,10 @@ type MailboxService struct {
 	mailDomain  string
 	imapHost    string
 	imapPort    int
+	giftCoupon  GiftCouponConfig
 }
 
-func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, mailDomain string, imapHost string, imapPort int) *MailboxService {
+func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, mailDomain string, imapHost string, imapPort int, giftCoupon ...GiftCouponConfig) *MailboxService {
 	mailDomain = strings.TrimSpace(strings.ToLower(mailDomain))
 	if mailDomain == "" {
 		mailDomain = "mail.local"
@@ -41,6 +47,12 @@ func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepos
 		imapPort = 143
 	}
 
+	var gc GiftCouponConfig
+	if len(giftCoupon) > 0 {
+		gc = giftCoupon[0]
+		gc.CouponCode = strings.TrimSpace(strings.ToUpper(gc.CouponCode))
+	}
+
 	return &MailboxService{
 		repo:        repo,
 		accounts:    accounts,
@@ -52,6 +64,7 @@ func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepos
 		mailDomain:  mailDomain,
 		imapHost:    imapHost,
 		imapPort:    imapPort,
+		giftCoupon:  gc,
 	}
 }
 
@@ -71,7 +84,9 @@ type ResolveIMAPResult struct {
 
 type ResolveAccessResult = ResolveIMAPResult
 
-func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, key ports.VerifiedKey) (*domain.Mailbox, bool, error) {
+const giftGrantedMonths = 3
+
+func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, key ports.VerifiedKey, couponCode string) (*domain.Mailbox, bool, error) {
 	billingEmail = strings.TrimSpace(strings.ToLower(billingEmail))
 	if billingEmail == "" || !strings.Contains(billingEmail, "@") {
 		return nil, false, errors.New("billing_email must be a valid email")
@@ -82,15 +97,27 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		return nil, false, ports.ErrInvalidKeyProof
 	}
 
+	couponCode = strings.TrimSpace(strings.ToUpper(couponCode))
+	discountID, grantedMonths, err := s.validateCoupon(couponCode)
+	if err != nil {
+		return nil, false, err
+	}
+
 	existing, err := s.repo.GetByKeyFingerprint(ctx, key.Fingerprint)
 	if err == nil {
 		if existing.Usable() {
 			return existing, false, nil
 		}
 
+		// Per-user dedup: check if this key already used a coupon
+		if couponCode != "" && existing.GrantedMonths > 1 {
+			return nil, false, ports.ErrCouponAlreadyUsed
+		}
+
 		paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
 			MailboxID:  existing.ID,
 			OwnerEmail: billingEmail,
+			DiscountID: discountID,
 		})
 		if err != nil {
 			return nil, false, fmt.Errorf("create payment link: %w", err)
@@ -101,6 +128,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		existing.PaymentSessionID = paymentLink.SessionID
 		existing.PaymentURL = paymentLink.URL
 		existing.Status = domain.MailboxStatusPendingPayment
+		existing.GrantedMonths = grantedMonths
 		if err := s.repo.Update(ctx, existing); err != nil {
 			return nil, false, fmt.Errorf("update mailbox payment link: %w", err)
 		}
@@ -126,6 +154,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
 		MailboxID:  id,
 		OwnerEmail: billingEmail,
+		DiscountID: discountID,
 	})
 	if err != nil {
 		return nil, false, fmt.Errorf("create payment link: %w", err)
@@ -144,6 +173,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		PaymentSessionID: paymentLink.SessionID,
 		PaymentURL:       paymentLink.URL,
 		Status:           domain.MailboxStatusPendingPayment,
+		GrantedMonths:    grantedMonths,
 	}
 
 	if err := s.repo.Create(ctx, mailbox); err != nil {
@@ -273,7 +303,11 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 		if mailbox.ExpiresAt != nil && mailbox.ExpiresAt.After(base) {
 			base = *mailbox.ExpiresAt
 		}
-		nextExpiry := base.AddDate(0, 1, 0)
+		months := mailbox.GrantedMonths
+		if months <= 0 {
+			months = 1
+		}
+		nextExpiry := base.AddDate(0, months, 0)
 
 		mailbox.Status = domain.MailboxStatusActive
 		mailbox.PaidAt = &now
@@ -583,6 +617,21 @@ func (s *MailboxService) shouldRewriteLegacyIMAPHost(value string) bool {
 		return true
 	}
 	return host == "imap.mailservice.local"
+}
+
+// validateCoupon checks if the coupon code is valid and returns the Polar discount ID
+// and the number of months to grant. Returns ("", 0, nil) when no coupon is provided.
+func (s *MailboxService) validateCoupon(couponCode string) (discountID string, grantedMonths int, err error) {
+	if couponCode == "" {
+		return "", 0, nil
+	}
+	if s.giftCoupon.CouponCode == "" || s.giftCoupon.DiscountID == "" {
+		return "", 0, ports.ErrCouponInvalid
+	}
+	if couponCode != s.giftCoupon.CouponCode {
+		return "", 0, ports.ErrCouponInvalid
+	}
+	return s.giftCoupon.DiscountID, giftGrantedMonths, nil
 }
 
 func supportsProtocol(protocol string) bool {
