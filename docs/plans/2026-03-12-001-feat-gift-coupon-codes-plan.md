@@ -100,21 +100,21 @@ Per-user enforcement uses the existing mailbox lookup by key fingerprint — no 
 
 ## Acceptance Criteria
 
-- [ ] `POST /v1/mailboxes/claim` accepts optional `coupon_code` field
-- [ ] Valid coupon code creates a Polar checkout with 100% discount pre-applied
-- [ ] $0 checkout completion activates mailbox for 3 months (not 1)
-- [ ] Invalid coupon code returns 422 with clear error message
-- [ ] Same key fingerprint using coupon twice returns 409 "coupon already used by this key"
-- [ ] Exhausted coupon (Polar rejects discount) returns 410
-- [ ] Claim without coupon code works exactly as before (1 month)
-- [ ] Re-claim of expired gifted mailbox (no coupon) follows normal payment flow
-- [ ] Re-claim of expired mailbox WITH coupon code returns 409 if coupon was already used by this key
-- [ ] `GrantedMonths` field on Mailbox domain persisted to database
-- [ ] MockGateway handles DiscountID gracefully for tests
-- [ ] Config: `POLAR_GIFT_DISCOUNT_ID` and `POLAR_GIFT_COUPON_CODE` env vars
-- [ ] All deploy workflows updated with new env vars
-- [ ] Unit tests for coupon validation logic, GrantedMonths in MarkMailboxPaid
-- [ ] Notification email unchanged (same payment link, Polar shows $0)
+- [x] `POST /v1/mailboxes/claim` accepts optional `coupon_code` field
+- [x] Valid coupon code creates a Polar checkout with 100% discount pre-applied
+- [x] $0 checkout completion activates mailbox for 3 months (not 1)
+- [x] Invalid coupon code returns 422 with clear error message
+- [x] Same key fingerprint using coupon twice returns 409 "coupon already used by this key"
+- [x] Exhausted coupon (Polar rejects discount) returns 410
+- [x] Claim without coupon code works exactly as before (1 month)
+- [x] Re-claim of expired gifted mailbox (no coupon) follows normal payment flow
+- [x] Re-claim of expired mailbox WITH coupon code returns 409 if coupon was already used by this key
+- [x] `GrantedMonths` field on Mailbox domain persisted to database
+- [x] MockGateway handles DiscountID gracefully for tests
+- [x] Config: `POLAR_GIFT_DISCOUNT_ID` and `POLAR_GIFT_COUPON_CODE` env vars
+- [x] All deploy workflows updated with new env vars
+- [x] Unit tests for coupon validation logic, GrantedMonths in MarkMailboxPaid
+- [x] Notification email unchanged (same payment link, Polar shows $0)
 
 ## Success Metrics
 
