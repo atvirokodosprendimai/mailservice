@@ -203,16 +203,17 @@ Per-user enforcement uses the existing mailbox lookup by key fingerprint — no 
 **Goal:** Wire config values and update all deployment workflows.
 
 - [x] Add `POLAR_GIFT_DISCOUNT_ID` and `POLAR_GIFT_COUPON_CODE` to env loading in `config.go`
-- [ ] Create the Polar discount via API or dashboard:
+- [x] Create the Polar discount via API or dashboard:
   - Code: `OPENCLAWS`, percentage: 100, max_uses: 23
-  - Record the returned discount_id
-- [ ] Create sandbox Polar discount for testing (same params)
+  - Production discount_id: `a216b04f-606f-4c33-a6aa-df0b9ae4518a`
+- [x] Create sandbox Polar discount for testing (same params)
+  - Sandbox discount_id: `c0cd2e40-c2b1-4b18-bae3-c8b280f969e5`
 - [x] Update ALL deploy workflows with new env vars:
   - Production deploy
   - Smoke/sandbox deploy
   - Any other deploy-*.yml files
   - **Critical:** compare all deploy workflow env var lists for drift (learnings: `docs/solutions/integration-issues/missing-edproof-hmac-secret-in-smoke-deploy.md`)
-- [ ] Set GitHub secrets/variables for `POLAR_GIFT_DISCOUNT_ID` and `POLAR_GIFT_COUPON_CODE`
+- [x] Set GitHub secrets/variables for `POLAR_GIFT_DISCOUNT_ID` and `POLAR_GIFT_COUPON_CODE`
 
 ### Phase 5: E2E Verification
 
