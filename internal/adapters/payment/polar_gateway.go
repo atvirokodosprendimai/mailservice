@@ -63,6 +63,9 @@ func (g *PolarGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentL
 	if g.returnURL != "" {
 		payload["return_url"] = g.returnURL
 	}
+	if req.DiscountID != "" {
+		payload["discount_id"] = req.DiscountID
+	}
 
 	var resp struct {
 		ID     string `json:"id"`
@@ -70,6 +73,9 @@ func (g *PolarGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentL
 		Status string `json:"status"`
 	}
 	if err := g.doJSON(ctx, http.MethodPost, "/v1/checkouts/", payload, &resp); err != nil {
+		if req.DiscountID != "" && isDiscountError(err) {
+			return nil, fmt.Errorf("%w: %v", ports.ErrCouponExhausted, err)
+		}
 		return nil, err
 	}
 	if resp.ID == "" || resp.URL == "" {
@@ -144,6 +150,13 @@ func (g *PolarGateway) doJSON(ctx context.Context, method string, path string, p
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(into)
+}
+
+// isDiscountError checks whether a Polar API error relates to the discount being
+// invalid or exhausted (e.g. max_uses reached).
+func isDiscountError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "discount") || strings.Contains(msg, "coupon")
 }
 
 func mapPolarStatus(status string) ports.PaymentSessionStatus {

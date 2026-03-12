@@ -83,7 +83,15 @@ func main() {
 		log.Printf("real payment providers disabled, using mock payment links")
 	}
 
-	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort)
+	var giftOpts []service.GiftCouponConfig
+	if cfg.PolarGiftDiscountID != "" && cfg.PolarGiftCouponCode != "" {
+		giftOpts = append(giftOpts, service.GiftCouponConfig{
+			DiscountID: cfg.PolarGiftDiscountID,
+			CouponCode: cfg.PolarGiftCouponCode,
+		})
+		log.Printf("gift coupon enabled (code: %s)", cfg.PolarGiftCouponCode)
+	}
+	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort, giftOpts...)
 	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen, cfg.PublicBaseURL)
 
 	log.Printf("edproof challenge-response enabled")
