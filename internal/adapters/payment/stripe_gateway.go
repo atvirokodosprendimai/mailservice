@@ -37,6 +37,9 @@ func NewStripeGateway(cfg StripeConfig) *StripeGateway {
 }
 
 func (g *StripeGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
+	if req.DiscountID != "" {
+		return nil, fmt.Errorf("discount codes not supported with Stripe gateway")
+	}
 	params := &stripe.CheckoutSessionParams{
 		Params:        stripe.Params{Context: ctx},
 		Mode:          stripe.String(string(stripe.CheckoutSessionModePayment)),
@@ -108,6 +111,7 @@ func NewMockGateway(baseURL string) *MockGateway {
 
 func (g *MockGateway) CreatePaymentLink(_ context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
 	sessionID := "mock_" + uuid.NewString()
+	// DiscountID accepted and ignored — Polar-only feature.
 	return &ports.PaymentLink{
 		SessionID: sessionID,
 		URL:       fmt.Sprintf("%s/mock/pay/%s", g.baseURL, sessionID),

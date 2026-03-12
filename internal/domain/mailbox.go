@@ -24,6 +24,8 @@ type Mailbox struct {
 	PaymentSessionID string
 	PaymentURL       string
 	Status           MailboxStatus
+	GrantedMonths    int
+	CouponUsed       bool
 	PaidAt           *time.Time
 	ExpiresAt        *time.Time
 	CreatedAt        time.Time

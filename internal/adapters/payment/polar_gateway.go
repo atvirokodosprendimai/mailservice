@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -63,6 +64,9 @@ func (g *PolarGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentL
 	if g.returnURL != "" {
 		payload["return_url"] = g.returnURL
 	}
+	if req.DiscountID != "" {
+		payload["discount_id"] = req.DiscountID
+	}
 
 	var resp struct {
 		ID     string `json:"id"`
@@ -70,6 +74,9 @@ func (g *PolarGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentL
 		Status string `json:"status"`
 	}
 	if err := g.doJSON(ctx, http.MethodPost, "/v1/checkouts/", payload, &resp); err != nil {
+		if req.DiscountID != "" && isDiscountError(err) {
+			return nil, fmt.Errorf("%w: %v", ports.ErrCouponExhausted, err)
+		}
 		return nil, err
 	}
 	if resp.ID == "" || resp.URL == "" {
@@ -133,17 +140,40 @@ func (g *PolarGateway) doJSON(ctx context.Context, method string, path string, p
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var apiErr map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&apiErr); err == nil {
-			return fmt.Errorf("polar api %s %s: status %d: %v", method, path, resp.StatusCode, apiErr)
+		apiErr := &polarAPIError{StatusCode: resp.StatusCode, Method: method, Path: path}
+		var body map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&body); err == nil {
+			apiErr.Body = body
 		}
-		return fmt.Errorf("polar api %s %s: status %d", method, path, resp.StatusCode)
+		return apiErr
 	}
 
 	if into == nil {
 		return nil
 	}
 	return json.NewDecoder(resp.Body).Decode(into)
+}
+
+// polarAPIError is returned by doJSON when Polar responds with a non-2xx status.
+type polarAPIError struct {
+	StatusCode int
+	Method     string
+	Path       string
+	Body       map[string]any
+}
+
+func (e *polarAPIError) Error() string {
+	return fmt.Sprintf("polar api %s %s: status %d: %v", e.Method, e.Path, e.StatusCode, e.Body)
+}
+
+// isDiscountError checks whether a Polar API error is a validation rejection
+// (HTTP 422) which is what Polar returns when a discount_id is invalid or exhausted.
+func isDiscountError(err error) bool {
+	var apiErr *polarAPIError
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == 422
+	}
+	return false
 }
 
 func mapPolarStatus(status string) ports.PaymentSessionStatus {

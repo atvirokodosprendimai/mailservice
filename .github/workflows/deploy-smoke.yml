@@ -157,6 +157,8 @@ jobs:
             printf 'POLAR_SUCCESS_URL=%s\n' "$POLAR_SUCCESS_URL"
             printf 'POLAR_RETURN_URL=%s\n' "$POLAR_RETURN_URL"
             printf 'POLAR_WEBHOOK_SECRET=%s\n' "$POLAR_WEBHOOK_SECRET"
+            printf 'POLAR_GIFT_DISCOUNT_ID=%s\n' "$POLAR_GIFT_DISCOUNT_ID"
+            printf 'POLAR_GIFT_COUPON_CODE=%s\n' "$POLAR_GIFT_COUPON_CODE"
             printf 'EDPROOF_HMAC_SECRET=%s\n' "$EDPROOF_HMAC_SECRET"
             printf 'DATABASE_MODE=local\n'
             printf 'TURSO_DATABASE_URL=%s\n' "$TURSO_DATABASE_URL"
@@ -194,6 +196,8 @@ jobs:
           POLAR_SUCCESS_URL: ${{ vars.POLAR_SUCCESS_URL }}
           POLAR_RETURN_URL: ${{ vars.POLAR_RETURN_URL }}
           POLAR_WEBHOOK_SECRET: ${{ secrets.POLAR_WEBHOOK_SECRET }}
+          POLAR_GIFT_DISCOUNT_ID: ${{ vars.POLAR_GIFT_DISCOUNT_ID }}
+          POLAR_GIFT_COUPON_CODE: ${{ vars.POLAR_GIFT_COUPON_CODE }}
           EDPROOF_HMAC_SECRET: ${{ secrets.EDPROOF_HMAC_SECRET }}
           TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}

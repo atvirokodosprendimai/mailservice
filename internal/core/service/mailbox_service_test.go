@@ -66,7 +66,7 @@ func TestClaimMailboxRefreshesPaymentForExistingUnpaidKey(t *testing.T) {
 	mailbox, created, err := service.ClaimMailbox(context.Background(), "renewed@example.com", ports.VerifiedKey{
 		Fingerprint: "edproof:key-1",
 		Algorithm:   "ed25519",
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("ClaimMailbox failed: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestClaimMailboxCreatesPendingMailboxForNewKey(t *testing.T) {
 	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
 		Fingerprint: "edproof:key-2",
 		Algorithm:   "ed25519",
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("ClaimMailbox failed: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestClaimMailboxReturnsExistingActiveMailboxWithoutRefreshingPayment(t *tes
 	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
 		Fingerprint: "edproof:key-3",
 		Algorithm:   "ed25519",
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("ClaimMailbox failed: %v", err)
 	}
@@ -670,6 +670,180 @@ func TestCreateMailboxMultipleForSponsoredAccount(t *testing.T) {
 	}
 }
 
+// --- Gift coupon tests ---
+
+func TestClaimMailboxWithValidCouponSetsDiscountAndGrantedMonths(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier,
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143,
+		GiftCouponConfig{DiscountID: "disc-123", CouponCode: "OPENCLAWS"})
+
+	mailbox, created, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:gift-key",
+		Algorithm:   "ed25519",
+	}, "openclaws")
+	if err != nil {
+		t.Fatalf("ClaimMailbox with coupon failed: %v", err)
+	}
+	if !created {
+		t.Fatalf("expected new mailbox to be created")
+	}
+	if mailbox.GrantedMonths != 3 {
+		t.Fatalf("expected GrantedMonths=3, got %d", mailbox.GrantedMonths)
+	}
+	if payment.lastReq.DiscountID != "disc-123" {
+		t.Fatalf("expected DiscountID=disc-123, got %q", payment.lastReq.DiscountID)
+	}
+	if !mailbox.CouponUsed {
+		t.Fatalf("expected CouponUsed=true")
+	}
+}
+
+func TestClaimMailboxWithInvalidCouponReturnsError(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143,
+		GiftCouponConfig{DiscountID: "disc-123", CouponCode: "OPENCLAWS"})
+
+	_, _, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:bad-key",
+		Algorithm:   "ed25519",
+	}, "WRONGCODE")
+	if !errors.Is(err, ports.ErrCouponInvalid) {
+		t.Fatalf("expected ErrCouponInvalid, got %v", err)
+	}
+}
+
+func TestClaimMailboxWithCouponButNoConfigReturnsError(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	_, _, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:noconfig-key",
+		Algorithm:   "ed25519",
+	}, "OPENCLAWS")
+	if !errors.Is(err, ports.ErrCouponInvalid) {
+		t.Fatalf("expected ErrCouponInvalid, got %v", err)
+	}
+}
+
+func TestClaimMailboxCouponAlreadyUsedBySameKey(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:used-key": {
+				ID:             "mbx-used",
+				KeyFingerprint: "edproof:used-key",
+				Status:         domain.MailboxStatusExpired,
+				CouponUsed:     true,
+			},
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143,
+		GiftCouponConfig{DiscountID: "disc-123", CouponCode: "OPENCLAWS"})
+
+	_, _, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:used-key",
+		Algorithm:   "ed25519",
+	}, "OPENCLAWS")
+	if !errors.Is(err, ports.ErrCouponAlreadyUsed) {
+		t.Fatalf("expected ErrCouponAlreadyUsed, got %v", err)
+	}
+}
+
+func TestClaimMailboxWithoutCouponNormalFlow(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	payment := &fakePaymentGateway{}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143,
+		GiftCouponConfig{DiscountID: "disc-123", CouponCode: "OPENCLAWS"})
+
+	mailbox, _, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:normal-key",
+		Algorithm:   "ed25519",
+	}, "")
+	if err != nil {
+		t.Fatalf("ClaimMailbox without coupon failed: %v", err)
+	}
+	if mailbox.GrantedMonths != 0 {
+		t.Fatalf("expected GrantedMonths=0, got %d", mailbox.GrantedMonths)
+	}
+	if payment.lastReq.DiscountID != "" {
+		t.Fatalf("expected empty DiscountID, got %q", payment.lastReq.DiscountID)
+	}
+}
+
+func TestMarkMailboxPaidWithGrantedMonths3(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeMailboxRepo{
+		byStripeSession: map[string]*domain.Mailbox{
+			"sess-gift": {
+				ID:               "mbx-gift",
+				PaymentSessionID: "sess-gift",
+				Status:           domain.MailboxStatusPendingPayment,
+				GrantedMonths:    3,
+			},
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	mailbox, err := svc.MarkMailboxPaid(context.Background(), "sess-gift")
+	if err != nil {
+		t.Fatalf("MarkMailboxPaid failed: %v", err)
+	}
+	if mailbox.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected active status, got %s", mailbox.Status)
+	}
+	expected := now.AddDate(0, 3, 0)
+	if mailbox.ExpiresAt == nil {
+		t.Fatalf("expected ExpiresAt to be set")
+	}
+	diff := mailbox.ExpiresAt.Sub(expected)
+	if diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("expected ExpiresAt ~%v, got %v (diff %v)", expected, *mailbox.ExpiresAt, diff)
+	}
+}
+
+func TestMarkMailboxPaidWithGrantedMonths0DefaultsTo1(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeMailboxRepo{
+		byStripeSession: map[string]*domain.Mailbox{
+			"sess-normal": {
+				ID:               "mbx-normal",
+				PaymentSessionID: "sess-normal",
+				Status:           domain.MailboxStatusPendingPayment,
+				GrantedMonths:    0,
+			},
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	mailbox, err := svc.MarkMailboxPaid(context.Background(), "sess-normal")
+	if err != nil {
+		t.Fatalf("MarkMailboxPaid failed: %v", err)
+	}
+	expected := now.AddDate(0, 1, 0)
+	if mailbox.ExpiresAt == nil {
+		t.Fatalf("expected ExpiresAt to be set")
+	}
+	diff := mailbox.ExpiresAt.Sub(expected)
+	if diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("expected ExpiresAt ~%v, got %v (diff %v)", expected, *mailbox.ExpiresAt, diff)
+	}
+}
+
 type fakeMailboxRepo struct {
 	pendingByAccount map[string]*domain.Mailbox
 	created          []*domain.Mailbox
@@ -791,11 +965,13 @@ func (f *fakeMailboxRepo) GetByKeyFingerprint(_ context.Context, keyFingerprint 
 }
 
 type fakePaymentGateway struct {
-	calls int
+	calls   int
+	lastReq ports.PaymentLinkRequest
 }
 
-func (f *fakePaymentGateway) CreatePaymentLink(_ context.Context, _ ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
+func (f *fakePaymentGateway) CreatePaymentLink(_ context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
 	f.calls++
+	f.lastReq = req
 	return &ports.PaymentLink{SessionID: "sess-1", URL: "http://pay/1"}, nil
 }
 
