@@ -10,8 +10,8 @@ origin: docs/brainstorms/2026-03-12-gift-coupons-brainstorm.md
 
 ## Overview
 
-Add a promo code system that lets the owner distribute single-use gift codes granting 3 months of free mailbox service.
-Immediate goal: ~23 codes for the openclaws community.
+Add a promo code system that lets the owner distribute a gift code granting 3 months of free mailbox service.
+Immediate goal: a single code ("OPENCLAWS") usable by up to 23 openclaws community members.
 Codes are Polar-native discounts — created in Polar, validated by Polar, passed through the claim flow as `discount_id` on checkout creation.
 (See brainstorm: `docs/brainstorms/2026-03-12-gift-coupons-brainstorm.md`)
 
@@ -88,12 +88,6 @@ This avoids a coupon database table, race conditions, and atomic redemption logi
 - No new secrets — `POLAR_GIFT_DISCOUNT_ID` is not secret (it's a UUID, not a token)
 - The coupon doesn't bypass auth — ed25519 proof is still required
 
-### Performance
-
-- Zero additional API calls — discount_id is passed directly in checkout creation
-- One extra config lookup per claim (negligible)
-- No database schema changes for coupon tracking
-
 ## System-Wide Impact
 
 - **Interaction graph**: Claim handler → ClaimMailbox (+ coupon validation) → CreatePaymentLink (+ discount_id) → Polar API → webhook → MarkMailboxPaid (uses GrantedMonths)
@@ -111,6 +105,7 @@ This avoids a coupon database table, race conditions, and atomic redemption logi
 - [ ] Exhausted coupon (Polar rejects discount) returns 410
 - [ ] Claim without coupon code works exactly as before (1 month)
 - [ ] Re-claim of expired gifted mailbox (no coupon) follows normal payment flow
+- [ ] Re-claim of expired mailbox WITH coupon code grants 3 months again
 - [ ] `GrantedMonths` field on Mailbox domain persisted to database
 - [ ] MockGateway handles DiscountID gracefully for tests
 - [ ] Config: `POLAR_GIFT_DISCOUNT_ID` and `POLAR_GIFT_COUPON_CODE` env vars
