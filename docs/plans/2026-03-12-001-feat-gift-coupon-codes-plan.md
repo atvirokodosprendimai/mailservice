@@ -138,14 +138,14 @@ Per-user enforcement uses the existing mailbox lookup by key fingerprint — no 
 
 **Goal:** Extend the core types to support discount codes and variable grant duration.
 
-- [ ] Add `GrantedMonths int` field to `domain.Mailbox` (`internal/domain/mailbox.go`)
+- [x] Add `GrantedMonths int` field to `domain.Mailbox` (`internal/domain/mailbox.go`)
   - Default 0 (backward compatible: 0 treated as 1 month in MarkMailboxPaid)
-- [ ] Add `DiscountID string` field to `ports.PaymentLinkRequest` (`internal/core/ports/ports.go`)
-- [ ] Add coupon sentinel errors to ports: `ErrCouponInvalid`, `ErrCouponExhausted`, `ErrCouponAlreadyUsed`
-- [ ] Add `PolarGiftDiscountID string` and `PolarGiftCouponCode string` to config struct (`internal/platform/config/config.go`)
+- [x] Add `DiscountID string` field to `ports.PaymentLinkRequest` (`internal/core/ports/ports.go`)
+- [x] Add coupon sentinel errors to ports: `ErrCouponInvalid`, `ErrCouponExhausted`, `ErrCouponAlreadyUsed`
+- [x] Add `PolarGiftDiscountID string` and `PolarGiftCouponCode string` to config struct (`internal/platform/config/config.go`)
   - Both optional — feature disabled when empty
-- [ ] Add database migration: `ALTER TABLE mailboxes ADD COLUMN granted_months INTEGER DEFAULT 0`
-- [ ] Write unit tests:
+- [x] Add database migration: `ALTER TABLE mailboxes ADD COLUMN granted_months INTEGER DEFAULT 0`
+- [x] Write unit tests:
   - `mailbox_test.go`: GrantedMonths field preserved through create/update
   - `config_test.go`: optional gift config loading
 
@@ -153,7 +153,7 @@ Per-user enforcement uses the existing mailbox lookup by key fingerprint — no 
 
 **Goal:** Wire coupon validation into ClaimMailbox and variable duration into MarkMailboxPaid.
 
-- [ ] Extend `ClaimMailbox` signature: add `couponCode string` parameter
+- [x] Extend `ClaimMailbox` signature: add `couponCode string` parameter
   - If `couponCode` is non-empty and config has gift settings:
     - Normalize: `strings.TrimSpace(strings.ToUpper(couponCode))`
     - Compare to `config.PolarGiftCouponCode` (also uppercased)
@@ -162,12 +162,12 @@ Per-user enforcement uses the existing mailbox lookup by key fingerprint — no 
     - If match + not already used: set `PaymentLinkRequest.DiscountID = config.PolarGiftDiscountID` and `mailbox.GrantedMonths = 3`
   - If `couponCode` is non-empty but gift config is empty: return `ErrCouponInvalid`
   - If `couponCode` is empty: normal flow, no discount
-- [ ] Update re-claim branch (existing mailbox, not usable): same coupon logic when creating new payment link
-- [ ] Update `MarkMailboxPaid` (`internal/core/service/mailbox_service.go:276`):
+- [x] Update re-claim branch (existing mailbox, not usable): same coupon logic when creating new payment link
+- [x] Update `MarkMailboxPaid` (`internal/core/service/mailbox_service.go:276`):
   - Read `mailbox.GrantedMonths`
   - `months := mailbox.GrantedMonths; if months == 0 { months = 1 }`
   - `nextExpiry := base.AddDate(0, months, 0)`
-- [ ] Write unit tests:
+- [x] Write unit tests:
   - `mailbox_service_test.go`: ClaimMailbox with valid coupon → DiscountID passed, GrantedMonths=3
   - `mailbox_service_test.go`: ClaimMailbox with invalid coupon → ErrCouponInvalid
   - `mailbox_service_test.go`: ClaimMailbox with coupon already used by same key → ErrCouponAlreadyUsed
@@ -179,21 +179,21 @@ Per-user enforcement uses the existing mailbox lookup by key fingerprint — no 
 
 **Goal:** Pass discount_id through Polar checkout and handle errors.
 
-- [ ] Update `PolarGateway.CreatePaymentLink` (`internal/adapters/payment/polar_gateway.go`):
+- [x] Update `PolarGateway.CreatePaymentLink` (`internal/adapters/payment/polar_gateway.go`):
   - If `req.DiscountID != ""`: add `"discount_id": req.DiscountID` to checkout payload
   - Handle Polar error when discount is exhausted/invalid → wrap as `ErrCouponExhausted`
-- [ ] Update `MockGateway.CreatePaymentLink`:
+- [x] Update `MockGateway.CreatePaymentLink`:
   - Accept and ignore DiscountID (log it for test visibility)
-- [ ] Update `StripeGateway.CreatePaymentLink`:
+- [x] Update `StripeGateway.CreatePaymentLink`:
   - If `req.DiscountID != ""`: return `fmt.Errorf("discount codes not supported with Stripe gateway")`
-- [ ] Update claim handler (`internal/adapters/httpapi/handler.go`):
+- [x] Update claim handler (`internal/adapters/httpapi/handler.go`):
   - Add `CouponCode string \`json:"coupon_code,omitempty"\`` to `claimMailboxRequest`
   - Pass `req.CouponCode` to `ClaimMailbox`
   - Map `ErrCouponInvalid` → HTTP 422 `{"error": "invalid coupon code"}`
   - Map `ErrCouponAlreadyUsed` → HTTP 409 `{"error": "coupon already used by this key"}`
   - Map `ErrCouponExhausted` → HTTP 410 `{"error": "coupon expired or exhausted"}`
-- [ ] Update claim response (optional): add `granted_months` to `mailboxView` response
-- [ ] Write unit/integration tests:
+- [x] Update claim response (optional): add `granted_months` to `mailboxView` response
+- [x] Write unit/integration tests:
   - `polar_gateway_test.go`: CreatePaymentLink with DiscountID → payload includes `discount_id`
   - `handler_test.go`: claim with invalid coupon → 422
   - `handler_test.go`: claim with valid coupon → 200, payment link created with discount
@@ -202,12 +202,12 @@ Per-user enforcement uses the existing mailbox lookup by key fingerprint — no 
 
 **Goal:** Wire config values and update all deployment workflows.
 
-- [ ] Add `POLAR_GIFT_DISCOUNT_ID` and `POLAR_GIFT_COUPON_CODE` to env loading in `config.go`
+- [x] Add `POLAR_GIFT_DISCOUNT_ID` and `POLAR_GIFT_COUPON_CODE` to env loading in `config.go`
 - [ ] Create the Polar discount via API or dashboard:
   - Code: `OPENCLAWS`, percentage: 100, max_uses: 23
   - Record the returned discount_id
 - [ ] Create sandbox Polar discount for testing (same params)
-- [ ] Update ALL deploy workflows with new env vars:
+- [x] Update ALL deploy workflows with new env vars:
   - Production deploy
   - Smoke/sandbox deploy
   - Any other deploy-*.yml files
