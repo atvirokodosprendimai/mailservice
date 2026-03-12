@@ -26,6 +26,9 @@ var (
 	ErrChallengeTampered = errors.New("challenge tampered or invalid")
 	ErrChallengeFuture   = errors.New("challenge timestamp is in the future")
 	ErrSignatureInvalid  = errors.New("signature verification failed")
+	ErrCouponInvalid     = errors.New("invalid coupon code")
+	ErrCouponExhausted   = errors.New("coupon expired or exhausted")
+	ErrCouponAlreadyUsed = errors.New("coupon already used by this key")
 )
 
 // ChallengeAuthenticator generates and verifies challenge-response proofs.
@@ -74,6 +77,7 @@ type RefreshTokenRepository interface {
 type PaymentLinkRequest struct {
 	MailboxID  string
 	OwnerEmail string
+	DiscountID string
 }
 
 type PaymentLink struct {
