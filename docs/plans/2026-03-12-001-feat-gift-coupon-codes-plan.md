@@ -76,10 +76,12 @@ The brainstorm decided "detect from Polar webhook," but storing `GrantedMonths` 
 1. Config: `POLAR_GIFT_DISCOUNT_ID` (UUID) and `POLAR_GIFT_COUPON_CODE` (e.g., "OPENCLAWS")
 2. At claim: if `coupon_code` matches `POLAR_GIFT_COUPON_CODE` (case-insensitive), use the discount_id
 3. If no match, return 422 "invalid coupon code"
-4. Polar enforces max_uses at checkout creation — if exhausted, checkout creation fails → return 410 "coupon expired or exhausted"
-5. No local redemption tracking — Polar is the source of truth
+4. **Per-user dedup**: check if the claiming key fingerprint already has a mailbox with `GrantedMonths > 1` → if yes, return 409 "coupon already used by this key"
+5. Polar enforces max_uses at checkout creation — if exhausted, checkout creation fails → return 410 "coupon expired or exhausted"
+6. No local redemption tracking table — dedup uses existing mailbox data, Polar tracks global usage
 
 This avoids a coupon database table, race conditions, and atomic redemption logic for a 23-code use case.
+Per-user enforcement uses the existing mailbox lookup by key fingerprint — no new queries.
 
 ### Security
 
@@ -94,7 +96,7 @@ This avoids a coupon database table, race conditions, and atomic redemption logi
 - **Error propagation**: Polar discount rejection → CreatePaymentLink error → claim handler returns 410/422. Normal error wrapping chain.
 - **State lifecycle risks**: If coupon is accepted but user never completes checkout → mailbox stays `pending_payment` with GrantedMonths=3. No harm — GrantedMonths only takes effect on activation.
 - **API surface parity**: Only the claim endpoint changes. Webhook handler and success redirect are unchanged (they call MarkMailboxPaid which reads GrantedMonths from the mailbox).
-- **Integration test scenarios**: (1) Claim with valid coupon → $0 checkout → 3-month activation. (2) Claim with invalid coupon → 422 error. (3) Claim without coupon → normal 1-month flow unchanged. (4) Re-claim expired gifted mailbox without coupon → normal payment, 1 month. (5) Coupon exhausted (max_uses reached) → Polar rejects → 410.
+- **Integration test scenarios**: (1) Claim with valid coupon → $0 checkout → 3-month activation. (2) Claim with invalid coupon → 422 error. (3) Claim without coupon → normal 1-month flow unchanged. (4) Re-claim expired gifted mailbox without coupon → normal payment, 1 month. (5) Coupon exhausted (max_uses reached) → Polar rejects → 410. (6) Same key claims with coupon twice → 409 "already used".
 
 ## Acceptance Criteria
 
@@ -102,6 +104,7 @@ This avoids a coupon database table, race conditions, and atomic redemption logi
 - [ ] Valid coupon code creates a Polar checkout with 100% discount pre-applied
 - [ ] $0 checkout completion activates mailbox for 3 months (not 1)
 - [ ] Invalid coupon code returns 422 with clear error message
+- [ ] Same key fingerprint using coupon twice returns 409 "coupon already used by this key"
 - [ ] Exhausted coupon (Polar rejects discount) returns 410
 - [ ] Claim without coupon code works exactly as before (1 month)
 - [ ] Re-claim of expired gifted mailbox (no coupon) follows normal payment flow
@@ -138,7 +141,7 @@ This avoids a coupon database table, race conditions, and atomic redemption logi
 - [ ] Add `GrantedMonths int` field to `domain.Mailbox` (`internal/domain/mailbox.go`)
   - Default 0 (backward compatible: 0 treated as 1 month in MarkMailboxPaid)
 - [ ] Add `DiscountID string` field to `ports.PaymentLinkRequest` (`internal/core/ports/ports.go`)
-- [ ] Add coupon sentinel errors to ports: `ErrCouponInvalid`, `ErrCouponExhausted`
+- [ ] Add coupon sentinel errors to ports: `ErrCouponInvalid`, `ErrCouponExhausted`, `ErrCouponAlreadyUsed`
 - [ ] Add `PolarGiftDiscountID string` and `PolarGiftCouponCode string` to config struct (`internal/platform/config/config.go`)
   - Both optional — feature disabled when empty
 - [ ] Add database migration: `ALTER TABLE mailboxes ADD COLUMN granted_months INTEGER DEFAULT 0`
@@ -154,8 +157,9 @@ This avoids a coupon database table, race conditions, and atomic redemption logi
   - If `couponCode` is non-empty and config has gift settings:
     - Normalize: `strings.TrimSpace(strings.ToUpper(couponCode))`
     - Compare to `config.PolarGiftCouponCode` (also uppercased)
-    - If match: set `PaymentLinkRequest.DiscountID = config.PolarGiftDiscountID` and `mailbox.GrantedMonths = 3`
     - If no match: return `ErrCouponInvalid`
+    - **Per-user dedup**: check if existing mailbox for this key fingerprint has `GrantedMonths > 1` → return `ErrCouponAlreadyUsed`
+    - If match + not already used: set `PaymentLinkRequest.DiscountID = config.PolarGiftDiscountID` and `mailbox.GrantedMonths = 3`
   - If `couponCode` is non-empty but gift config is empty: return `ErrCouponInvalid`
   - If `couponCode` is empty: normal flow, no discount
 - [ ] Update re-claim branch (existing mailbox, not usable): same coupon logic when creating new payment link
@@ -166,6 +170,7 @@ This avoids a coupon database table, race conditions, and atomic redemption logi
 - [ ] Write unit tests:
   - `mailbox_service_test.go`: ClaimMailbox with valid coupon → DiscountID passed, GrantedMonths=3
   - `mailbox_service_test.go`: ClaimMailbox with invalid coupon → ErrCouponInvalid
+  - `mailbox_service_test.go`: ClaimMailbox with coupon already used by same key → ErrCouponAlreadyUsed
   - `mailbox_service_test.go`: ClaimMailbox without coupon → normal flow
   - `mailbox_service_test.go`: MarkMailboxPaid with GrantedMonths=3 → ExpiresAt is +3 months
   - `mailbox_service_test.go`: MarkMailboxPaid with GrantedMonths=0 → ExpiresAt is +1 month (backward compat)
@@ -185,6 +190,7 @@ This avoids a coupon database table, race conditions, and atomic redemption logi
   - Add `CouponCode string \`json:"coupon_code,omitempty"\`` to `claimMailboxRequest`
   - Pass `req.CouponCode` to `ClaimMailbox`
   - Map `ErrCouponInvalid` → HTTP 422 `{"error": "invalid coupon code"}`
+  - Map `ErrCouponAlreadyUsed` → HTTP 409 `{"error": "coupon already used by this key"}`
   - Map `ErrCouponExhausted` → HTTP 410 `{"error": "coupon expired or exhausted"}`
 - [ ] Update claim response (optional): add `granted_months` to `mailboxView` response
 - [ ] Write unit/integration tests:
