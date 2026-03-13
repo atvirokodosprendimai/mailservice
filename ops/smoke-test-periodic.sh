@@ -234,30 +234,23 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
   fi
   detail "client_secret: ${CLIENT_SECRET:0:20}..."
 
-  # Get checkout ID from client API (needed for server-side confirm)
-  STATUS="$(http_json_polar_client GET "/v1/checkouts/client/$CLIENT_SECRET" "" "$TMPBODY")"
-  if [[ "$STATUS" != "200" ]]; then
-    fail "auto-pay: get checkout returned HTTP $STATUS: $(cat "$TMPBODY")"
-  fi
-  CHECKOUT_ID="$(jq -r '.id // empty' "$TMPBODY")"
-  if [[ -z "$CHECKOUT_ID" ]]; then
-    fail "auto-pay: missing checkout id"
-  fi
-  detail "checkout_id: ${CHECKOUT_ID:0:20}..."
-
-  # Confirm checkout via server-side API with bearer token.
-  # Polar sandbox now requires billing_address + Stripe token for client-side confirm,
-  # but the server-side PATCH endpoint can update status directly.
-  STATUS="$(http_json_polar PATCH "/v1/checkouts/$CHECKOUT_ID" '{"status":"confirmed"}' "$TMPBODY")"
-  if [[ "$STATUS" != "200" ]]; then
-    # Fallback: try the legacy client-side confirm (empty body)
-    detail "server-side confirm returned HTTP $STATUS, trying client-side fallback..."
+  # Confirm checkout via headless browser (Polar requires Stripe Elements).
+  # Falls back to legacy API-based confirm if Playwright is not installed.
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if command -v node >/dev/null 2>&1 && node -e "require('playwright')" 2>/dev/null; then
+    detail "confirming via headless browser..."
+    CHECKOUT_EMAIL="$BILLING_EMAIL" CHECKOUT_VERBOSE="$VERBOSE" \
+      node "$SCRIPT_DIR/polar-checkout-confirm.js" "$PAYMENT_URL" || \
+      fail "auto-pay: headless checkout failed"
+    CONFIRM_STATUS="confirmed"
+  else
+    detail "playwright not available, trying API-based confirm..."
     STATUS="$(http_json_polar_client POST "/v1/checkouts/client/$CLIENT_SECRET/confirm" '{}' "$TMPBODY")"
     if [[ "$STATUS" != "200" ]]; then
-      fail "auto-pay: confirm returned HTTP $STATUS: $(cat "$TMPBODY")"
+      fail "auto-pay: confirm returned HTTP $STATUS (install playwright for headless checkout): $(cat "$TMPBODY")"
     fi
+    CONFIRM_STATUS="$(jq -r '.status // empty' "$TMPBODY")"
   fi
-  CONFIRM_STATUS="$(jq -r '.status // empty' "$TMPBODY")"
   detail "confirm status: $CONFIRM_STATUS"
 
   # Poll for mailbox activation (webhook delivery + processing)

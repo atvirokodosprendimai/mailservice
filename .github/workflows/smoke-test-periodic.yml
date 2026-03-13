@@ -37,9 +37,18 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: smoke
-    timeout-minutes: 4
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright
+        run: |
+          npm install playwright
+          npx playwright install chromium --with-deps
 
       - name: Run smoke test (auto-pay)
         run: ops/smoke-test-periodic.sh --verbose --auto-pay
