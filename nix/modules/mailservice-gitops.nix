@@ -42,6 +42,18 @@ in
       description = "Environment file containing TUNNEL_TOKEN for cloudflared.";
     };
 
+    backupEnvironmentFile = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/secrets/backup.env";
+      description = "Environment file containing S3 credentials for database backups.";
+    };
+
+    enableBackup = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Enable daily SQLite backup to S3.";
+    };
+
     package = lib.mkOption {
       type = lib.types.package;
       default = self.packages.${pkgs.system}.mailservice-api;
@@ -92,6 +104,8 @@ in
       "d /var/lib/secrets 0750 root mailservice -"
       "f ${cfg.environmentFile} 0640 root mailservice - -"
       "f ${cfg.cloudflaredEnvironmentFile} 0640 root mailservice - -"
+    ] ++ lib.optionals cfg.enableBackup [
+      "f ${cfg.backupEnvironmentFile} 0640 root mailservice - -"
     ];
 
     systemd.services.mailservice-api = {
@@ -225,6 +239,36 @@ in
     systemd.services.dovecot2.after = [ "mailservice-api.service" "postfix-setup.service" ];
     systemd.services.dovecot2.wants = [ "mailservice-api.service" "postfix-setup.service" ];
     systemd.services.dovecot2.serviceConfig.SupplementaryGroups = [ "acme" "nginx" ];
+
+    # --- Database backup to S3 ---
+    systemd.services.mailservice-backup = lib.mkIf cfg.enableBackup {
+      description = "SQLite database backup to S3";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        User = "mailservice";
+        Group = "mailservice";
+        EnvironmentFile = cfg.backupEnvironmentFile;
+        ExecStart = "${pkgs.bash}/bin/bash /root/mailservice/ops/backup-db.sh";
+        # Make sqlite3 and aws cli available
+        Path = [ pkgs.sqlite pkgs.awscli2 pkgs.gzip pkgs.coreutils ];
+      };
+      environment = {
+        DATABASE_PATH = mailDbPath;
+        HOME = "/tmp/mailservice-backup";
+      };
+    };
+
+    systemd.timers.mailservice-backup = lib.mkIf cfg.enableBackup {
+      description = "Daily SQLite backup timer";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "daily";
+        RandomizedDelaySec = "1h";
+        Persistent = true;
+      };
+    };
 
     systemd.services.mailservice-cloudflared = {
       description = "Cloudflare Tunnel for mailservice";
