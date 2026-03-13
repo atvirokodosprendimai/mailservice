@@ -359,7 +359,7 @@ jobs:
           CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
 
       - name: Write backup environment file on host
-        if: vars.BACKUP_S3_BUCKET != ''
+        if: vars.BACKUP_S3_BUCKET != '' && vars.BACKUP_S3_ENDPOINT != '' && vars.BACKUP_S3_REGION != ''
         run: |
           tmp_file=$(mktemp)
           cat > "$tmp_file" <<ENVCONTENT

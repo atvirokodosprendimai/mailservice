@@ -12,6 +12,7 @@ let
     dbpath = ${mailDbPath}
     query = SELECT maildir FROM mail_users WHERE enabled=1 AND (email='%s' OR login='%u')
   '';
+  backupScript = pkgs.writeShellScript "mailservice-backup" (builtins.readFile ../../ops/backup-db.sh);
   dovecotSqlConfigFile = pkgs.writeText "dovecot-sql.conf.ext" ''
     driver = sqlite
     connect = ${mailDbPath}
@@ -50,8 +51,8 @@ in
 
     enableBackup = lib.mkOption {
       type = lib.types.bool;
-      default = true;
-      description = "Enable daily SQLite backup to S3.";
+      default = false;
+      description = "Enable daily SQLite backup to S3. Requires backup.env with S3 credentials.";
     };
 
     package = lib.mkOption {
@@ -250,9 +251,8 @@ in
         User = "mailservice";
         Group = "mailservice";
         EnvironmentFile = cfg.backupEnvironmentFile;
-        ExecStart = "${pkgs.bash}/bin/bash /root/mailservice/ops/backup-db.sh";
-        # Make sqlite3 and aws cli available
-        Path = [ pkgs.sqlite pkgs.awscli2 pkgs.gzip pkgs.coreutils ];
+        ExecStart = "${backupScript}";
+        Path = [ pkgs.sqlite pkgs.awscli2 pkgs.gzip pkgs.coreutils pkgs.bash ];
       };
       environment = {
         DATABASE_PATH = mailDbPath;

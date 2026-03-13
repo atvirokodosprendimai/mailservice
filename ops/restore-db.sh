@@ -15,10 +15,15 @@
 #   BACKUP_PREFIX       - S3 key prefix (default: mailservice-db)
 
 set -euo pipefail
+umask 077
 
 DATABASE_PATH="${DATABASE_PATH:-/var/lib/mailservice/data/mailservice.db}"
 PREFIX="${BACKUP_PREFIX:-mailservice-db}"
 ACTION="${1:-latest}"
+
+# Secure temp directory
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
 
 log() { echo "[restore] $(date -u '+%Y-%m-%d %H:%M:%S') $*"; }
 fail() { log "FAIL: $*" >&2; exit 1; }
@@ -75,7 +80,7 @@ fi
 log "restoring from: s3://${BACKUP_S3_BUCKET}/${S3_KEY}"
 
 # Download
-DOWNLOAD_FILE="/tmp/mailservice-restore-$(date -u '+%s').db.gz"
+DOWNLOAD_FILE="${TMPDIR}/restore.db.gz"
 aws s3 cp "s3://${BACKUP_S3_BUCKET}/${S3_KEY}" "$DOWNLOAD_FILE" \
   --endpoint-url "$BACKUP_S3_ENDPOINT" \
   --region "$BACKUP_S3_REGION" \
@@ -84,13 +89,12 @@ aws s3 cp "s3://${BACKUP_S3_BUCKET}/${S3_KEY}" "$DOWNLOAD_FILE" \
 log "downloaded: $(du -h "$DOWNLOAD_FILE" | cut -f1)"
 
 # Decompress
-RESTORED_FILE="${DOWNLOAD_FILE%.gz}"
+RESTORED_FILE="${TMPDIR}/restore.db"
 gunzip "$DOWNLOAD_FILE"
 log "decompressed: $(du -h "$RESTORED_FILE" | cut -f1)"
 
 # Validate the restored file is valid SQLite
 if ! sqlite3 "$RESTORED_FILE" "PRAGMA integrity_check;" | head -1 | grep -q "ok"; then
-  rm -f "$RESTORED_FILE"
   fail "downloaded backup is not a valid SQLite database"
 fi
 log "integrity check: ok"
@@ -112,3 +116,5 @@ log ""
 log "restored database ready at: $RESTORED_FILE"
 log "to apply: cp '$RESTORED_FILE' '$DATABASE_PATH' && chown mailservice:mailservice '$DATABASE_PATH'"
 log "then restart: systemctl start mailservice-api postfix dovecot2"
+log ""
+log "NOTE: temp dir $TMPDIR will be removed on exit. Copy the file before this script ends."

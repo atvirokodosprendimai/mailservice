@@ -17,14 +17,19 @@
 #   BACKUP_PREFIX       - S3 key prefix (default: mailservice-db)
 
 set -euo pipefail
+umask 077
 
 DATABASE_PATH="${DATABASE_PATH:-/var/lib/mailservice/data/mailservice.db}"
 RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-30}"
 PREFIX="${BACKUP_PREFIX:-mailservice-db}"
 TIMESTAMP="$(date -u '+%Y-%m-%dT%H%M%SZ')"
-BACKUP_FILE="/tmp/mailservice-backup-${TIMESTAMP}.db"
-COMPRESSED_FILE="${BACKUP_FILE}.gz"
 S3_KEY="${PREFIX}/${TIMESTAMP}.db.gz"
+
+# Secure temp directory
+TMPDIR="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR"' EXIT
+BACKUP_FILE="${TMPDIR}/backup.db"
+COMPRESSED_FILE="${TMPDIR}/backup.db.gz"
 
 log() { echo "[backup] $(date -u '+%Y-%m-%d %H:%M:%S') $*"; }
 fail() { log "FAIL: $*" >&2; exit 1; }
@@ -59,11 +64,8 @@ aws s3 cp "$COMPRESSED_FILE" "s3://${BACKUP_S3_BUCKET}/${S3_KEY}" \
   --quiet
 log "upload complete"
 
-# 4. Clean up local temp file
-rm -f "$COMPRESSED_FILE"
-
-# 5. Prune old backups (keep RETENTION_DAYS days)
-CUTOFF_DATE="$(date -u -d "-${RETENTION_DAYS} days" '+%Y-%m-%d' 2>/dev/null || date -u -v"-${RETENTION_DAYS}d" '+%Y-%m-%d')"
+# 4. Prune old backups (keep RETENTION_DAYS days)
+CUTOFF_DATE="$(date -u -d "-${RETENTION_DAYS} days" '+%Y-%m-%dT00:00:00Z' 2>/dev/null || date -u -v"-${RETENTION_DAYS}d" '+%Y-%m-%dT00:00:00Z')"
 log "pruning backups older than $CUTOFF_DATE (${RETENTION_DAYS} days)"
 
 aws s3api list-objects-v2 \
@@ -82,7 +84,7 @@ aws s3api list-objects-v2 \
   fi
 done
 
-# 6. Verify: list recent backups
+# 5. Verify: list recent backups
 BACKUP_COUNT="$(aws s3api list-objects-v2 \
   --bucket "$BACKUP_S3_BUCKET" \
   --prefix "$PREFIX/" \
