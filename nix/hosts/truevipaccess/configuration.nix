@@ -31,5 +31,7 @@
     mailDomain = "truevipaccess.com";
     environmentFile = "/var/lib/secrets/mailservice.env";
     cloudflaredEnvironmentFile = "/var/lib/secrets/cloudflared.env";
+    enableBackup = true;
+    backupEnvironmentFile = "/var/lib/secrets/backup.env";
   };
 }
