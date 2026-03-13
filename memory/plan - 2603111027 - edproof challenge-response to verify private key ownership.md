@@ -1,6 +1,6 @@
 ---
 tldr: Replace passthrough edproof with stateless challenge-response that proves private key ownership
-status: active
+status: completed
 ---
 
 # Plan: Ed25519 challenge-response for edproof
