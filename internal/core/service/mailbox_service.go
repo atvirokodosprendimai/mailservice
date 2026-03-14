@@ -356,6 +356,69 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 	return mailbox, nil
 }
 
+// ReconcileResult holds the outcome of a single mailbox reconciliation attempt.
+type ReconcileResult struct {
+	MailboxID string `json:"mailbox_id"`
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
+	Action    string `json:"action"`
+	Error     string `json:"error,omitempty"`
+}
+
+// ReconcilePendingPayments checks all mailboxes stuck in pending_payment status
+// against the payment gateway. If the gateway reports the checkout as confirmed
+// or succeeded, the mailbox is activated via MarkMailboxPaid.
+func (s *MailboxService) ReconcilePendingPayments(ctx context.Context) ([]ReconcileResult, error) {
+	pending, err := s.repo.ListPendingPayment(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list pending payments: %w", err)
+	}
+
+	results := make([]ReconcileResult, 0, len(pending))
+	for _, mb := range pending {
+		result := ReconcileResult{
+			MailboxID: mb.ID,
+			SessionID: mb.PaymentSessionID,
+		}
+
+		if mb.PaymentSessionID == "" {
+			result.Status = "no_session"
+			result.Action = "skipped"
+			results = append(results, result)
+			continue
+		}
+
+		session, err := s.payment.GetPaymentSession(ctx, mb.PaymentSessionID)
+		if err != nil {
+			result.Status = "error"
+			result.Action = "skipped"
+			result.Error = err.Error()
+			results = append(results, result)
+			continue
+		}
+
+		result.Status = string(session.Status)
+
+		switch session.Status {
+		case ports.PaymentSessionStatusConfirmed, ports.PaymentSessionStatusSucceeded:
+			if _, err := s.MarkMailboxPaid(ctx, mb.PaymentSessionID); err != nil {
+				result.Action = "activate_failed"
+				result.Error = err.Error()
+			} else {
+				result.Action = "activated"
+			}
+		case ports.PaymentSessionStatusExpired, ports.PaymentSessionStatusFailed:
+			result.Action = "no_action"
+		default:
+			result.Action = "no_action"
+		}
+
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
 // validateMailboxSubscription checks whether mailbox is currently usable.
 // For key-bound mailboxes (empty AccountID) it inspects the mailbox row directly.
 // For account-bound mailboxes it loads the account and validates its subscription.

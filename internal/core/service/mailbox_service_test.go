@@ -930,6 +930,16 @@ func (f *fakeMailboxRepo) ListByAccountID(_ context.Context, _ string) ([]domain
 	return nil, nil
 }
 
+func (f *fakeMailboxRepo) ListPendingPayment(_ context.Context) ([]domain.Mailbox, error) {
+	var result []domain.Mailbox
+	for _, mb := range f.byStripeSession {
+		if mb != nil && mb.Status == domain.MailboxStatusPendingPayment {
+			result = append(result, *mb)
+		}
+	}
+	return result, nil
+}
+
 func (f *fakeMailboxRepo) GetPendingByAccountID(_ context.Context, accountID string) (*domain.Mailbox, error) {
 	if item, ok := f.pendingByAccount[accountID]; ok {
 		return item, nil
@@ -1040,4 +1050,74 @@ func (f *fakeMailboxNotifier) SendPaymentLink(_ context.Context, _ string, _ str
 
 func (f *fakeMailboxNotifier) SendRecoveryLink(_ context.Context, _ string, _ string) error {
 	return nil
+}
+
+func TestReconcilePendingPayments(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byStripeSession: map[string]*domain.Mailbox{
+			"sess-confirmed": {
+				ID:               "mbx-1",
+				PaymentSessionID: "sess-confirmed",
+				Status:           domain.MailboxStatusPendingPayment,
+				GrantedMonths:    1,
+			},
+			"sess-open": {
+				ID:               "mbx-2",
+				PaymentSessionID: "sess-open",
+				Status:           domain.MailboxStatusPendingPayment,
+				GrantedMonths:    1,
+			},
+		},
+	}
+	gateway := &reconcileFakeGateway{
+		sessions: map[string]ports.PaymentSessionStatus{
+			"sess-confirmed": ports.PaymentSessionStatusConfirmed,
+			"sess-open":      ports.PaymentSessionStatusOpen,
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, gateway, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	results, err := svc.ReconcilePendingPayments(context.Background())
+	if err != nil {
+		t.Fatalf("ReconcilePendingPayments failed: %v", err)
+	}
+
+	activatedCount := 0
+	noActionCount := 0
+	for _, r := range results {
+		switch r.Action {
+		case "activated":
+			activatedCount++
+			if r.MailboxID != "mbx-1" {
+				t.Errorf("expected mbx-1 to be activated, got %s", r.MailboxID)
+			}
+		case "no_action":
+			noActionCount++
+		}
+	}
+
+	if activatedCount != 1 {
+		t.Errorf("expected 1 activated, got %d", activatedCount)
+	}
+	if noActionCount != 1 {
+		t.Errorf("expected 1 no_action, got %d", noActionCount)
+	}
+}
+
+type reconcileFakeGateway struct {
+	sessions map[string]ports.PaymentSessionStatus
+}
+
+func (g *reconcileFakeGateway) CreatePaymentLink(_ context.Context, _ ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
+	return &ports.PaymentLink{SessionID: "sess-new", URL: "http://pay/new"}, nil
+}
+
+func (g *reconcileFakeGateway) GetPaymentSession(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+	status, ok := g.sessions[sessionID]
+	if !ok {
+		return nil, ports.ErrMailboxNotFound
+	}
+	return &ports.PaymentSession{SessionID: sessionID, Status: status}, nil
 }
