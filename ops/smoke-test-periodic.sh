@@ -25,6 +25,7 @@ VERBOSE="${SMOKE_VERBOSE:-0}"
 AUTO_PAY="${SMOKE_AUTO_PAY:-0}"
 POLAR_TOKEN="${SMOKE_POLAR_TOKEN:-}"
 POLAR_API="${SMOKE_POLAR_API:-https://sandbox-api.polar.sh}"
+ADMIN_API_KEY="${SMOKE_ADMIN_API_KEY:-}"
 
 usage() {
   cat <<'EOF'
@@ -43,6 +44,7 @@ Options:
   --auto-pay              Auto-confirm payment.   Env: SMOKE_AUTO_PAY=1
   --polar-token TOKEN     Polar API token.        Env: SMOKE_POLAR_TOKEN
   --polar-api URL         Polar API base URL.     Env: SMOKE_POLAR_API
+  --admin-api-key KEY     Admin API key.          Env: SMOKE_ADMIN_API_KEY
   --verbose               Print details.          Env: SMOKE_VERBOSE=1
   --help                  Show this help.
 
@@ -140,6 +142,7 @@ while [[ $# -gt 0 ]]; do
     --auto-pay)       AUTO_PAY=1;          shift ;;
     --polar-token)    POLAR_TOKEN="$2";    shift 2 ;;
     --polar-api)      POLAR_API="$2";      shift 2 ;;
+    --admin-api-key)  ADMIN_API_KEY="$2";  shift 2 ;;
     --verbose)        VERBOSE=1;           shift ;;
     --help|-h)        usage; exit 0 ;;
     *)                echo "unknown argument: $1" >&2; exit 2 ;;
@@ -254,9 +257,12 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
   detail "confirm status: $CONFIRM_STATUS"
 
   # Poll for mailbox activation (webhook delivery + processing)
-  # Polar sandbox can take several minutes to deliver webhooks
+  # Polar sandbox can take several minutes to deliver webhooks.
+  # After initial wait, try reconciliation as fallback for missed webhooks.
   ACTIVATE_TIMEOUT=90
   ACTIVATE_INTERVAL=3
+  RECONCILE_AFTER=30
+  RECONCILED=0
   ELAPSED=0
   while [[ "$ELAPSED" -lt "$ACTIVATE_TIMEOUT" ]]; do
     # Each re-claim needs a fresh challenge (challenges are single-use)
@@ -271,6 +277,17 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
     if [[ "$MAILBOX_STATUS" == "active" ]]; then
       break
     fi
+
+    # After RECONCILE_AFTER seconds without webhook, trigger reconciliation
+    if [[ "$ELAPSED" -ge "$RECONCILE_AFTER" && "$RECONCILED" -eq 0 && -n "$ADMIN_API_KEY" ]]; then
+      detail "webhook not received after ${ELAPSED}s, triggering reconciliation..."
+      RECONCILE_STATUS="$(http_json POST "$BASE_URL/admin/payments/reconcile" "" "$TMPBODY" \
+        --header "Authorization: Bearer $ADMIN_API_KEY")"
+      RECONCILE_ACTIVATED="$(jq -r '.activated // 0' "$TMPBODY")"
+      detail "reconcile: HTTP $RECONCILE_STATUS, activated=$RECONCILE_ACTIVATED"
+      RECONCILED=1
+    fi
+
     sleep "$ACTIVATE_INTERVAL"
     ELAPSED=$((ELAPSED + ACTIVATE_INTERVAL))
   done

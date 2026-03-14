@@ -102,6 +102,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/imap/messages/get", h.handleGetIMAPMessageByUID)
 	mux.HandleFunc("POST /v1/webhooks/stripe", h.handleStripeWebhook)
 	mux.HandleFunc("POST /admin/mailboxes/reprovision", h.withAdminKey(h.handleReprovisionMailbox))
+	mux.HandleFunc("POST /admin/payments/reconcile", h.withAdminKey(h.handleReconcilePayments))
 	mux.HandleFunc("GET /mock/pay/{sessionID}", h.handleMockPay)
 	handler := http.Handler(mux)
 	if h.concurrencySem != nil {
@@ -1299,6 +1300,27 @@ func (h *Handler) handleReprovisionMailbox(w http.ResponseWriter, r *http.Reques
 		"email":      mailbox.IMAPUsername + "@" + h.mailboxService.MailDomain(),
 		"status":     mailbox.Status,
 		"expires_at": mailbox.ExpiresAt,
+	})
+}
+
+func (h *Handler) handleReconcilePayments(w http.ResponseWriter, r *http.Request) {
+	results, err := h.mailboxService.ReconcilePendingPayments(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	activated := 0
+	for _, res := range results {
+		if res.Action == "activated" {
+			activated++
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"reconciled": len(results),
+		"activated":  activated,
+		"results":    results,
 	})
 }
 

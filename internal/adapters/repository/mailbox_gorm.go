@@ -143,6 +143,22 @@ func (r *MailboxRepository) GetPendingByAccountID(ctx context.Context, accountID
 	return toDomain(&model), nil
 }
 
+func (r *MailboxRepository) ListPendingPayment(ctx context.Context) ([]domain.Mailbox, error) {
+	var models []mailboxModel
+	err := r.db.WithContext(ctx).
+		Where("status = ?", string(domain.MailboxStatusPendingPayment)).
+		Order("created_at ASC").
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domain.Mailbox, 0, len(models))
+	for i := range models {
+		items = append(items, *toDomain(&models[i]))
+	}
+	return items, nil
+}
+
 func (r *MailboxRepository) GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error) {
 	var model mailboxModel
 	err := r.db.WithContext(ctx).First(&model, "stripe_session_id = ?", sessionID).Error

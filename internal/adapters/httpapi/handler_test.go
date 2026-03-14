@@ -513,6 +513,10 @@ func (r *httpMailboxRepo) GetPendingByAccountID(_ context.Context, _ string) (*d
 	return nil, ports.ErrMailboxNotFound
 }
 
+func (r *httpMailboxRepo) ListPendingPayment(_ context.Context) ([]domain.Mailbox, error) {
+	return nil, nil
+}
+
 func (r *httpMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID string) (*domain.Mailbox, error) {
 	if item, ok := r.byPaymentSession[sessionID]; ok {
 		return item, nil
