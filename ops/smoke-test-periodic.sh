@@ -172,6 +172,11 @@ if [[ "$AUTO_PAY" == "1" ]]; then
   # Fresh key each run — exercises full claim-to-read flow
   rm -f "$KEY_PATH" "$KEY_PATH.pub"
   ssh-keygen -q -t ed25519 -N "" -f "$KEY_PATH" -C "mailservice-smoke-autopay"
+  # Unique billing email per run to avoid Polar "AlreadyActiveSubscriptionError".
+  # Polar deduplicates subscriptions by customer email.
+  RUN_ID="$(date +%s)-$$"
+  BILLING_EMAIL="${BILLING_EMAIL%%@*}+${RUN_ID}@${BILLING_EMAIL#*@}"
+  detail "billing email (unique): $BILLING_EMAIL"
 elif [[ ! -f "$KEY_PATH" || ! -f "$KEY_PATH.pub" ]]; then
   log "Generating Ed25519 key at $KEY_PATH"
   rm -f "$KEY_PATH" "$KEY_PATH.pub"
