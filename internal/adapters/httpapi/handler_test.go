@@ -535,6 +535,10 @@ func (r *httpMailboxRepo) GetByKeyFingerprint(_ context.Context, keyFingerprint 
 	return nil, ports.ErrMailboxNotFound
 }
 
+func (r *httpMailboxRepo) ListActiveExpired(_ context.Context, _ time.Time) ([]domain.Mailbox, error) {
+	return nil, nil
+}
+
 type httpAccountRepo struct{}
 
 func (httpAccountRepo) Create(_ context.Context, _ *domain.Account) error { return nil }

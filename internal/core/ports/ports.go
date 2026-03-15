@@ -49,6 +49,7 @@ type MailboxRepository interface {
 	GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
 	GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error)
 	GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error)
+	ListActiveExpired(ctx context.Context, now time.Time) ([]domain.Mailbox, error)
 }
 
 type AccountRepository interface {

@@ -131,6 +131,26 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Background sweep: expire mailboxes whose ExpiresAt has passed.
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := mailboxService.ExpireMailboxes(ctx)
+				if err != nil {
+					log.Printf("expiry sweep error: %v", err)
+				} else if n > 0 {
+					log.Printf("expiry sweep: expired %d mailbox(es)", n)
+				}
+			}
+		}
+	}()
+
 	<-ctx.Done()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

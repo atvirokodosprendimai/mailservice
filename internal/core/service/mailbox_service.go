@@ -426,6 +426,28 @@ func (s *MailboxService) ReconcilePendingPayments(ctx context.Context) ([]Reconc
 	return results, nil
 }
 
+// ExpireMailboxes finds all active mailboxes whose ExpiresAt has passed and
+// flips their status to expired. It returns the number of mailboxes expired.
+// This is designed to be called periodically by a background sweep.
+func (s *MailboxService) ExpireMailboxes(ctx context.Context) (int, error) {
+	now := time.Now().UTC()
+	expired, err := s.repo.ListActiveExpired(ctx, now)
+	if err != nil {
+		return 0, fmt.Errorf("list active expired: %w", err)
+	}
+
+	count := 0
+	for i := range expired {
+		mb := &expired[i]
+		mb.Status = domain.MailboxStatusExpired
+		if err := s.repo.Update(ctx, mb); err != nil {
+			return count, fmt.Errorf("expire mailbox %s: %w", mb.ID, err)
+		}
+		count++
+	}
+	return count, nil
+}
+
 // validateMailboxSubscription checks whether mailbox is currently usable.
 // For key-bound mailboxes (empty AccountID) it inspects the mailbox row directly.
 // For account-bound mailboxes it loads the account and validates its subscription.
