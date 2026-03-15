@@ -120,7 +120,7 @@ sig_b64 = base64.b64encode(signature).decode()
 curl -s -X POST "$BASE/v1/mailboxes/claim" \
   -H 'Content-Type: application/json' \
   -d "{
-    \"billing_email\": \"billing@example.com\",
+    \"billing_email\": \"you@yourdomain.com\",
     \"edproof\": \"$(cat identity.pub)\",
     \"challenge\": \"$CHALLENGE\",
     \"signature\": \"$SIGNATURE\"
@@ -292,6 +292,7 @@ Response:
 | 400 | `unsupported key type "..."` | Key is not Ed25519 | Generate an Ed25519 key: `ssh-keygen -t ed25519 -f identity` |
 | 400 | `edproof now requires challenge-response — call POST /v1/auth/challenge first` | Missing `challenge` or `signature` field | Get a challenge first, sign it, include both fields |
 | 400 | `unsupported protocol` | Protocol is not `imap` | Use `"protocol": "imap"` |
+| 500 | `create payment link: polar api...` | Billing email domain doesn't accept email (e.g. `example.com`) | Use a real email address with a valid, deliverable domain |
 | 400 | `uid must be > 0` | UID is 0 or missing | Provide a valid message UID from the list response |
 | 401 | `challenge expired` | More than 30 seconds passed since challenge was issued | Request a new challenge and sign it again |
 | 401 | `challenge tampered or invalid` | Challenge string was modified, or public key doesn't match | Use the exact challenge string from the response; use the same public key for challenge and claim/resolve |
@@ -316,6 +317,8 @@ Response:
 5. **Trying to resolve access before paying.** `/v1/access/resolve` returns `409 Conflict` with `{"status": "waiting_payment"}` until the mailbox is paid.
 
 6. **Sending the public key without the key type prefix.** The API expects the full SSH public key line: `ssh-ed25519 AAAA... comment`. Not just the base64 blob.
+
+7. **Using `example.com` as billing email.** The payment provider validates that the email domain actually accepts mail. Use a real email address.
 
 ---
 
@@ -349,7 +352,7 @@ SIGNATURE=$(echo -n "$CHALLENGE" \
 CLAIM=$(curl -sf -X POST "$BASE/v1/mailboxes/claim" \
   -H 'Content-Type: application/json' \
   -d "{
-    \"billing_email\": \"billing@example.com\",
+    \"billing_email\": \"you@yourdomain.com\",
     \"edproof\": \"$PUBKEY\",
     \"challenge\": \"$CHALLENGE\",
     \"signature\": \"$SIGNATURE\"
@@ -417,7 +420,7 @@ signature = ''.join(lines[1:-1])  # Remove first and last lines (armor)
 
 # 4. Claim mailbox
 resp = requests.post(f"{BASE}/v1/mailboxes/claim", json={
-    "billing_email": "billing@example.com",
+    "billing_email": "you@yourdomain.com",
     "edproof": pubkey,
     "challenge": challenge,
     "signature": signature,
