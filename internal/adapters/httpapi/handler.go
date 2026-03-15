@@ -1048,6 +1048,17 @@ func (h *Handler) handlePolarSuccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Render HTML for browser requests, JSON for API clients.
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		email := mailbox.IMAPUsername
+		if email == "" {
+			email = mailbox.OwnerEmail
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, paymentSuccessHTMLTemplate, mailbox.ID, email)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, polarSuccessView{
 		Status:    "ok",
 		MailboxID: mailbox.ID,
@@ -1170,6 +1181,186 @@ type polarSuccessView struct {
 	Status    string `json:"status"`
 	MailboxID string `json:"mailbox_id"`
 }
+
+var paymentSuccessHTMLTemplate = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payment Confirmed — TrueVIP Access</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4efe4;
+      --ink: #17222d;
+      --muted: #566575;
+      --card: #fffaf0;
+      --line: #d8cdb7;
+      --accent: #a23b2a;
+      --accent-ink: #fffaf0;
+      --code: #f0e7d5;
+      --green: #2d7a3a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background:
+        radial-gradient(circle at top left, rgba(162,59,42,0.12), transparent 28%%),
+        linear-gradient(180deg, #f7f2e8 0%%, var(--bg) 100%%);
+      color: var(--ink);
+    }
+    main {
+      max-width: 620px;
+      margin: 0 auto;
+      padding: 72px 20px;
+      text-align: center;
+    }
+    .check {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 72px;
+      height: 72px;
+      border-radius: 50%%;
+      background: var(--green);
+      margin-bottom: 24px;
+    }
+    .check svg { width: 36px; height: 36px; }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+    .lede {
+      max-width: 42rem;
+      margin: 0 auto 32px;
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+    .card {
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 250, 240, 0.9);
+      text-align: left;
+      margin-bottom: 24px;
+    }
+    .card h2 {
+      margin: 0 0 14px;
+      font-size: 1.15rem;
+    }
+    .detail {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 0.95rem;
+    }
+    .detail:last-child { border-bottom: none; }
+    .detail .label { color: var(--muted); }
+    .detail .value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9rem;
+      word-break: break-all;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-top: 32px;
+    }
+    .button {
+      display: inline-block;
+      padding: 12px 20px;
+      border-radius: 999px;
+      text-decoration: none;
+      font-weight: 700;
+      border: 1px solid var(--ink);
+    }
+    .button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-ink);
+    }
+    .button.secondary {
+      color: var(--ink);
+      background: transparent;
+    }
+    .next-steps {
+      margin-top: 32px;
+      padding: 22px;
+      border-radius: 22px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      text-align: left;
+    }
+    .next-steps h2 {
+      margin: 0 0 12px;
+      font-size: 1.15rem;
+    }
+    .next-steps ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .next-steps li {
+      line-height: 1.6;
+      margin-bottom: 6px;
+    }
+    code {
+      padding: 0.1em 0.35em;
+      border-radius: 6px;
+      background: var(--code);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="check">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    </div>
+    <h1>Payment confirmed</h1>
+    <p class="lede">Your mailbox is active and ready to receive mail.</p>
+
+    <div class="card">
+      <h2>Mailbox details</h2>
+      <div class="detail">
+        <span class="label">Mailbox ID</span>
+        <span class="value">%s</span>
+      </div>
+      <div class="detail">
+        <span class="label">Email</span>
+        <span class="value">%s</span>
+      </div>
+      <div class="detail">
+        <span class="label">Status</span>
+        <span class="value">Active</span>
+      </div>
+    </div>
+
+    <section class="next-steps">
+      <h2>Next steps</h2>
+      <ol>
+        <li>Get a fresh challenge from <code>POST /v1/auth/challenge</code></li>
+        <li>Sign it with your Ed25519 private key</li>
+        <li>Call <code>POST /v1/access/resolve</code> to get IMAP credentials</li>
+        <li>Read mail via the HTTP API or any IMAP client</li>
+      </ol>
+    </section>
+
+    <div class="actions">
+      <a class="button primary" href="/">Back to home</a>
+    </div>
+  </main>
+</body>
+</html>`
 
 func mailboxResponse(mailbox *domain.Mailbox) mailboxView {
 	resp := mailboxView{
