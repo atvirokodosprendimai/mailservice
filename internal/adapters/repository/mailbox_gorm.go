@@ -183,6 +183,21 @@ func (r *MailboxRepository) GetByAccessToken(ctx context.Context, accessToken st
 	return toDomain(&model), nil
 }
 
+func (r *MailboxRepository) ListActiveExpired(ctx context.Context, now time.Time) ([]domain.Mailbox, error) {
+	var models []mailboxModel
+	err := r.db.WithContext(ctx).
+		Where("status = ? AND expires_at IS NOT NULL AND expires_at <= ?", string(domain.MailboxStatusActive), now).
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domain.Mailbox, 0, len(models))
+	for i := range models {
+		items = append(items, *toDomain(&models[i]))
+	}
+	return items, nil
+}
+
 func (r *MailboxRepository) GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error) {
 	var model mailboxModel
 	err := r.db.WithContext(ctx).First(&model, "key_fingerprint = ?", strings.TrimSpace(strings.ToLower(keyFingerprint))).Error

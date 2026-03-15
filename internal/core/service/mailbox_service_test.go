@@ -885,6 +885,83 @@ func TestMarkMailboxPaidWithGrantedMonths0DefaultsTo1(t *testing.T) {
 	}
 }
 
+func TestExpireMailboxesSweepsExpiredOnly(t *testing.T) {
+	past := time.Now().UTC().Add(-24 * time.Hour)
+	future := time.Now().UTC().Add(24 * time.Hour)
+
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:expired1": {
+				ID:             "mbx-expired1",
+				KeyFingerprint: "edproof:expired1",
+				Status:         domain.MailboxStatusActive,
+				ExpiresAt:      &past,
+			},
+			"edproof:active": {
+				ID:             "mbx-active",
+				KeyFingerprint: "edproof:active",
+				Status:         domain.MailboxStatusActive,
+				ExpiresAt:      &future,
+			},
+			"edproof:pending": {
+				ID:             "mbx-pending",
+				KeyFingerprint: "edproof:pending",
+				Status:         domain.MailboxStatusPendingPayment,
+				ExpiresAt:      &past,
+			},
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	n, err := svc.ExpireMailboxes(context.Background())
+	if err != nil {
+		t.Fatalf("ExpireMailboxes failed: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 expired, got %d", n)
+	}
+
+	// The expired mailbox should be flipped.
+	if repo.byKeyFingerprint["edproof:expired1"].Status != domain.MailboxStatusExpired {
+		t.Fatalf("expected mbx-expired1 to be expired, got %s", repo.byKeyFingerprint["edproof:expired1"].Status)
+	}
+	// The active mailbox should be untouched.
+	if repo.byKeyFingerprint["edproof:active"].Status != domain.MailboxStatusActive {
+		t.Fatalf("expected mbx-active to remain active, got %s", repo.byKeyFingerprint["edproof:active"].Status)
+	}
+	// The pending mailbox should be untouched.
+	if repo.byKeyFingerprint["edproof:pending"].Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected mbx-pending to remain pending, got %s", repo.byKeyFingerprint["edproof:pending"].Status)
+	}
+}
+
+func TestExpireMailboxesReturnsZeroWhenNothingExpired(t *testing.T) {
+	future := time.Now().UTC().Add(24 * time.Hour)
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:ok": {
+				ID:             "mbx-ok",
+				KeyFingerprint: "edproof:ok",
+				Status:         domain.MailboxStatusActive,
+				ExpiresAt:      &future,
+			},
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	n, err := svc.ExpireMailboxes(context.Background())
+	if err != nil {
+		t.Fatalf("ExpireMailboxes failed: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 expired, got %d", n)
+	}
+}
+
 type fakeMailboxRepo struct {
 	pendingByAccount map[string]*domain.Mailbox
 	created          []*domain.Mailbox
@@ -1013,6 +1090,21 @@ func (f *fakeMailboxRepo) GetByKeyFingerprint(_ context.Context, keyFingerprint 
 		}
 	}
 	return nil, ports.ErrMailboxNotFound
+}
+
+func (f *fakeMailboxRepo) ListActiveExpired(_ context.Context, now time.Time) ([]domain.Mailbox, error) {
+	var result []domain.Mailbox
+	for _, mb := range f.byKeyFingerprint {
+		if mb != nil && mb.Status == domain.MailboxStatusActive && mb.ExpiresAt != nil && !mb.ExpiresAt.After(now) {
+			result = append(result, *mb)
+		}
+	}
+	for _, mb := range f.created {
+		if mb != nil && mb.Status == domain.MailboxStatusActive && mb.ExpiresAt != nil && !mb.ExpiresAt.After(now) {
+			result = append(result, *mb)
+		}
+	}
+	return result, nil
 }
 
 type fakePaymentGateway struct {
