@@ -114,6 +114,13 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 			return nil, false, ports.ErrCouponAlreadyUsed
 		}
 
+		// If the mailbox already has a pending payment session, return it
+		// without creating a new checkout. Creating a new session would
+		// invalidate the one the user may have already started paying.
+		if existing.Status == domain.MailboxStatusPendingPayment && existing.PaymentSessionID != "" && existing.PaymentURL != "" {
+			return existing, false, nil
+		}
+
 		paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
 			MailboxID:  existing.ID,
 			OwnerEmail: billingEmail,

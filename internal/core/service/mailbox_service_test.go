@@ -90,6 +90,47 @@ func TestClaimMailboxRefreshesPaymentForExistingUnpaidKey(t *testing.T) {
 	}
 }
 
+func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-reuse": {
+				ID:               "mbx-reuse",
+				BillingEmail:     "billing@example.com",
+				KeyFingerprint:   "edproof:key-reuse",
+				Status:           domain.MailboxStatusPendingPayment,
+				PaymentSessionID: "existing-session-123",
+				PaymentURL:       "https://checkout.polar.sh/existing",
+			},
+		},
+	}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-reuse",
+		Algorithm:   "ed25519",
+	}, "")
+	if err != nil {
+		t.Fatalf("ClaimMailbox failed: %v", err)
+	}
+	if created {
+		t.Fatalf("expected existing mailbox reuse, got created=true")
+	}
+	if mailbox.PaymentSessionID != "existing-session-123" {
+		t.Fatalf("expected existing session ID preserved, got %q", mailbox.PaymentSessionID)
+	}
+	if mailbox.PaymentURL != "https://checkout.polar.sh/existing" {
+		t.Fatalf("expected existing payment URL preserved, got %q", mailbox.PaymentURL)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no new payment link creation, got %d calls", payment.calls)
+	}
+	if notifier.calls != 0 {
+		t.Fatalf("expected no notifier call, got %d calls", notifier.calls)
+	}
+}
+
 func TestClaimMailboxCreatesPendingMailboxForNewKey(t *testing.T) {
 	repo := &fakeMailboxRepo{}
 	payment := &fakePaymentGateway{}
