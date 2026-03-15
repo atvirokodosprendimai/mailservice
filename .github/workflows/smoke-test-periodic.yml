@@ -60,3 +60,4 @@ jobs:
           SMOKE_POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
           SMOKE_POLAR_API: ${{ vars.POLAR_SERVER_URL }}
           SMOKE_ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          SMOKE_DISCOUNT_CODE: ${{ vars.POLAR_GIFT_COUPON_CODE }}
