@@ -1,16 +1,17 @@
+enabled: false
 # branch-per-task, commit-per-action, --no-ff merges
 git_workflow: true
 # status report after each action
 status_reporting: true
 # eidos skill listing in session start context
-skills_list: true
+skills_list: false
 # spec/concept listing, future items at session start
-specs_and_concepts: true
+specs_and_concepts: false
 # session orientation: branches, todos, plans, recent memory
-session_context: true
+session_context: false
 # max tokens for context window tracking (null to disable), used to warn about compaction early
 context_tracking_max: 200000
 # mono-repo sub-part focus injection at session start
-mono_focus: true
+mono_focus: false
 # persist pasted images as named observation files in memory/
-observation_images: true
+observation_images: false
