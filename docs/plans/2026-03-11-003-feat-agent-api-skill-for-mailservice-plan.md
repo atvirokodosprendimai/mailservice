@@ -1,7 +1,7 @@
 ---
 title: "feat: Agent API skill for mailservice"
 type: feat
-status: active
+status: completed
 date: 2026-03-11
 ---
 
@@ -63,7 +63,7 @@ A single markdown skill file at `docs/agent-api-skill.md` that an agent can load
 - [x] Message reading: list and get endpoints with access tokens
 - [x] Error reference: every error message the API returns → what to do
 - [x] 30-second challenge TTL documented with retry guidance
-- [ ] Tested: an agent can follow the skill end-to-end against a running instance
+- [x] Tested: an agent can follow the skill end-to-end against a running instance
 - [x] Homepage prompt (`handler.go`) updated to reference the skill or include key improvements
 
 ## Implementation Phases
@@ -91,9 +91,9 @@ File: `internal/adapters/httpapi/handler.go`
 
 ### Phase 3: Validate
 
-- [ ] Walk through the skill as an agent against a local instance
-- [ ] Verify every curl command works
-- [ ] Verify error messages match what the API actually returns
+- [x] Walk through the skill as an agent against a local instance
+- [x] Verify every curl command works
+- [x] Verify error messages match what the API actually returns
 
 ## Sources & References
 
