@@ -165,6 +165,7 @@ jobs:
             printf 'TURSO_AUTH_TOKEN=%s\n' "$TURSO_AUTH_TOKEN"
             printf 'BUILD_NUMBER=%s\n' "$BUILD_NUMBER"
             printf 'CACHE_BUSTER=%s\n' "$CACHE_BUSTER"
+            printf 'ADMIN_API_KEY=%s\n' "$ADMIN_API_KEY"
           } > "$tmp_file"
           # Stage env file into a private directory on the remote host (not /tmp).
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'install -d -m 700 /root/.mailservice-staging'
@@ -203,6 +204,7 @@ jobs:
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
           CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
 
       - name: Validate required env vars on host
         run: |
