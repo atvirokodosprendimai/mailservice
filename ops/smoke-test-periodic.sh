@@ -26,6 +26,7 @@ AUTO_PAY="${SMOKE_AUTO_PAY:-0}"
 POLAR_TOKEN="${SMOKE_POLAR_TOKEN:-}"
 POLAR_API="${SMOKE_POLAR_API:-https://sandbox-api.polar.sh}"
 ADMIN_API_KEY="${SMOKE_ADMIN_API_KEY:-}"
+DISCOUNT_CODE="${SMOKE_DISCOUNT_CODE:-}"
 
 usage() {
   cat <<'EOF'
@@ -45,6 +46,7 @@ Options:
   --polar-token TOKEN     Polar API token.        Env: SMOKE_POLAR_TOKEN
   --polar-api URL         Polar API base URL.     Env: SMOKE_POLAR_API
   --admin-api-key KEY     Admin API key.          Env: SMOKE_ADMIN_API_KEY
+  --discount-code CODE    Polar discount code.    Env: SMOKE_DISCOUNT_CODE
   --verbose               Print details.          Env: SMOKE_VERBOSE=1
   --help                  Show this help.
 
@@ -143,6 +145,7 @@ while [[ $# -gt 0 ]]; do
     --polar-token)    POLAR_TOKEN="$2";    shift 2 ;;
     --polar-api)      POLAR_API="$2";      shift 2 ;;
     --admin-api-key)  ADMIN_API_KEY="$2";  shift 2 ;;
+    --discount-code)  DISCOUNT_CODE="$2";  shift 2 ;;
     --verbose)        VERBOSE=1;           shift ;;
     --help|-h)        usage; exit 0 ;;
     *)                echo "unknown argument: $1" >&2; exit 2 ;;
@@ -237,22 +240,87 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
   fi
   detail "client_secret: ${CLIENT_SECRET:0:20}..."
 
-  # Confirm checkout via headless browser (Polar requires Stripe Elements).
-  # Falls back to legacy API-based confirm if Playwright is not installed.
-  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-  if command -v node >/dev/null 2>&1 && node -e "require('playwright')" 2>/dev/null; then
-    detail "confirming via headless browser..."
-    CHECKOUT_EMAIL="$BILLING_EMAIL" CHECKOUT_VERBOSE="$VERBOSE" \
-      node "$SCRIPT_DIR/polar-checkout-confirm.js" "$PAYMENT_URL" || \
-      fail "auto-pay: headless checkout failed"
-    CONFIRM_STATUS="confirmed"
+  # Confirm checkout via Polar API:
+  #   1. PATCH to update billing address (required by Polar/Stripe)
+  #   2. POST to confirm the checkout
+  # For paid checkouts, confirmation requires a Stripe confirmation_token_id.
+  # The smoke sandbox product should be free ($0) or use a 100% discount so
+  # that no payment method is required.
+  # Falls back to Playwright headless browser if API confirm fails.
+
+  # Step 1: Update checkout with billing address and customer details.
+  # If a discount code is configured, apply it to make the checkout free.
+  detail "updating checkout with billing details..."
+  if [[ -n "$DISCOUNT_CODE" ]]; then
+    detail "applying discount code: $DISCOUNT_CODE"
+    UPDATE_PAYLOAD="$(printf '{
+      "customer_name": "Smoke Test",
+      "customer_email": %s,
+      "customer_billing_address": {
+        "line1": "123 Test St",
+        "city": "San Francisco",
+        "state": "CA",
+        "postal_code": "94102",
+        "country": "US"
+      },
+      "discount_code": %s
+    }' "$(printf '%s' "$BILLING_EMAIL" | json_escape)" "$(printf '%s' "$DISCOUNT_CODE" | json_escape)")"
   else
-    detail "playwright not available, trying API-based confirm..."
-    STATUS="$(http_json_polar_client POST "/v1/checkouts/client/$CLIENT_SECRET/confirm" '{}' "$TMPBODY")"
-    if [[ "$STATUS" != "200" ]]; then
-      fail "auto-pay: confirm returned HTTP $STATUS (install playwright for headless checkout): $(cat "$TMPBODY")"
+    UPDATE_PAYLOAD="$(printf '{
+      "customer_name": "Smoke Test",
+      "customer_email": %s,
+      "customer_billing_address": {
+        "line1": "123 Test St",
+        "city": "San Francisco",
+        "state": "CA",
+        "postal_code": "94102",
+        "country": "US"
+      }
+    }' "$(printf '%s' "$BILLING_EMAIL" | json_escape)")"
+  fi
+
+  STATUS="$(http_json PATCH "${POLAR_API}/v1/checkouts/client/$CLIENT_SECRET" "$UPDATE_PAYLOAD" "$TMPBODY" --location)"
+  if [[ "$STATUS" != "200" ]]; then
+    detail "checkout update failed (HTTP $STATUS): $(cat "$TMPBODY")"
+    detail "falling back to headless browser..."
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    if command -v node >/dev/null 2>&1 && node -e "require('playwright')" 2>/dev/null; then
+      CHECKOUT_EMAIL="$BILLING_EMAIL" CHECKOUT_VERBOSE="$VERBOSE" \
+        node "$SCRIPT_DIR/polar-checkout-confirm.js" "$PAYMENT_URL" || \
+        fail "auto-pay: headless checkout failed"
+      CONFIRM_STATUS="confirmed"
+    else
+      fail "auto-pay: checkout update failed and playwright not available"
     fi
-    CONFIRM_STATUS="$(jq -r '.status // empty' "$TMPBODY")"
+  else
+    IS_PAYMENT_REQUIRED="$(jq -r '.is_payment_required // true' "$TMPBODY")"
+    detail "checkout updated, payment_required=$IS_PAYMENT_REQUIRED"
+
+    # Step 2: Confirm the checkout
+    detail "confirming checkout via API..."
+    STATUS="$(http_json POST "${POLAR_API}/v1/checkouts/client/$CLIENT_SECRET/confirm" '{}' "$TMPBODY" --location)"
+    if [[ "$STATUS" != "200" ]]; then
+      CONFIRM_ERR="$(cat "$TMPBODY")"
+      detail "API confirm failed (HTTP $STATUS): $CONFIRM_ERR"
+
+      # If payment is required and confirm fails, fall back to Playwright
+      if [[ "$IS_PAYMENT_REQUIRED" == "true" ]]; then
+        detail "payment required — falling back to headless browser..."
+        SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+        if command -v node >/dev/null 2>&1 && node -e "require('playwright')" 2>/dev/null; then
+          CHECKOUT_EMAIL="$BILLING_EMAIL" CHECKOUT_VERBOSE="$VERBOSE" \
+            node "$SCRIPT_DIR/polar-checkout-confirm.js" "$PAYMENT_URL" || \
+            fail "auto-pay: headless checkout failed"
+          CONFIRM_STATUS="confirmed"
+        else
+          fail "auto-pay: confirm returned HTTP $STATUS: $CONFIRM_ERR"
+        fi
+      else
+        fail "auto-pay: confirm returned HTTP $STATUS (free checkout): $CONFIRM_ERR"
+      fi
+    else
+      CONFIRM_STATUS="$(jq -r '.status // empty' "$TMPBODY")"
+    fi
   fi
   detail "confirm status: $CONFIRM_STATUS"
 
