@@ -259,10 +259,11 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
   # Poll for mailbox activation (webhook delivery + processing)
   # Polar sandbox can take several minutes to deliver webhooks.
   # After initial wait, try reconciliation as fallback for missed webhooks.
-  ACTIVATE_TIMEOUT=90
+  ACTIVATE_TIMEOUT=120
   ACTIVATE_INTERVAL=3
   RECONCILE_AFTER=30
-  RECONCILED=0
+  RECONCILE_INTERVAL=15
+  LAST_RECONCILE=0
   ELAPSED=0
   while [[ "$ELAPSED" -lt "$ACTIVATE_TIMEOUT" ]]; do
     # Each re-claim needs a fresh challenge (challenges are single-use)
@@ -278,14 +279,24 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
       break
     fi
 
-    # After RECONCILE_AFTER seconds without webhook, trigger reconciliation
-    if [[ "$ELAPSED" -ge "$RECONCILE_AFTER" && "$RECONCILED" -eq 0 && -n "$ADMIN_API_KEY" ]]; then
-      detail "webhook not received after ${ELAPSED}s, triggering reconciliation..."
-      RECONCILE_STATUS="$(http_json POST "$BASE_URL/admin/payments/reconcile" "" "$TMPBODY" \
-        --header "Authorization: Bearer $ADMIN_API_KEY")"
-      RECONCILE_ACTIVATED="$(jq -r '.activated // 0' "$TMPBODY")"
-      detail "reconcile: HTTP $RECONCILE_STATUS, activated=$RECONCILE_ACTIVATED"
-      RECONCILED=1
+    # After RECONCILE_AFTER seconds, trigger reconciliation periodically.
+    # Polar sandbox can be slow — retry every RECONCILE_INTERVAL seconds.
+    if [[ "$ELAPSED" -ge "$RECONCILE_AFTER" && -n "$ADMIN_API_KEY" ]]; then
+      SINCE_LAST=$((ELAPSED - LAST_RECONCILE))
+      if [[ "$LAST_RECONCILE" -eq 0 || "$SINCE_LAST" -ge "$RECONCILE_INTERVAL" ]]; then
+        detail "webhook not received after ${ELAPSED}s, triggering reconciliation..."
+        RECONCILE_STATUS="$(http_json POST "$BASE_URL/admin/payments/reconcile" "" "$TMPBODY" \
+          --header "Authorization: Bearer $ADMIN_API_KEY")"
+        RECONCILE_ACTIVATED="$(jq -r '.activated // 0' "$TMPBODY")"
+        detail "reconcile: HTTP $RECONCILE_STATUS, activated=$RECONCILE_ACTIVATED"
+        # Log per-mailbox results for debugging Polar sandbox delays
+        if [[ "$VERBOSE" == "1" ]]; then
+          jq -c '.results[]? // empty' "$TMPBODY" 2>/dev/null | while read -r r; do
+            detail "  $(echo "$r" | jq -r '"mbx=\(.mailbox_id) session=\(.session_id) status=\(.status) action=\(.action) error=\(.error // "")"')"
+          done
+        fi
+        LAST_RECONCILE=$ELAPSED
+      fi
     fi
 
     sleep "$ACTIVATE_INTERVAL"
