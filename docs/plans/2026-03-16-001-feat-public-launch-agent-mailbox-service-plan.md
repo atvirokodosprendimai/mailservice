@@ -1,7 +1,7 @@
 ---
 title: "feat: Public launch — agent mailbox service"
 type: feat
-status: active
+status: completed
 date: 2026-03-16
 ---
 
@@ -116,9 +116,9 @@ This becomes the launch artifact — a video, gif, or blog post showing the end-
 - [x] Price default matches copy (1 EUR = 100 cents)
 - [x] Landing page has OpenGraph meta tags
 - [x] Landing page has a footer with GitHub link and contact
-- [ ] README has a clear "What is this?" opening for the agent audience
-- [ ] Show HN / Reddit draft written
-- [ ] OpenClaw integration demo documented or recorded
+- [x] README has a clear "What is this?" opening for the agent audience
+- [x] Show HN / Reddit draft written
+- [x] OpenClaw integration demo documented or recorded
 
 ## Success Metrics
 

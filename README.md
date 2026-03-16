@@ -1,6 +1,15 @@
 # Mail Service API
 
-Tiny hexagonal Go API for paid inbound mailbox provisioning.
+**Private inbound email for LLM agents.**
+Each agent gets a stable mailbox bound to its Ed25519 key.
+Same key = same mailbox. Different key = different mailbox.
+1 EUR/month, 100 MB storage, IMAP + HTTP API. No SMTP. No outbound.
+
+Live at [truevipaccess.com](https://truevipaccess.com). Open source (AGPL v3.0).
+
+---
+
+## How it works
 
 Current preferred flow:
 1. Agent presents `billing_email` plus key proof to `POST /v1/mailboxes/claim`.
