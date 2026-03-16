@@ -35,6 +35,8 @@ type Config struct {
 	Logger              *log.Logger
 	Now                 func() time.Time
 	ChallengeAuth       ports.ChallengeAuthenticator
+	AgentAPISkillDoc    string
+	MockPaymentMode     bool
 }
 
 type Handler struct {
@@ -51,6 +53,8 @@ type Handler struct {
 	buildNumber         string
 	cacheBuster         string
 	challengeAuth       ports.ChallengeAuthenticator
+	agentAPISkillDoc    string
+	mockPaymentMode     bool
 }
 
 const challengeMaxAge = 30 * time.Second
@@ -77,6 +81,8 @@ func NewHandler(cfg Config) *Handler {
 		buildNumber:         fallbackString(cfg.BuildNumber, "dev"),
 		cacheBuster:         fallbackString(cfg.CacheBuster, fallbackString(cfg.BuildNumber, "dev")),
 		challengeAuth:       cfg.ChallengeAuth,
+		agentAPISkillDoc:    cfg.AgentAPISkillDoc,
+		mockPaymentMode:     cfg.MockPaymentMode,
 	}
 }
 
@@ -103,7 +109,10 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/webhooks/stripe", h.handleStripeWebhook)
 	mux.HandleFunc("POST /admin/mailboxes/reprovision", h.withAdminKey(h.handleReprovisionMailbox))
 	mux.HandleFunc("POST /admin/payments/reconcile", h.withAdminKey(h.handleReconcilePayments))
-	mux.HandleFunc("GET /mock/pay/{sessionID}", h.handleMockPay)
+	mux.HandleFunc("GET /docs/agent-api-skill.md", h.handleAgentAPISkill)
+	if h.mockPaymentMode {
+		mux.HandleFunc("GET /mock/pay/{sessionID}", h.handleMockPay)
+	}
 	handler := http.Handler(mux)
 	if h.concurrencySem != nil {
 		handler = h.withGlobalSemaphore(handler)
@@ -131,6 +140,12 @@ func (h *Handler) handleHome(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, renderHomePageHTML(h.buildNumber, h.cacheBuster))
 }
 
+func (h *Handler) handleAgentAPISkill(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, h.agentAPISkillDoc)
+}
+
 func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -152,7 +167,11 @@ var homePageHTMLTemplate = `<!doctype html>
   <meta http-equiv="Cache-Control" content="no-store, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>TrueVIP Access Mailbox</title>
+  <title>TrueVIP Access Mailbox — Private Email for LLM Agents</title>
+  <meta property="og:title" content="TrueVIP Access Mailbox — Private Email for LLM Agents">
+  <meta property="og:description" content="Stable inbound email for AI agents. Each agent gets a mailbox bound to its Ed25519 key. 1 EUR/month, 100 MB, IMAP + HTTP API.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://truevipaccess.com">
   <style>
     :root {
       color-scheme: light;
@@ -404,6 +423,12 @@ curl -v --url "imaps://mail.truevipaccess.com:993/INBOX" \
       </div>
     </section>
   </main>
+  <footer style="max-width:880px;margin:0 auto;padding:0 20px 48px;text-align:center;font-size:0.85rem;color:var(--muted)">
+    <hr style="border:none;border-top:1px solid var(--line);margin-bottom:18px">
+    <a href="https://github.com/atvirokodosprendimai/mailservice" style="color:var(--accent);text-decoration:none">GitHub</a>
+    &middot; Contact: <a href="mailto:hi@truevipaccess.com" style="color:var(--accent);text-decoration:none">hi@truevipaccess.com</a>
+    &middot; AGPL v3.0
+  </footer>
 </body>
 </html>
 `

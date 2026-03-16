@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/atvirokodosprendimai/mailservice/docs"
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/httpapi"
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/identity/edproof"
 	"github.com/atvirokodosprendimai/mailservice/internal/adapters/imap"
@@ -58,6 +59,7 @@ func main() {
 	notifier, notifierProvider := selectNotifier(cfg, log.Default())
 	log.Printf("%s notifier enabled", notifierProvider)
 
+	mockPaymentMode := true
 	var paymentGateway ports.PaymentGateway = payment.NewMockGateway(cfg.PublicBaseURL)
 	if cfg.PolarToken != "" && cfg.PolarProductID != "" {
 		paymentGateway = payment.NewPolarGateway(payment.PolarConfig{
@@ -67,6 +69,7 @@ func main() {
 			SuccessURL: cfg.PolarSuccessURL,
 			ReturnURL:  cfg.PolarReturnURL,
 		})
+		mockPaymentMode = false
 		log.Printf("polar enabled")
 	} else if cfg.PolarToken != "" || cfg.PolarProductID != "" {
 		log.Printf("polar partially configured, falling back to legacy payment provider selection")
@@ -78,6 +81,7 @@ func main() {
 			SuccessURL: cfg.StripeSuccessURL,
 			CancelURL:  cfg.StripeCancelURL,
 		})
+		mockPaymentMode = false
 		log.Printf("stripe enabled")
 	} else {
 		log.Printf("real payment providers disabled, using mock payment links")
@@ -114,6 +118,8 @@ func main() {
 		AccountService:      accountService,
 		Logger:              log.Default(),
 		ChallengeAuth:       edproof.NewAuthenticator([]byte(cfg.EdproofHMACSecret)),
+		AgentAPISkillDoc:    docs.AgentAPISkill,
+		MockPaymentMode:     mockPaymentMode,
 	})
 
 	httpServer := &http.Server{
