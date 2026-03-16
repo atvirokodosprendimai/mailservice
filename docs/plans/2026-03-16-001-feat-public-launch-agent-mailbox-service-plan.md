@@ -111,11 +111,11 @@ This becomes the launch artifact — a video, gif, or blog post showing the end-
 
 ## Acceptance Criteria
 
-- [ ] `GET /docs/agent-api-skill.md` returns the skill document (not 404)
-- [ ] Mock payment endpoint only registered in dev mode
-- [ ] Price default matches copy (1 EUR = 100 cents)
-- [ ] Landing page has OpenGraph meta tags
-- [ ] Landing page has a footer with GitHub link and contact
+- [x] `GET /docs/agent-api-skill.md` returns the skill document (not 404)
+- [x] Mock payment endpoint only registered in dev mode
+- [x] Price default matches copy (1 EUR = 100 cents)
+- [x] Landing page has OpenGraph meta tags
+- [x] Landing page has a footer with GitHub link and contact
 - [ ] README has a clear "What is this?" opening for the agent audience
 - [ ] Show HN / Reddit draft written
 - [ ] OpenClaw integration demo documented or recorded

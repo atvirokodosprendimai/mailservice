@@ -136,7 +136,7 @@ func Load() (*Config, error) {
 		StripeSuccessURL:    getEnv("STRIPE_SUCCESS_URL", "http://localhost:8080/payment/success"),
 		StripeCancelURL:     getEnv("STRIPE_CANCEL_URL", "http://localhost:8080/payment/cancel"),
 		StripeCurrency:      getEnv("STRIPE_CURRENCY", "usd"),
-		MailboxPriceCents:   getEnvInt64("MAILBOX_PRICE_CENTS", 299),
+		MailboxPriceCents:   getEnvInt64("MAILBOX_PRICE_CENTS", 100),
 		EdproofHMACSecret:  edproofSecret,
 	}, nil
 }
