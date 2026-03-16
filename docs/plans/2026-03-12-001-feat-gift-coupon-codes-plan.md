@@ -219,11 +219,11 @@ Per-user enforcement uses the existing mailbox lookup by key fingerprint — no 
 
 **Goal:** Verify the full flow works in sandbox.
 
-- [ ] Run smoke test with coupon code against sandbox instance
-- [ ] Verify: claim with "OPENCLAWS" → $0 Polar checkout → webhook → mailbox active, ExpiresAt = +3 months
-- [ ] Verify: claim without coupon → normal payment flow, ExpiresAt = +1 month
-- [ ] Verify: Polar dashboard shows $0 order with discount applied
-- [ ] Verify: after 23 uses, next claim with coupon returns 410
+- [x] Run smoke test with coupon code against sandbox instance => GH Actions run #23140408725 passed (2026-03-16)
+- [x] Verify: claim with "OPENCLAWS" → $0 Polar checkout → webhook → mailbox active, ExpiresAt = +3 months => confirmed via smoke-sandbox auto-pay with discount code
+- [x] Verify: claim without coupon → normal payment flow, ExpiresAt = +1 month => confirmed via prior smoke run #23060192524 (2026-03-13)
+- [ ] Verify: Polar dashboard shows $0 order with discount applied => requires manual browser check
+- [ ] Verify: after 23 uses, next claim with coupon returns 410 => requires burning real coupon slots, deferred
 
 ## Sources & References
 
