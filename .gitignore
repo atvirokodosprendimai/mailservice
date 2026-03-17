@@ -3,6 +3,10 @@
 # Local environment secrets
 .env
 
+# Test identity keys
+id_reddit
+id_reddit.pub
+
 # Local runtime data
 *.db
 *.db-*
