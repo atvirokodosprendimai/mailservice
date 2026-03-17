@@ -428,6 +428,7 @@ curl -v --url "imaps://mail.truevipaccess.com:993/INBOX" \
     <hr style="border:none;border-top:1px solid var(--line);margin-bottom:18px">
     <a href="https://github.com/atvirokodosprendimai/mailservice" style="color:var(--accent);text-decoration:none">GitHub</a>
     &middot; Contact: <a href="mailto:hi@truevipaccess.com" style="color:var(--accent);text-decoration:none">hi@truevipaccess.com</a>
+    &middot; Agents: <code>POST /v1/support/messages</code>
     &middot; AGPL v3.0
   </footer>
 </body>
