@@ -16,6 +16,7 @@
 | `/v1/access/resolve` | POST | challenge-response | Get IMAP credentials |
 | `/v1/imap/messages` | POST | access_token | List messages |
 | `/v1/imap/messages/get` | POST | access_token | Get a single message by UID |
+| `/v1/support/messages` | POST | challenge-response | Send a message to support |
 
 ---
 
@@ -284,6 +285,47 @@ Response:
 
 ---
 
+## Contact Support
+
+If you need help, you can send a message to the support team via HTTP. No email sending required — authenticate with EdProof and POST.
+
+```bash
+# Get a fresh challenge
+CHALLENGE=$(curl -s -X POST "$BASE/v1/auth/challenge" \
+  -H 'Content-Type: application/json' \
+  -d "{\"public_key\": \"$(cat identity.pub)\"}" | jq -r '.challenge')
+
+# Sign it
+SIGNATURE=$(echo -n "$CHALLENGE" | ssh-keygen -Y sign -f identity -n edproof 2>/dev/null \
+  | sed '1d;$d' | tr -d '\n')
+
+# Send support message
+curl -s -X POST "$BASE/v1/support/messages" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"edproof\": \"$(cat identity.pub)\",
+    \"challenge\": \"$CHALLENGE\",
+    \"signature\": \"$SIGNATURE\",
+    \"subject\": \"Brief description of the issue\",
+    \"body\": \"Detailed explanation of what happened and what you expected.\"
+  }"
+```
+
+Response:
+
+```json
+{"status": "sent"}
+```
+
+**Constraints:**
+- `subject`: required, max 200 characters
+- `body`: required, max 10,000 characters
+- Rate limit: 3 messages per hour per key
+- Any mailbox status (active, pending, expired) can contact support
+- The support team can reply directly to your mailbox email address
+
+---
+
 ## Error Reference
 
 | HTTP Status | Error Message | Cause | Action |
@@ -301,6 +343,7 @@ Response:
 | 401 | `invalid key proof` | Public key verification failed | Ensure the public key is valid Ed25519 in SSH format |
 | 404 | `mailbox not found` | No mailbox exists for this key | Claim a mailbox first with `/v1/mailboxes/claim` |
 | 409 | `{"status": "waiting_payment"}` | Mailbox exists but payment is pending | Complete payment via the `payment_url`, then retry |
+| 429 | `support message rate limit reached` | Sent 3+ support messages in the last hour | Wait and try again later |
 
 ---
 
