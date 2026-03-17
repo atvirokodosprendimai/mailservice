@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 )
 
 type UnsendNotifier struct {
@@ -61,6 +63,54 @@ func (n *UnsendNotifier) SendRecoveryLink(ctx context.Context, ownerEmail string
 		recoveryURL,
 	)
 	return n.send(ctx, ownerEmail, subject, plainText, html)
+}
+
+func (n *UnsendNotifier) SendSupportMessage(ctx context.Context, params ports.SupportMessageParams) error {
+	subject := supportSubject(params)
+	plainText := supportPlainText(params)
+	htmlBody := supportHTML(params)
+	return n.sendWithReplyTo(ctx, params.ToEmail, subject, plainText, htmlBody, params.ReplyTo)
+}
+
+func (n *UnsendNotifier) sendWithReplyTo(ctx context.Context, toEmail string, subject string, plainText string, htmlContent string, replyTo string) error {
+	from := n.fromEmail
+	if n.fromName != "" {
+		from = fmt.Sprintf("%s <%s>", n.fromName, n.fromEmail)
+	}
+
+	payload := map[string]any{
+		"from":    from,
+		"to":      []string{toEmail},
+		"subject": subject,
+		"text":    plainText,
+		"html":    htmlContent,
+	}
+	if replyTo != "" {
+		payload["replyTo"] = replyTo
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	url := n.baseURL + "/v1/emails"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+n.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("unsend status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func (n *UnsendNotifier) send(ctx context.Context, toEmail string, subject string, plainText string, html string) error {

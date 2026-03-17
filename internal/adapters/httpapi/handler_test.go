@@ -577,6 +577,9 @@ func (httpNotifier) SendPaymentLink(_ context.Context, _ string, _ string, _ str
 	return nil
 }
 func (httpNotifier) SendRecoveryLink(_ context.Context, _ string, _ string) error { return nil }
+func (httpNotifier) SendSupportMessage(_ context.Context, _ ports.SupportMessageParams) error {
+	return nil
+}
 
 type httpTokenGenerator struct{ token string }
 
@@ -1098,5 +1101,226 @@ func TestHandlePolarWebhookRejectsWhenSecretNotConfigured(t *testing.T) {
 
 	if rec.Code != 401 && rec.Code != 500 && rec.Code != 503 {
 		t.Fatalf("expected rejection when polar secret is empty, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- Support message tests ---
+
+type httpSupportMessageRepo struct {
+	messages []*domain.SupportMessage
+}
+
+func (r *httpSupportMessageRepo) Create(_ context.Context, msg *domain.SupportMessage) error {
+	r.messages = append(r.messages, msg)
+	return nil
+}
+
+func (r *httpSupportMessageRepo) CountRecentByFingerprint(_ context.Context, fingerprint string, since time.Time) (int, error) {
+	count := 0
+	for _, m := range r.messages {
+		if m.KeyFingerprint == fingerprint && !m.CreatedAt.Before(since) {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func newSupportHandler(t *testing.T, repo *httpMailboxRepo, supportRepo *httpSupportMessageRepo) (*Handler, ed25519.PublicKey, ed25519.PrivateKey, string) {
+	t.Helper()
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+
+	svc := service.NewMailboxService(
+		repo,
+		&httpAccountRepo{},
+		&httpPaymentGateway{},
+		&httpNotifier{},
+		httpTokenGenerator{token: "token"},
+		&httpProvisioner{},
+		&httpMailReader{},
+		"mail.test.local",
+		"imap.test.local",
+		1143,
+	)
+	svc.SetSupportConfig(service.SupportConfig{
+		SupportEmail: "support@test.local",
+		SupportRepo:  supportRepo,
+	})
+
+	handler := NewHandler(Config{
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
+		MailboxService:   svc,
+		Logger:           log.New(io.Discard, "", 0),
+		Now:              func() time.Time { return time.Now().UTC() },
+	})
+
+	return handler, pub, priv, pubkey
+}
+
+func challengeAndSign(pubkey string, priv ed25519.PrivateKey) (string, string) {
+	now := time.Now().UTC()
+	challenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
+	sig := ed25519.Sign(priv, []byte(challenge))
+	return challenge, base64.StdEncoding.EncodeToString(sig)
+}
+
+func TestHandleSendSupportMessageHappyPath(t *testing.T) {
+	t.Parallel()
+
+	supportRepo := &httpSupportMessageRepo{}
+	fingerprint := "" // will be set by the repo after claim
+
+	handler, _, priv, pubkey := newSupportHandler(t, &httpMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{},
+	}, supportRepo)
+
+	// First, claim a mailbox so the fingerprint exists
+	now := time.Now().UTC()
+	claimChallenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
+	claimSig := ed25519.Sign(priv, []byte(claimChallenge))
+	claimBody := fmt.Sprintf(`{"billing_email":"owner@test.com","edproof":%q,"challenge":%q,"signature":%q}`,
+		pubkey, claimChallenge, base64.StdEncoding.EncodeToString(claimSig))
+	claimReq := httptest.NewRequest("POST", "/v1/mailboxes/claim", strings.NewReader(claimBody))
+	claimRec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(claimRec, claimReq)
+	if claimRec.Code != 201 {
+		t.Fatalf("claim failed: status %d body=%s", claimRec.Code, claimRec.Body.String())
+	}
+	_ = fingerprint
+
+	// Now send a support message
+	challenge, sigB64 := challengeAndSign(pubkey, priv)
+	body := fmt.Sprintf(`{"edproof":%q,"challenge":%q,"signature":%q,"subject":"Help needed","body":"My mailbox is not working."}`,
+		pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/support/messages", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["status"] != "sent" {
+		t.Fatalf("expected status=sent, got %q", resp["status"])
+	}
+	if len(supportRepo.messages) != 1 {
+		t.Fatalf("expected 1 persisted message, got %d", len(supportRepo.messages))
+	}
+}
+
+func TestHandleSendSupportMessageMissingFields(t *testing.T) {
+	t.Parallel()
+
+	handler, _, priv, pubkey := newSupportHandler(t, &httpMailboxRepo{}, &httpSupportMessageRepo{})
+
+	challenge, sigB64 := challengeAndSign(pubkey, priv)
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"missing subject", fmt.Sprintf(`{"edproof":%q,"challenge":%q,"signature":%q,"subject":"","body":"text"}`, pubkey, challenge, sigB64)},
+		{"missing body", fmt.Sprintf(`{"edproof":%q,"challenge":%q,"signature":%q,"subject":"help","body":""}`, pubkey, challenge, sigB64)},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/v1/support/messages", strings.NewReader(tc.body))
+			rec := httptest.NewRecorder()
+			handler.Routes().ServeHTTP(rec, req)
+			if rec.Code != 400 {
+				t.Fatalf("expected 400, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleSendSupportMessageExpiredChallenge(t *testing.T) {
+	t.Parallel()
+
+	handler, _, priv, pubkey := newSupportHandler(t, &httpMailboxRepo{}, &httpSupportMessageRepo{})
+
+	// Generate a challenge from 60 seconds ago (expired)
+	oldTime := time.Now().UTC().Add(-60 * time.Second)
+	challenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, oldTime)
+	sig := ed25519.Sign(priv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
+	body := fmt.Sprintf(`{"edproof":%q,"challenge":%q,"signature":%q,"subject":"help","body":"details"}`,
+		pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/support/messages", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 401 {
+		t.Fatalf("expected 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleSendSupportMessageNoMailbox(t *testing.T) {
+	t.Parallel()
+
+	// Empty repo — no mailboxes exist
+	handler, _, priv, pubkey := newSupportHandler(t, &httpMailboxRepo{}, &httpSupportMessageRepo{})
+
+	challenge, sigB64 := challengeAndSign(pubkey, priv)
+	body := fmt.Sprintf(`{"edproof":%q,"challenge":%q,"signature":%q,"subject":"help","body":"details"}`,
+		pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/support/messages", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 404 {
+		t.Fatalf("expected 404, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleSendSupportMessageRateLimit(t *testing.T) {
+	t.Parallel()
+
+	supportRepo := &httpSupportMessageRepo{}
+	handler, _, priv, pubkey := newSupportHandler(t, &httpMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{},
+	}, supportRepo)
+
+	// Claim a mailbox
+	now := time.Now().UTC()
+	claimChallenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
+	claimSig := ed25519.Sign(priv, []byte(claimChallenge))
+	claimBody := fmt.Sprintf(`{"billing_email":"owner@test.com","edproof":%q,"challenge":%q,"signature":%q}`,
+		pubkey, claimChallenge, base64.StdEncoding.EncodeToString(claimSig))
+	claimReq := httptest.NewRequest("POST", "/v1/mailboxes/claim", strings.NewReader(claimBody))
+	claimRec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(claimRec, claimReq)
+
+	// Send 3 support messages (rate limit = 3/hour)
+	for i := 0; i < 3; i++ {
+		challenge, sigB64 := challengeAndSign(pubkey, priv)
+		body := fmt.Sprintf(`{"edproof":%q,"challenge":%q,"signature":%q,"subject":"msg %d","body":"details"}`,
+			pubkey, challenge, sigB64, i)
+		req := httptest.NewRequest("POST", "/v1/support/messages", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		handler.Routes().ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Fatalf("message %d: expected 200, got %d body=%s", i, rec.Code, rec.Body.String())
+		}
+	}
+
+	// 4th message should be rate limited
+	challenge, sigB64 := challengeAndSign(pubkey, priv)
+	body := fmt.Sprintf(`{"edproof":%q,"challenge":%q,"signature":%q,"subject":"too many","body":"details"}`,
+		pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/support/messages", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 429 {
+		t.Fatalf("expected 429, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

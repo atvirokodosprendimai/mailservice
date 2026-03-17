@@ -101,6 +101,12 @@ func main() {
 		log.Printf("gift coupon config present but Polar not fully configured; gift coupons disabled")
 	}
 	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort, giftOpts...)
+	supportMessageRepo := repository.NewSupportMessageRepository(db)
+	mailboxService.SetSupportConfig(service.SupportConfig{
+		SupportEmail: cfg.SupportEmail,
+		SupportRepo:  supportMessageRepo,
+	})
+	log.Printf("support contact enabled (email: %s)", cfg.SupportEmail)
 	accountService := service.NewAccountService(accountRepo, accountRecoveryRepo, refreshTokenRepo, notifier, tokenGen, cfg.PublicBaseURL)
 
 	log.Printf("edproof challenge-response enabled")

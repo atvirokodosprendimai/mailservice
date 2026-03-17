@@ -6,6 +6,8 @@ import (
 
 	"github.com/sendgrid/sendgrid-go"
 	"github.com/sendgrid/sendgrid-go/helpers/mail"
+
+	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 )
 
 type SendGridNotifier struct {
@@ -48,6 +50,28 @@ func (n *SendGridNotifier) SendRecoveryLink(ctx context.Context, ownerEmail stri
 		recoveryURL,
 	)
 	return n.send(ctx, ownerEmail, subject, plainText, html)
+}
+
+func (n *SendGridNotifier) SendSupportMessage(ctx context.Context, params ports.SupportMessageParams) error {
+	subject := supportSubject(params)
+	plainText := supportPlainText(params)
+	htmlBody := supportHTML(params)
+
+	from := mail.NewEmail(n.fromName, n.fromEmail)
+	to := mail.NewEmail("", params.ToEmail)
+	message := mail.NewSingleEmail(from, subject, to, plainText, htmlBody)
+	if params.ReplyTo != "" {
+		message.SetReplyTo(mail.NewEmail("", params.ReplyTo))
+	}
+
+	resp, err := n.client.Send(message)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("sendgrid status %d: %s", resp.StatusCode, resp.Body)
+	}
+	return nil
 }
 
 func (n *SendGridNotifier) send(_ context.Context, toEmail string, subject string, plainText string, html string) error {

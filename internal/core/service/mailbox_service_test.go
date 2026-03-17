@@ -1185,6 +1185,11 @@ func (f *fakeMailboxNotifier) SendRecoveryLink(_ context.Context, _ string, _ st
 	return nil
 }
 
+func (f *fakeMailboxNotifier) SendSupportMessage(_ context.Context, _ ports.SupportMessageParams) error {
+	f.calls++
+	return nil
+}
+
 func TestReconcilePendingPayments(t *testing.T) {
 	repo := &fakeMailboxRepo{
 		byStripeSession: map[string]*domain.Mailbox{

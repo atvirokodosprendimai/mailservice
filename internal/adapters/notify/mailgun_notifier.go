@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 )
 
 var validDomainRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$`)
@@ -62,6 +64,46 @@ func (n *MailgunNotifier) SendRecoveryLink(ctx context.Context, ownerEmail strin
 		html.EscapeString(recoveryURL),
 	)
 	return n.send(ctx, ownerEmail, subject, body)
+}
+
+func (n *MailgunNotifier) SendSupportMessage(ctx context.Context, params ports.SupportMessageParams) error {
+	subject := supportSubject(params)
+	htmlBody := supportHTML(params)
+
+	from := n.fromEmail
+	if n.fromName != "" {
+		from = fmt.Sprintf("%s <%s>", n.fromName, n.fromEmail)
+	}
+
+	endpoint := fmt.Sprintf("%s/v3/%s/messages", n.baseURL, n.domain)
+
+	form := url.Values{}
+	form.Set("from", from)
+	form.Set("to", params.ToEmail)
+	form.Set("subject", subject)
+	form.Set("html", htmlBody)
+	if params.ReplyTo != "" {
+		form.Set("h:Reply-To", params.ReplyTo)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth("api", n.apiKey)
+
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("mailgun status %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
 }
 
 func (n *MailgunNotifier) send(ctx context.Context, to, subject, html string) error {

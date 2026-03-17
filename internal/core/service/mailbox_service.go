@@ -18,6 +18,11 @@ type GiftCouponConfig struct {
 	CouponCode string
 }
 
+type SupportConfig struct {
+	SupportEmail string
+	SupportRepo  ports.SupportMessageRepository
+}
+
 type MailboxService struct {
 	repo        ports.MailboxRepository
 	accounts    ports.AccountRepository
@@ -30,6 +35,7 @@ type MailboxService struct {
 	imapHost    string
 	imapPort    int
 	giftCoupon  GiftCouponConfig
+	support     SupportConfig
 }
 
 func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, mailDomain string, imapHost string, imapPort int, giftCoupon ...GiftCouponConfig) *MailboxService {
@@ -732,4 +738,67 @@ func (s *MailboxService) validateCoupon(couponCode string) (discountID string, g
 
 func supportsProtocol(protocol string) bool {
 	return strings.TrimSpace(strings.ToLower(protocol)) == "imap"
+}
+
+// SetSupportConfig configures the support message subsystem.
+// Called after construction to avoid changing the constructor signature.
+func (s *MailboxService) SetSupportConfig(cfg SupportConfig) {
+	s.support = cfg
+}
+
+const supportRateLimit = 3
+const supportRateWindow = time.Hour
+
+type SendSupportMessageRequest struct {
+	Key     ports.VerifiedKey
+	Subject string
+	Body    string
+}
+
+func (s *MailboxService) SendSupportMessage(ctx context.Context, req SendSupportMessageRequest) error {
+	if s.support.SupportEmail == "" || s.support.SupportRepo == nil {
+		return errors.New("support not configured")
+	}
+
+	mailbox, err := s.repo.GetByKeyFingerprint(ctx, req.Key.Fingerprint)
+	if err != nil {
+		return err
+	}
+
+	count, err := s.support.SupportRepo.CountRecentByFingerprint(ctx, req.Key.Fingerprint, time.Now().UTC().Add(-supportRateWindow))
+	if err != nil {
+		return fmt.Errorf("check rate limit: %w", err)
+	}
+	if count >= supportRateLimit {
+		return ports.ErrRateLimitReached
+	}
+
+	msg := &domain.SupportMessage{
+		ID:             uuid.New().String(),
+		MailboxID:      mailbox.ID,
+		KeyFingerprint: req.Key.Fingerprint,
+		Subject:        req.Subject,
+		Body:           req.Body,
+		CreatedAt:      time.Now().UTC(),
+	}
+	if err := s.support.SupportRepo.Create(ctx, msg); err != nil {
+		return fmt.Errorf("persist support message: %w", err)
+	}
+
+	agentEmail := fmt.Sprintf("%s@%s", mailbox.IMAPUsername, s.mailDomain)
+	params := ports.SupportMessageParams{
+		ToEmail:     s.support.SupportEmail,
+		ReplyTo:     agentEmail,
+		MailboxID:   mailbox.ID,
+		Fingerprint: req.Key.Fingerprint,
+		Status:      string(mailbox.Status),
+		OwnerEmail:  mailbox.OwnerEmail,
+		Subject:     req.Subject,
+		Body:        req.Body,
+	}
+	if err := s.notifier.SendSupportMessage(ctx, params); err != nil {
+		return fmt.Errorf("send support message: %w", err)
+	}
+
+	return nil
 }
