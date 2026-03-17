@@ -28,7 +28,7 @@ SIGNATURE=$(echo -n "$CHALLENGE" | ssh-keygen -Y sign -f identity -n edproof \
 
 # 4. claim a mailbox (coupon = 3 months free)
 curl -s -X POST https://truevipaccess.com/v1/mailboxes/claim \
-  -d '{"billing_email":"you@example.com","edproof":"'"$PUBKEY"'","challenge":"'"$CHALLENGE"'","signature":"'"$SIGNATURE"'","coupon_code":"OPENCLAWS"}'
+  -d '{"billing_email":"YOUR_EMAIL","edproof":"'"$PUBKEY"'","challenge":"'"$CHALLENGE"'","signature":"'"$SIGNATURE"'","coupon_code":"OPENCLAWS"}'
 
 # → returns mailbox address + payment_url (skip payment with coupon)
 
