@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 )
 
 type ResendNotifier struct {
@@ -53,6 +55,50 @@ func (n *ResendNotifier) SendRecoveryLink(ctx context.Context, ownerEmail string
 		recoveryURL,
 	)
 	return n.send(ctx, ownerEmail, subject, plainText, html)
+}
+
+func (n *ResendNotifier) SendSupportMessage(ctx context.Context, params ports.SupportMessageParams) error {
+	subject := supportSubject(params)
+	plainText := supportPlainText(params)
+	htmlBody := supportHTML(params)
+
+	from := n.fromEmail
+	if n.fromName != "" {
+		from = fmt.Sprintf("%s <%s>", n.fromName, n.fromEmail)
+	}
+
+	payload := map[string]any{
+		"from":    from,
+		"to":      []string{params.ToEmail},
+		"subject": subject,
+		"text":    plainText,
+		"html":    htmlBody,
+	}
+	if params.ReplyTo != "" {
+		payload["reply_to"] = params.ReplyTo
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.resend.com/emails", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+n.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("resend status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func (n *ResendNotifier) send(ctx context.Context, toEmail string, subject string, plainText string, html string) error {

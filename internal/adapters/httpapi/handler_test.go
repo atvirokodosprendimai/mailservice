@@ -577,6 +577,9 @@ func (httpNotifier) SendPaymentLink(_ context.Context, _ string, _ string, _ str
 	return nil
 }
 func (httpNotifier) SendRecoveryLink(_ context.Context, _ string, _ string) error { return nil }
+func (httpNotifier) SendSupportMessage(_ context.Context, _ ports.SupportMessageParams) error {
+	return nil
+}
 
 type httpTokenGenerator struct{ token string }
 

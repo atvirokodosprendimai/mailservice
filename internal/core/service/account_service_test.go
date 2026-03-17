@@ -342,3 +342,7 @@ func (f *fakeAccountNotifier) SendRecoveryLink(_ context.Context, _ string, reco
 	f.lastRecoveryURL = recoveryURL
 	return nil
 }
+
+func (f *fakeAccountNotifier) SendSupportMessage(_ context.Context, _ ports.SupportMessageParams) error {
+	return nil
+}

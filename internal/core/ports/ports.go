@@ -108,9 +108,21 @@ type PaymentGateway interface {
 	GetPaymentSession(ctx context.Context, sessionID string) (*PaymentSession, error)
 }
 
+type SupportMessageParams struct {
+	ToEmail     string // support mailbox address
+	ReplyTo     string // agent's mailbox address (so support can reply)
+	MailboxID   string
+	Fingerprint string
+	Status      string
+	OwnerEmail  string
+	Subject     string
+	Body        string
+}
+
 type Notifier interface {
 	SendPaymentLink(ctx context.Context, ownerEmail string, paymentURL string, mailboxID string) error
 	SendRecoveryLink(ctx context.Context, ownerEmail string, recoveryURL string) error
+	SendSupportMessage(ctx context.Context, params SupportMessageParams) error
 }
 
 type TokenGenerator interface {
@@ -124,6 +136,11 @@ type VerifiedKey struct {
 
 type KeyProofVerifier interface {
 	Verify(ctx context.Context, rawProof string) (*VerifiedKey, error)
+}
+
+type SupportMessageRepository interface {
+	Create(ctx context.Context, msg *domain.SupportMessage) error
+	CountRecentByFingerprint(ctx context.Context, fingerprint string, since time.Time) (int, error)
 }
 
 type MailRuntimeProvisioner interface {

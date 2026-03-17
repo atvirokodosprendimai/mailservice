@@ -109,6 +109,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/webhooks/stripe", h.handleStripeWebhook)
 	mux.HandleFunc("POST /admin/mailboxes/reprovision", h.withAdminKey(h.handleReprovisionMailbox))
 	mux.HandleFunc("POST /admin/payments/reconcile", h.withAdminKey(h.handleReconcilePayments))
+	mux.HandleFunc("POST /v1/support/messages", h.handleSendSupportMessage)
 	mux.HandleFunc("GET /docs/agent-api-skill.md", h.handleAgentAPISkill)
 	if h.mockPaymentMode {
 		mux.HandleFunc("GET /mock/pay/{sessionID}", h.handleMockPay)
@@ -879,6 +880,72 @@ func writeEdproofError(w http.ResponseWriter, err error) {
 	default:
 		writeError(w, http.StatusInternalServerError, err)
 	}
+}
+
+const (
+	supportSubjectMaxLen = 200
+	supportBodyMaxLen    = 10000
+)
+
+type supportMessageRequest struct {
+	EDProof   string `json:"edproof"`
+	Challenge string `json:"challenge"`
+	Signature string `json:"signature"`
+	Subject   string `json:"subject"`
+	Body      string `json:"body"`
+}
+
+func (h *Handler) handleSendSupportMessage(w http.ResponseWriter, r *http.Request) {
+	var req supportMessageRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if h.keyProofVerifier == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("key proof verifier not configured"))
+		return
+	}
+
+	subject := strings.TrimSpace(req.Subject)
+	body := strings.TrimSpace(req.Body)
+	if subject == "" || body == "" {
+		writeError(w, http.StatusBadRequest, errors.New("subject and body are required"))
+		return
+	}
+	if len(subject) > supportSubjectMaxLen {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("subject exceeds %d characters", supportSubjectMaxLen))
+		return
+	}
+	if len(body) > supportBodyMaxLen {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("body exceeds %d characters", supportBodyMaxLen))
+		return
+	}
+
+	key, err := h.verifyEdproof(r.Context(), req.EDProof, req.Challenge, req.Signature)
+	if err != nil {
+		writeEdproofError(w, err)
+		return
+	}
+
+	err = h.mailboxService.SendSupportMessage(r.Context(), service.SendSupportMessageRequest{
+		Key:     *key,
+		Subject: subject,
+		Body:    body,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, ports.ErrMailboxNotFound):
+			writeError(w, http.StatusNotFound, errors.New("no mailbox found for this key"))
+		case errors.Is(err, ports.ErrRateLimitReached):
+			writeError(w, http.StatusTooManyRequests, errors.New("support message rate limit reached — try again later"))
+		default:
+			h.logger.Printf("support message error: %v", err)
+			writeError(w, http.StatusInternalServerError, errors.New("failed to send support message"))
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 
 type listMessagesRequest struct {

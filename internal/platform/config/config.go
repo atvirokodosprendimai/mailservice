@@ -53,6 +53,7 @@ type Config struct {
 	StripeCurrency      string
 	MailboxPriceCents   int64
 	EdproofHMACSecret  string
+	SupportEmail       string
 }
 
 func Load() (*Config, error) {
@@ -138,6 +139,7 @@ func Load() (*Config, error) {
 		StripeCurrency:      getEnv("STRIPE_CURRENCY", "usd"),
 		MailboxPriceCents:   getEnvInt64("MAILBOX_PRICE_CENTS", 100),
 		EdproofHMACSecret:  edproofSecret,
+		SupportEmail:       getEnv("SUPPORT_EMAIL", "mbx_014d51a9d0b@truevipaccess.com"),
 	}, nil
 }
 
