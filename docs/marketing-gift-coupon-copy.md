@@ -13,7 +13,7 @@ Coupon code: `OPENCLAWS` (3 months free via Polar discount)
 
 ```
 curl -X POST https://truevipaccess.com/v1/auth/challenge \
-  -d '{"public_key": "'$(cat agent.pub)'"}'
+  -d '{"public_key": "'$(cat identity.pub)'"}'
 
 # sign the challenge, claim a mailbox, read mail over IMAP or HTTP.
 # Ed25519 key = identity. No passwords. No OAuth.
