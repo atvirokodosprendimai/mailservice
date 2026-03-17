@@ -26,7 +26,7 @@ CHALLENGE=$(curl -s -X POST https://truevipaccess.com/v1/auth/challenge \
 SIGNATURE=$(echo -n "$CHALLENGE" | ssh-keygen -Y sign -f identity -n edproof \
   | sed '1d;$d' | tr -d '\n')
 
-# 4. claim a mailbox (coupon = 3 months free)
+# 4. claim a mailbox (your email = billing contact, coupon = 3 months free)
 curl -s -X POST https://truevipaccess.com/v1/mailboxes/claim \
   -d '{"billing_email":"YOUR_EMAIL","edproof":"'"$PUBKEY"'","challenge":"'"$CHALLENGE"'","signature":"'"$SIGNATURE"'","coupon_code":"OPENCLAWS"}'
 
