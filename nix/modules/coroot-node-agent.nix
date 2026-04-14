@@ -3,22 +3,20 @@
 let
   cfg = config.services.corootNodeAgent;
   version = "1.31.0";
+  # sha256 of the upstream release binary (before patchelf).
   expectedSha256 = "d4d1acde006cadffff8b3ce78c88254d90b4d20f89972b07003216932a0cf179";
   expectedSize = "191384712";
   agentUrl = "https://github.com/coroot/coroot-node-agent/releases/download/v${version}/coroot-node-agent-amd64";
   agentDir = "/opt/coroot-node-agent";
   agentPath = "${agentDir}/coroot-node-agent";
+  versionStamp = "${agentDir}/.version-${version}";
 
   downloadScript = pkgs.writeShellScript "coroot-node-agent-download" ''
     set -euo pipefail
 
-    # Skip if binary exists and passes integrity check.
-    if [ -f "${agentPath}" ]; then
-      actual_hash=$(${pkgs.coreutils}/bin/sha256sum "${agentPath}" | ${pkgs.coreutils}/bin/cut -d' ' -f1)
-      if [ "$actual_hash" = "${expectedSha256}" ]; then
-        exit 0
-      fi
-      echo "Hash mismatch (expected ${expectedSha256}, got $actual_hash) — re-downloading." >&2
+    # Skip if this exact version was already downloaded and patched.
+    if [ -f "${agentPath}" ] && [ -f "${versionStamp}" ]; then
+      exit 0
     fi
 
     ${pkgs.coreutils}/bin/install -d -m 755 "${agentDir}"
@@ -32,7 +30,7 @@ let
       exit 1
     fi
 
-    # Verify sha256 against committed hash.
+    # Verify sha256 against committed hash (pre-patchelf).
     actual_hash=$(${pkgs.coreutils}/bin/sha256sum "${agentPath}.tmp" | ${pkgs.coreutils}/bin/cut -d' ' -f1)
     if [ "$actual_hash" != "${expectedSha256}" ]; then
       echo "FATAL: sha256 mismatch (expected ${expectedSha256}, got $actual_hash) — aborting." >&2
@@ -40,8 +38,13 @@ let
       exit 1
     fi
 
+    # Patch the ELF interpreter for NixOS (no /lib64/ld-linux-x86-64.so.2).
+    ${pkgs.patchelf}/bin/patchelf --set-interpreter "$(${pkgs.coreutils}/bin/cat ${pkgs.stdenv.cc.bintools.dynamicLinker})" "${agentPath}.tmp"
+
     ${pkgs.coreutils}/bin/chmod 755 "${agentPath}.tmp"
     ${pkgs.coreutils}/bin/mv "${agentPath}.tmp" "${agentPath}"
+    ${pkgs.coreutils}/bin/rm -f ${agentDir}/.version-*
+    ${pkgs.coreutils}/bin/touch "${versionStamp}"
   '';
 in
 {
