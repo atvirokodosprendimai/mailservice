@@ -219,6 +219,19 @@ jobs:
           CACHE_BUSTER: ${{ env.CACHE_BUSTER }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
 
+      - name: Write Coroot agent env file on host
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
+            set -eu
+            install -d -m 750 /var/lib/secrets
+            printf 'API_KEY=%s\n' '${COROOT_API_KEY}' > /var/lib/secrets/coroot.env
+            chmod 600 /var/lib/secrets/coroot.env
+          "
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          COROOT_API_KEY: ${{ secrets.COROOT_API_KEY }}
+
       - name: Validate required env vars on host
         run: |
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'

@@ -3,6 +3,7 @@
 {
   imports = [
     ../../modules/mailservice-gitops.nix
+    ../../modules/coroot-node-agent.nix
     ./hardware-configuration.nix
   ];
 
@@ -31,6 +32,13 @@
     mailDomain = "smoke.truevipaccess.com";
     environmentFile = "/var/lib/secrets/mailservice.env";
     cloudflaredEnvironmentFile = "/var/lib/secrets/cloudflared.env";
+  };
+
+  services.corootNodeAgent = {
+    enable = true;
+    collectorEndpoint = "https://table.beerpub.dev";
+    apiKeyFile = "/var/lib/secrets/coroot.env";
+    scrapeInterval = "15s";
   };
 
   # Disable cloudflared tunnel — smoke server uses direct nginx instead
