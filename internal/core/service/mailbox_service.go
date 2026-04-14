@@ -115,6 +115,14 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 			return existing, false, nil
 		}
 
+		// Check billing email not in use by a different mailbox.
+		if billingEmail != existing.BillingEmail {
+			taken, takenErr := s.repo.GetActiveOrPendingByBillingEmail(ctx, billingEmail)
+			if takenErr == nil && taken.ID != existing.ID {
+				return nil, false, ports.ErrBillingEmailInUse
+			}
+		}
+
 		// Per-user dedup: check if this key already redeemed a coupon
 		if couponCode != "" && existing.CouponUsed {
 			return nil, false, ports.ErrCouponAlreadyUsed
@@ -155,6 +163,12 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	}
 	if !errors.Is(err, ports.ErrMailboxNotFound) {
 		return nil, false, err
+	}
+
+	// No existing mailbox for this key — check billing email not already in use.
+	taken, takenErr := s.repo.GetActiveOrPendingByBillingEmail(ctx, billingEmail)
+	if takenErr == nil && taken != nil {
+		return nil, false, ports.ErrBillingEmailInUse
 	}
 
 	id := uuid.NewString()

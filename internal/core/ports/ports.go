@@ -9,18 +9,18 @@ import (
 )
 
 var (
-	ErrMailboxNotFound  = errors.New("mailbox not found")
-	ErrMailboxNotUsable = errors.New("mailbox not usable")
-	ErrAccountNotFound  = errors.New("account not found")
-	ErrForbidden        = errors.New("forbidden")
-	ErrAccountExists    = errors.New("account already exists")
-	ErrRecoveryNotFound = errors.New("recovery not found")
-	ErrRecoveryInvalid  = errors.New("recovery failed")
-	ErrRecoveryExpired  = errors.New("recovery failed")
-	ErrRateLimitReached = errors.New("rate limit reached")
-	ErrRefreshNotFound  = errors.New("authentication failed")
-	ErrRefreshExpired   = errors.New("authentication failed")
-	ErrMessageNotFound  = errors.New("message not found")
+	ErrMailboxNotFound   = errors.New("mailbox not found")
+	ErrMailboxNotUsable  = errors.New("mailbox not usable")
+	ErrAccountNotFound   = errors.New("account not found")
+	ErrForbidden         = errors.New("forbidden")
+	ErrAccountExists     = errors.New("account already exists")
+	ErrRecoveryNotFound  = errors.New("recovery not found")
+	ErrRecoveryInvalid   = errors.New("recovery failed")
+	ErrRecoveryExpired   = errors.New("recovery failed")
+	ErrRateLimitReached  = errors.New("rate limit reached")
+	ErrRefreshNotFound   = errors.New("authentication failed")
+	ErrRefreshExpired    = errors.New("authentication failed")
+	ErrMessageNotFound   = errors.New("message not found")
 	ErrInvalidKeyProof   = errors.New("invalid key proof")
 	ErrChallengeExpired  = errors.New("challenge expired")
 	ErrChallengeTampered = errors.New("challenge tampered or invalid")
@@ -29,6 +29,7 @@ var (
 	ErrCouponInvalid     = errors.New("invalid coupon code")
 	ErrCouponExhausted   = errors.New("coupon expired or exhausted")
 	ErrCouponAlreadyUsed = errors.New("coupon already used by this key")
+	ErrBillingEmailInUse = errors.New("billing email already in use by another mailbox")
 )
 
 // ChallengeAuthenticator generates and verifies challenge-response proofs.
@@ -49,6 +50,7 @@ type MailboxRepository interface {
 	GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
 	GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error)
 	GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error)
+	GetActiveOrPendingByBillingEmail(ctx context.Context, billingEmail string) (*domain.Mailbox, error)
 	ListActiveExpired(ctx context.Context, now time.Time) ([]domain.Mailbox, error)
 }
 

@@ -134,9 +134,9 @@ func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
 
 	repo := &httpMailboxRepo{}
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -177,9 +177,9 @@ func TestHandleClaimMailboxCreatesPendingMailbox(t *testing.T) {
 
 func TestHandleClaimMailboxRejectsMissingChallenge(t *testing.T) {
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			&httpMailboxRepo{},
 			&httpAccountRepo{},
@@ -202,6 +202,59 @@ func TestHandleClaimMailboxRejectsMissingChallenge(t *testing.T) {
 
 	if rec.Code != 400 {
 		t.Fatalf("expected status 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleClaimMailboxRejectsDuplicateBillingEmail(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	pubkey := makeSSHPubkey(pub)
+	now := time.Now().UTC()
+	future := now.Add(time.Hour)
+
+	challenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
+	sig := ed25519.Sign(priv, []byte(challenge))
+	sigB64 := base64.StdEncoding.EncodeToString(sig)
+
+	repo := &httpMailboxRepo{
+		activeOrPendingByBillingEmail: map[string]*domain.Mailbox{
+			"taken@example.com": {
+				ID:             "mbx-other",
+				BillingEmail:   "taken@example.com",
+				KeyFingerprint: "edproof:other-key",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(now),
+				ExpiresAt:      &future,
+			},
+		},
+	}
+	handler := NewHandler(Config{
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
+		MailboxService: service.NewMailboxService(
+			repo,
+			&httpAccountRepo{},
+			&httpPaymentGateway{},
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Logger: log.New(io.Discard, "", 0),
+		Now:    func() time.Time { return now },
+	})
+
+	body := fmt.Sprintf(`{"billing_email":"taken@example.com","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
+	req := httptest.NewRequest("POST", "/v1/mailboxes/claim", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 409 {
+		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -233,9 +286,9 @@ func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
 		},
 	}
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -291,9 +344,9 @@ func TestHandleResolveAccessReturnsWaitingPaymentForInactiveMailbox(t *testing.T
 		},
 	}
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -331,9 +384,9 @@ func TestHandleResolveAccessRejectsUnsupportedProtocol(t *testing.T) {
 	sigB64 := base64.StdEncoding.EncodeToString(sig)
 
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			&httpMailboxRepo{},
 			&httpAccountRepo{},
@@ -453,9 +506,10 @@ func TestHandlePolarSuccessRejectsUnpaidCheckout(t *testing.T) {
 }
 
 type httpMailboxRepo struct {
-	byID             map[string]*domain.Mailbox
-	byPaymentSession map[string]*domain.Mailbox
-	byKeyFingerprint map[string]*domain.Mailbox
+	byID                          map[string]*domain.Mailbox
+	byPaymentSession              map[string]*domain.Mailbox
+	byKeyFingerprint              map[string]*domain.Mailbox
+	activeOrPendingByBillingEmail map[string]*domain.Mailbox
 }
 
 func (r *httpMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) error {
@@ -531,6 +585,15 @@ func (r *httpMailboxRepo) GetByAccessToken(_ context.Context, _ string) (*domain
 func (r *httpMailboxRepo) GetByKeyFingerprint(_ context.Context, keyFingerprint string) (*domain.Mailbox, error) {
 	if item, ok := r.byKeyFingerprint[keyFingerprint]; ok {
 		return item, nil
+	}
+	return nil, ports.ErrMailboxNotFound
+}
+
+func (r *httpMailboxRepo) GetActiveOrPendingByBillingEmail(_ context.Context, billingEmail string) (*domain.Mailbox, error) {
+	if r.activeOrPendingByBillingEmail != nil {
+		if item, ok := r.activeOrPendingByBillingEmail[billingEmail]; ok {
+			return item, nil
+		}
 	}
 	return nil, ports.ErrMailboxNotFound
 }
@@ -628,9 +691,9 @@ func TestHandleResolveAccessIncludesAccessToken(t *testing.T) {
 		},
 	}
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -754,8 +817,8 @@ func TestHandleAuthChallengeReturnsChallenge(t *testing.T) {
 	pubkey := makeSSHPubkey(pub)
 
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		Logger:            log.New(io.Discard, "", 0),
+		ChallengeAuth: edproof.NewAuthenticator(testHMACSecret),
+		Logger:        log.New(io.Discard, "", 0),
 	})
 
 	body := fmt.Sprintf(`{"public_key":%q}`, pubkey)
@@ -784,8 +847,8 @@ func TestHandleAuthChallengeRejectsInvalidKey(t *testing.T) {
 	t.Parallel()
 
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		Logger:            log.New(io.Discard, "", 0),
+		ChallengeAuth: edproof.NewAuthenticator(testHMACSecret),
+		Logger:        log.New(io.Discard, "", 0),
 	})
 
 	req := httptest.NewRequest("POST", "/v1/auth/challenge", strings.NewReader(`{"public_key":"not-a-key"}`))
@@ -808,9 +871,9 @@ func TestClaimWithChallengeResponseFullFlow(t *testing.T) {
 	fingerprint, _ := edproof.FingerprintFromPubkey(pubkey)
 
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			&httpMailboxRepo{},
 			&httpAccountRepo{},
@@ -867,9 +930,9 @@ func TestClaimRejectsMissingChallenge(t *testing.T) {
 	pubkey := makeSSHPubkey(pub)
 
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			&httpMailboxRepo{},
 			&httpAccountRepo{},
@@ -924,16 +987,16 @@ func TestResolveWithChallengeResponseFullFlow(t *testing.T) {
 				ExpiresAt:      &future,
 				IMAPHost:       "imap.example.com",
 				IMAPPort:       143,
-				IMAPUsername:    "mbx_cr",
+				IMAPUsername:   "mbx_cr",
 				IMAPPassword:   "secret",
 			},
 		},
 	}
 
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			repo,
 			&httpAccountRepo{},
@@ -993,9 +1056,9 @@ func TestResolveRejectsWrongSignature(t *testing.T) {
 	now := time.Now().UTC()
 
 	handler := NewHandler(Config{
-		ChallengeAuth:     edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier:  edproof.NewVerifier(nil),
-		PaymentGateway:    &httpPaymentGateway{},
+		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
+		KeyProofVerifier: edproof.NewVerifier(nil),
+		PaymentGateway:   &httpPaymentGateway{},
 		MailboxService: service.NewMailboxService(
 			&httpMailboxRepo{},
 			&httpAccountRepo{},

@@ -715,6 +715,8 @@ func (h *Handler) handleClaimMailbox(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, err)
 		case errors.Is(err, ports.ErrCouponInvalid):
 			writeError(w, http.StatusUnprocessableEntity, err)
+		case errors.Is(err, ports.ErrBillingEmailInUse):
+			writeError(w, http.StatusConflict, err)
 		case errors.Is(err, ports.ErrCouponAlreadyUsed):
 			writeError(w, http.StatusConflict, err)
 		case errors.Is(err, ports.ErrCouponExhausted):

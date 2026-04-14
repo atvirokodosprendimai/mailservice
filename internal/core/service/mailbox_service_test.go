@@ -164,6 +164,81 @@ func TestClaimMailboxCreatesPendingMailboxForNewKey(t *testing.T) {
 	}
 }
 
+func TestClaimMailboxRejectsDuplicateBillingEmail(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		activeOrPendingByBillingEmail: map[string]*domain.Mailbox{
+			"taken@example.com": {
+				ID:             "mbx-existing",
+				BillingEmail:   "taken@example.com",
+				KeyFingerprint: "edproof:key-other",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC()),
+				ExpiresAt:      &future,
+			},
+		},
+	}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	_, _, err := svc.ClaimMailbox(context.Background(), "taken@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-new",
+		Algorithm:   "ed25519",
+	}, "")
+	if !errors.Is(err, ports.ErrBillingEmailInUse) {
+		t.Fatalf("expected ErrBillingEmailInUse, got %v", err)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment link creation, got %d", payment.calls)
+	}
+	if notifier.calls != 0 {
+		t.Fatalf("expected no notifier call, got %d", notifier.calls)
+	}
+}
+
+func TestClaimMailboxAllowsSameEmailForSameKey(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-same": {
+				ID:             "mbx-same",
+				BillingEmail:   "same@example.com",
+				KeyFingerprint: "edproof:key-same",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC()),
+				ExpiresAt:      &future,
+			},
+		},
+		activeOrPendingByBillingEmail: map[string]*domain.Mailbox{
+			"same@example.com": {
+				ID:             "mbx-same",
+				BillingEmail:   "same@example.com",
+				KeyFingerprint: "edproof:key-same",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC()),
+				ExpiresAt:      &future,
+			},
+		},
+	}
+	payment := &fakePaymentGateway{}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	mailbox, created, err := svc.ClaimMailbox(context.Background(), "same@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-same",
+		Algorithm:   "ed25519",
+	}, "")
+	if err != nil {
+		t.Fatalf("ClaimMailbox should succeed for same key, got %v", err)
+	}
+	if created {
+		t.Fatalf("expected existing mailbox reuse, got created=true")
+	}
+	if mailbox.ID != "mbx-same" {
+		t.Fatalf("expected existing mailbox, got %q", mailbox.ID)
+	}
+}
+
 func TestClaimMailboxReturnsExistingActiveMailboxWithoutRefreshingPayment(t *testing.T) {
 	future := time.Now().UTC().Add(time.Hour)
 	repo := &fakeMailboxRepo{
@@ -963,12 +1038,13 @@ func TestExpireMailboxesReturnsZeroWhenNothingExpired(t *testing.T) {
 }
 
 type fakeMailboxRepo struct {
-	pendingByAccount map[string]*domain.Mailbox
-	created          []*domain.Mailbox
-	byStripeSession  map[string]*domain.Mailbox
-	byAccessToken    map[string]*domain.Mailbox
-	byKeyFingerprint map[string]*domain.Mailbox
-	updated          *domain.Mailbox
+	pendingByAccount              map[string]*domain.Mailbox
+	created                       []*domain.Mailbox
+	byStripeSession               map[string]*domain.Mailbox
+	byAccessToken                 map[string]*domain.Mailbox
+	byKeyFingerprint              map[string]*domain.Mailbox
+	activeOrPendingByBillingEmail map[string]*domain.Mailbox
+	updated                       *domain.Mailbox
 }
 
 type fakeMailboxAccountRepo struct {
@@ -1086,6 +1162,15 @@ func (f *fakeMailboxRepo) GetByAccessToken(_ context.Context, accessToken string
 func (f *fakeMailboxRepo) GetByKeyFingerprint(_ context.Context, keyFingerprint string) (*domain.Mailbox, error) {
 	if f.byKeyFingerprint != nil {
 		if item, ok := f.byKeyFingerprint[keyFingerprint]; ok {
+			return item, nil
+		}
+	}
+	return nil, ports.ErrMailboxNotFound
+}
+
+func (f *fakeMailboxRepo) GetActiveOrPendingByBillingEmail(_ context.Context, billingEmail string) (*domain.Mailbox, error) {
+	if f.activeOrPendingByBillingEmail != nil {
+		if item, ok := f.activeOrPendingByBillingEmail[billingEmail]; ok {
 			return item, nil
 		}
 	}

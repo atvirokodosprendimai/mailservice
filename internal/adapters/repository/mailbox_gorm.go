@@ -198,6 +198,22 @@ func (r *MailboxRepository) ListActiveExpired(ctx context.Context, now time.Time
 	return items, nil
 }
 
+func (r *MailboxRepository) GetActiveOrPendingByBillingEmail(ctx context.Context, billingEmail string) (*domain.Mailbox, error) {
+	var model mailboxModel
+	err := r.db.WithContext(ctx).
+		First(&model, "billing_email = ? AND status IN (?, ?)",
+			strings.TrimSpace(strings.ToLower(billingEmail)),
+			string(domain.MailboxStatusActive),
+			string(domain.MailboxStatusPendingPayment)).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrMailboxNotFound
+		}
+		return nil, err
+	}
+	return toDomain(&model), nil
+}
+
 func (r *MailboxRepository) GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error) {
 	var model mailboxModel
 	err := r.db.WithContext(ctx).First(&model, "key_fingerprint = ?", strings.TrimSpace(strings.ToLower(keyFingerprint))).Error

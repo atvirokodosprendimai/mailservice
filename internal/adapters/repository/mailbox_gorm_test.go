@@ -126,3 +126,120 @@ func TestMailboxRepositoryAllowsMultipleEmptyPaymentSessionIDs(t *testing.T) {
 		t.Fatalf("expected 2 mailboxes, got %d", len(mailboxes))
 	}
 }
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryRejectsDuplicateBillingEmailForKeyBoundMailboxes(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+
+	// First key-bound mailbox with billing email
+	first := &domain.Mailbox{
+		ID:             "mbx-first",
+		OwnerEmail:     "shared@example.com",
+		BillingEmail:   "shared@example.com",
+		KeyFingerprint: "edproof:key-1",
+		IMAPHost:       "imap.example.com",
+		IMAPPort:       143,
+		IMAPUsername:    "mbx_first",
+		IMAPPassword:   "secret",
+		AccessToken:    "access-first",
+		Status:         domain.MailboxStatusActive,
+	}
+	if err := repo.Create(context.Background(), first); err != nil {
+		t.Fatalf("Create first mailbox failed: %v", err)
+	}
+
+	// Second key-bound mailbox with same billing email should fail
+	second := &domain.Mailbox{
+		ID:             "mbx-second",
+		OwnerEmail:     "shared@example.com",
+		BillingEmail:   "shared@example.com",
+		KeyFingerprint: "edproof:key-2",
+		IMAPHost:       "imap.example.com",
+		IMAPPort:       143,
+		IMAPUsername:    "mbx_second",
+		IMAPPassword:   "secret",
+		AccessToken:    "access-second",
+		Status:         domain.MailboxStatusPendingPayment,
+	}
+	if err := repo.Create(context.Background(), second); err == nil {
+		t.Fatalf("expected unique constraint violation for duplicate billing email, got nil")
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryAllowsSameBillingEmailForAccountBoundMailboxes(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+
+	// Account-bound mailboxes with same billing email should be allowed
+	for i, id := range []string{"mbx-acct-a", "mbx-acct-b"} {
+		mailbox := &domain.Mailbox{
+			ID:           id,
+			AccountID:    "acc-sponsor",
+			OwnerEmail:   "sponsor@example.com",
+			BillingEmail: "sponsor@example.com",
+			IMAPHost:     "imap.example.com",
+			IMAPPort:     143,
+			IMAPUsername: fmt.Sprintf("mbx_acct_%d", i),
+			IMAPPassword: "secret",
+			AccessToken:  fmt.Sprintf("access-acct-%d", i),
+			Status:       domain.MailboxStatusActive,
+		}
+		if err := repo.Create(context.Background(), mailbox); err != nil {
+			t.Fatalf("Create account-bound mailbox %s failed: %v", id, err)
+		}
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryGetActiveOrPendingByBillingEmail(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+
+	mailbox := &domain.Mailbox{
+		ID:             "mbx-lookup",
+		OwnerEmail:     "lookup@example.com",
+		BillingEmail:   "lookup@example.com",
+		KeyFingerprint: "edproof:key-lookup",
+		IMAPHost:       "imap.example.com",
+		IMAPPort:       143,
+		IMAPUsername:    "mbx_lookup",
+		IMAPPassword:   "secret",
+		AccessToken:    "access-lookup",
+		Status:         domain.MailboxStatusActive,
+	}
+	if err := repo.Create(context.Background(), mailbox); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	found, err := repo.GetActiveOrPendingByBillingEmail(context.Background(), "lookup@example.com")
+	if err != nil {
+		t.Fatalf("GetActiveOrPendingByBillingEmail failed: %v", err)
+	}
+	if found.ID != "mbx-lookup" {
+		t.Fatalf("expected mailbox mbx-lookup, got %q", found.ID)
+	}
+
+	// Expired mailbox should not be found
+	mailbox.Status = domain.MailboxStatusExpired
+	if err := repo.Update(context.Background(), mailbox); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	_, err = repo.GetActiveOrPendingByBillingEmail(context.Background(), "lookup@example.com")
+	if err == nil {
+		t.Fatalf("expected not found for expired mailbox, got nil error")
+	}
+}
