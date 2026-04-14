@@ -201,7 +201,7 @@ func (r *MailboxRepository) ListActiveExpired(ctx context.Context, now time.Time
 func (r *MailboxRepository) GetActiveOrPendingByBillingEmail(ctx context.Context, billingEmail string) (*domain.Mailbox, error) {
 	var model mailboxModel
 	err := r.db.WithContext(ctx).
-		First(&model, "billing_email = ? AND status IN (?, ?)",
+		First(&model, "billing_email = ? AND (account_id IS NULL OR account_id = '') AND status IN (?, ?)",
 			strings.TrimSpace(strings.ToLower(billingEmail)),
 			string(domain.MailboxStatusActive),
 			string(domain.MailboxStatusPendingPayment)).Error

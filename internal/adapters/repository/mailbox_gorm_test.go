@@ -201,6 +201,39 @@ func TestMailboxRepositoryAllowsSameBillingEmailForAccountBoundMailboxes(t *test
 }
 
 // No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryGetActiveOrPendingByBillingEmailIgnoresAccountBound(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+
+	// Create account-bound mailbox with a billing email
+	acctMailbox := &domain.Mailbox{
+		ID:           "mbx-acct",
+		AccountID:    "acc-1",
+		OwnerEmail:   "shared@example.com",
+		BillingEmail: "shared@example.com",
+		IMAPHost:     "imap.example.com",
+		IMAPPort:     143,
+		IMAPUsername: "mbx_acct",
+		IMAPPassword: "secret",
+		AccessToken:  "access-acct",
+		Status:       domain.MailboxStatusActive,
+	}
+	if err := repo.Create(context.Background(), acctMailbox); err != nil {
+		t.Fatalf("Create account-bound mailbox failed: %v", err)
+	}
+
+	// Query should NOT find account-bound mailbox
+	_, err = repo.GetActiveOrPendingByBillingEmail(context.Background(), "shared@example.com")
+	if err == nil {
+		t.Fatalf("expected not found for account-bound mailbox, got nil error")
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
 func TestMailboxRepositoryGetActiveOrPendingByBillingEmail(t *testing.T) {
 	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
 	if err != nil {
