@@ -3,18 +3,41 @@
 let
   cfg = config.services.corootNodeAgent;
   version = "1.31.0";
+  expectedSize = "191384712"; # from GitHub release API — prevents truncated downloads
   agentUrl = "https://github.com/coroot/coroot-node-agent/releases/download/v${version}/coroot-node-agent-amd64";
-  agentPath = "/opt/coroot-node-agent/coroot-node-agent";
+  agentDir = "/opt/coroot-node-agent";
+  agentPath = "${agentDir}/coroot-node-agent";
+  hashPath = "${agentDir}/coroot-node-agent.sha256";
 
   downloadScript = pkgs.writeShellScript "coroot-node-agent-download" ''
     set -euo pipefail
-    if [ -f "${agentPath}" ]; then
-      exit 0
+
+    # Skip if binary exists and passes integrity check.
+    if [ -f "${agentPath}" ] && [ -f "${hashPath}" ]; then
+      stored_hash=$(${pkgs.coreutils}/bin/cat "${hashPath}")
+      actual_hash=$(${pkgs.coreutils}/bin/sha256sum "${agentPath}" | ${pkgs.coreutils}/bin/cut -d' ' -f1)
+      if [ "$stored_hash" = "$actual_hash" ]; then
+        exit 0
+      fi
+      echo "Hash mismatch — re-downloading." >&2
     fi
-    ${pkgs.coreutils}/bin/install -d -m 755 /opt/coroot-node-agent
+
+    ${pkgs.coreutils}/bin/install -d -m 755 "${agentDir}"
     ${pkgs.curl}/bin/curl -fsSL -o "${agentPath}.tmp" "${agentUrl}"
+
+    # Verify file size matches the pinned release size.
+    actual_size=$(${pkgs.coreutils}/bin/stat -c%s "${agentPath}.tmp")
+    if [ "$actual_size" != "${expectedSize}" ]; then
+      echo "FATAL: expected ${expectedSize} bytes, got $actual_size — aborting." >&2
+      ${pkgs.coreutils}/bin/rm -f "${agentPath}.tmp"
+      exit 1
+    fi
+
+    # Pin the sha256 for future integrity checks.
+    ${pkgs.coreutils}/bin/sha256sum "${agentPath}.tmp" | ${pkgs.coreutils}/bin/cut -d' ' -f1 > "${hashPath}.tmp"
     ${pkgs.coreutils}/bin/chmod 755 "${agentPath}.tmp"
     ${pkgs.coreutils}/bin/mv "${agentPath}.tmp" "${agentPath}"
+    ${pkgs.coreutils}/bin/mv "${hashPath}.tmp" "${hashPath}"
   '';
 in
 {
