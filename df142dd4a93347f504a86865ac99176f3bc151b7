@@ -1,0 +1,23 @@
+nix/modules/coroot-node-agent.nix
+  b68d712e0503ae3a 6,12,17-19,33,41-43,46-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "df142dd4a93347f504a86865ac99176f3bc151b7",
+  "prompts": {
+    "b68d712e0503ae3a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "adb8801c-a150-4fa7-87a6-b05dfcd54364",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "~.~",
+      "messages": [],
+      "total_additions": 11,
+      "total_deletions": 8,
+      "accepted_lines": 11,
+      "overriden_lines": 0
+    }
+  }
+}
