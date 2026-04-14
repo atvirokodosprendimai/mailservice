@@ -1,0 +1,37 @@
+internal/core/service/mailbox_service.go
+  b68d712e0503ae3a 118-125,168-173
+internal/platform/database/migrations/20260414120000_add_billing_email_unique_constraint.sql
+  b68d712e0503ae3a 1-12
+internal/core/service/mailbox_service_test.go
+  b68d712e0503ae3a 167-241,1041-1047,1171-1179
+internal/adapters/httpapi/handler_test.go
+  b68d712e0503ae3a 137-139,180-182,208-260,289-291,347-349,387-389,509-512,592-600,694-696,820-821,850-851,874-876,933-935,990,997-999,1059-1061
+internal/adapters/httpapi/handler.go
+  b68d712e0503ae3a 718-719
+internal/core/ports/ports.go
+  b68d712e0503ae3a 12-23,32,53
+internal/adapters/repository/mailbox_gorm.go
+  b68d712e0503ae3a 201-216
+internal/adapters/repository/mailbox_gorm_test.go
+  b68d712e0503ae3a 129-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "788e72ca89829ec89abce984e9b4a716829d5ef7",
+  "prompts": {
+    "b68d712e0503ae3a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "adb8801c-a150-4fa7-87a6-b05dfcd54364",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "~.~",
+      "messages": [],
+      "total_additions": 371,
+      "total_deletions": 60,
+      "accepted_lines": 368,
+      "overriden_lines": 0
+    }
+  }
+}
