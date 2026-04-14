@@ -1,0 +1,25 @@
+internal/adapters/repository/mailbox_gorm_test.go
+  b68d712e0503ae3a 204-235
+internal/adapters/repository/mailbox_gorm.go
+  b68d712e0503ae3a 204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "3c2aca22c0a419ea5176850dbc11b8e69148fd83",
+  "prompts": {
+    "b68d712e0503ae3a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "adb8801c-a150-4fa7-87a6-b05dfcd54364",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "~.~",
+      "messages": [],
+      "total_additions": 34,
+      "total_deletions": 1,
+      "accepted_lines": 34,
+      "overriden_lines": 0
+    }
+  }
+}
