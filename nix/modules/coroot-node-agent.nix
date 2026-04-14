@@ -2,24 +2,20 @@
 
 let
   cfg = config.services.corootNodeAgent;
-
   version = "1.31.0";
+  agentUrl = "https://github.com/coroot/coroot-node-agent/releases/download/v${version}/coroot-node-agent-amd64";
+  agentPath = "/opt/coroot-node-agent/coroot-node-agent";
 
-  agent = pkgs.stdenv.mkDerivation {
-    pname = "coroot-node-agent";
-    inherit version;
-    src = pkgs.fetchurl {
-      url = "https://github.com/coroot/coroot-node-agent/releases/download/v${version}/coroot-node-agent-amd64";
-      executable = true;
-      # Build will fail with expected-vs-actual hash on first run.
-      # Replace this placeholder with the real hash from the build error.
-      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-    };
-    dontUnpack = true;
-    installPhase = ''
-      install -Dm755 $src $out/bin/coroot-node-agent
-    '';
-  };
+  downloadScript = pkgs.writeShellScript "coroot-node-agent-download" ''
+    set -euo pipefail
+    if [ -f "${agentPath}" ]; then
+      exit 0
+    fi
+    ${pkgs.coreutils}/bin/install -d -m 755 /opt/coroot-node-agent
+    ${pkgs.curl}/bin/curl -fsSL -o "${agentPath}.tmp" "${agentUrl}"
+    ${pkgs.coreutils}/bin/chmod 755 "${agentPath}.tmp"
+    ${pkgs.coreutils}/bin/mv "${agentPath}.tmp" "${agentPath}"
+  '';
 in
 {
   options.services.corootNodeAgent = {
@@ -51,9 +47,10 @@ in
       serviceConfig = {
         Type = "simple";
         Restart = "always";
-        RestartSec = 5;
+        RestartSec = 10;
         EnvironmentFile = cfg.apiKeyFile;
-        ExecStart = "${agent}/bin/coroot-node-agent --collector-endpoint=${cfg.collectorEndpoint} --scrape-interval=${cfg.scrapeInterval}";
+        ExecStartPre = "${downloadScript}";
+        ExecStart = "${agentPath} --collector-endpoint=${cfg.collectorEndpoint} --scrape-interval=${cfg.scrapeInterval}";
       };
     };
   };
