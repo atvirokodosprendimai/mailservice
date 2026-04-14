@@ -1,0 +1,27 @@
+nix/modules/coroot-node-agent.nix
+  b68d712e0503ae3a 1-60
+nix/hosts/smoke/configuration.nix
+  b68d712e0503ae3a 6,37-43
+.github/workflows/deploy-smoke.yml
+  b68d712e0503ae3a 222-234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "094f640d07dd6a9f13c5397ff52596fee421802b",
+  "prompts": {
+    "b68d712e0503ae3a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "adb8801c-a150-4fa7-87a6-b05dfcd54364",
+        "model": "claude-opus-4-6"
+      },
+      "human_author": "~.~",
+      "messages": [],
+      "total_additions": 153,
+      "total_deletions": 10,
+      "accepted_lines": 143,
+      "overriden_lines": 0
+    }
+  }
+}
