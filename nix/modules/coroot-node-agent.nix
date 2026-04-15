@@ -80,7 +80,11 @@ in
         RestartSec = 10;
         EnvironmentFile = cfg.apiKeyFile;
         ExecStartPre = "${downloadScript}";
-        ExecStart = "${agentPath} --collector-endpoint=${cfg.collectorEndpoint} --scrape-interval=${cfg.scrapeInterval}";
+        ExecStart = agentPath;
+      };
+      environment = {
+        COLLECTOR_ENDPOINT = cfg.collectorEndpoint;
+        SCRAPE_INTERVAL = cfg.scrapeInterval;
       };
     };
   };
