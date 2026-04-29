@@ -288,6 +288,11 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
             sudo systemctl restart mailservice-api.service
+            sleep 5
+            if ! systemctl is-active --quiet mailservice-api.service; then
+              echo "=== Service failed, last 30 journal lines ==="
+              sudo journalctl -u mailservice-api.service --no-pager -n 30
+            fi
           '
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -297,7 +302,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
             curl --fail --silent --show-error \
-              --retry 10 --retry-delay 3 --retry-connrefused \
+              --retry 15 --retry-delay 5 --retry-connrefused \
               http://127.0.0.1:8080/healthz
           '
         env:
