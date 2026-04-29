@@ -1,0 +1,23 @@
+internal/platform/database/migrations/20260414120000_add_billing_email_unique_constraint.sql
+  a9df32fd646b1444 5-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "01086d36f4453f2f105b48566a8ea056fe7a7296",
+  "prompts": {
+    "a9df32fd646b1444": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_22abbb6baffeROl5oe89lVj0nN",
+        "model": "minimax-coding-plan/MiniMax-M2.7"
+      },
+      "human_author": "~.~",
+      "messages": [],
+      "total_additions": 16,
+      "total_deletions": 0,
+      "accepted_lines": 16,
+      "overriden_lines": 0
+    }
+  }
+}
