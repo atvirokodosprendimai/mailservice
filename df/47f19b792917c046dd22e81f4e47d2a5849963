@@ -1,0 +1,15 @@
+.github/workflows/pulse.yml
+  ai_agent 1-36
+cmd/pulse/main.go
+  ai_agent 1-446
+README.md
+  ai_agent 183-186
+cmd/pulse/main_test.go
+  ai_agent 1-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "df47f19b792917c046dd22e81f4e47d2a5849963",
+  "prompts": {}
+}
