@@ -1,0 +1,36 @@
+name: Pulse Report
+
+on:
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+concurrency: { group: pulse, cancel-in-progress: true }
+
+permissions: { contents: read }
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
+      PUBLIC_BASE_URL: https://truevipaccess.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - run: go build -o bin/pulse ./cmd/pulse
+
+      - run: ./bin/pulse --window 24h --out docs/pulse-reports/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pulse-report
+          path: docs/pulse-reports/*.md
+          retention-days: 90
