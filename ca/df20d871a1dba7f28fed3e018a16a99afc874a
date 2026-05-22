@@ -1,0 +1,19 @@
+.github/workflows/pulse.yml
+  s_03e53372d1378a::t_4ae37bba7fb0df 15-16,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "cadf20d871a1dba7f28fed3e018a16a99afc874a",
+  "prompts": {},
+  "sessions": {
+    "s_03e53372d1378a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17c54220-3d12-4ce5-9278-9297328a1ba9",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
