@@ -224,7 +224,7 @@ func collectDatabaseMetrics(ctx context.Context, db *sql.DB, start time.Time, en
 		return databaseMetrics{}, fmt.Errorf("support volume: %w", err)
 	}
 	if err := queryCount(ctx, db, &metrics.RenewalsInWindow,
-		"SELECT COUNT(*) FROM mailboxes WHERE last_paid_at >= ? AND last_paid_at < ? AND status = 'active'", start, end); err != nil {
+		"SELECT COUNT(*) FROM mailboxes WHERE paid_at >= ? AND paid_at < ? AND status = 'active'", start, end); err != nil {
 		return databaseMetrics{}, fmt.Errorf("renewals in window: %w", err)
 	}
 	return metrics, nil
