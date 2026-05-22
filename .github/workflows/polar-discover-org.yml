@@ -11,17 +11,11 @@ jobs:
     environment:
       name: production
     steps:
-      - name: Probe Polar
+      - name: List Polar organizations
         env:
-          POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
-          POLAR_PRODUCT_ID: ${{ vars.POLAR_PRODUCT_ID }}
+          POLAR_PULSE_TOKEN: ${{ secrets.POLAR_PULSE_TOKEN }}
         run: |
-          echo "=== /v1/organizations/ ==="
+          set -e
           curl -sS -w '\nHTTP %{http_code}\n' \
-            -H "Authorization: Bearer $POLAR_TOKEN" \
+            -H "Authorization: Bearer $POLAR_PULSE_TOKEN" \
             https://api.polar.sh/v1/organizations/
-          echo ""
-          echo "=== /v1/products/$POLAR_PRODUCT_ID ==="
-          curl -sS -w '\nHTTP %{http_code}\n' \
-            -H "Authorization: Bearer $POLAR_TOKEN" \
-            "https://api.polar.sh/v1/products/$POLAR_PRODUCT_ID"

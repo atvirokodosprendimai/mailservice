@@ -160,7 +160,7 @@ func loadPulseConfig() (pulseConfig, error) {
 	if err != nil {
 		return pulseConfig{}, err
 	}
-	polarBearer, err := requiredEnv("POLAR_TOKEN")
+	polarBearer, err := requiredEnv("POLAR_PULSE_TOKEN")
 	if err != nil {
 		return pulseConfig{}, err
 	}
