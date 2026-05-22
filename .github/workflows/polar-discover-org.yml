@@ -1,0 +1,21 @@
+name: Polar Discover Org
+
+on:
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: List Polar organizations
+        env:
+          POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
+        run: |
+          set -e
+          curl -sS -H "Authorization: Bearer $POLAR_TOKEN" \
+            https://api.polar.sh/v1/organizations/ \
+            | jq '.items[] | {id, slug, name}'

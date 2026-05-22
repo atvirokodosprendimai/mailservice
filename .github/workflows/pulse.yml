@@ -19,6 +19,7 @@ jobs:
       TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
       TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
       POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
+      POLAR_ORGANIZATION_ID: ${{ vars.POLAR_ORGANIZATION_ID }}
       PUBLIC_BASE_URL: https://truevipaccess.com
     steps:
       - uses: actions/checkout@v4

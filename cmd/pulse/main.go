@@ -43,6 +43,7 @@ type pulseConfig struct {
 	DatabaseURL   string
 	DatabaseAuth  string
 	PolarBearer   string
+	PolarOrgID    string
 	PublicBaseURL string
 }
 
@@ -121,7 +122,7 @@ func run(ctx context.Context, args []string, logger *log.Logger) error {
 	}
 
 	client := &http.Client{Timeout: httpClientTimeout}
-	polar, err := fetchPolarSubscriptions(ctx, client, cfg.PolarBearer)
+	polar, err := fetchPolarSubscriptions(ctx, client, cfg.PolarBearer, cfg.PolarOrgID)
 	if err != nil {
 		return fmt.Errorf("fetch polar subscriptions: %w", err)
 	}
@@ -163,6 +164,10 @@ func loadPulseConfig() (pulseConfig, error) {
 	if err != nil {
 		return pulseConfig{}, err
 	}
+	polarOrgID, err := requiredEnv("POLAR_ORGANIZATION_ID")
+	if err != nil {
+		return pulseConfig{}, err
+	}
 
 	publicBaseURL := strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL"))
 	if publicBaseURL == "" {
@@ -173,6 +178,7 @@ func loadPulseConfig() (pulseConfig, error) {
 		DatabaseURL:   databaseURL,
 		DatabaseAuth:  databaseAuth,
 		PolarBearer:   polarBearer,
+		PolarOrgID:    polarOrgID,
 		PublicBaseURL: publicBaseURL,
 	}, nil
 }
@@ -237,10 +243,10 @@ func queryCount(ctx context.Context, db *sql.DB, destination *int64, statement s
 	return nil
 }
 
-func fetchPolarSubscriptions(ctx context.Context, client *http.Client, bearer string) (polarMetrics, error) {
+func fetchPolarSubscriptions(ctx context.Context, client *http.Client, bearer string, orgID string) (polarMetrics, error) {
 	var lastErr error
 	for attempt := 1; attempt <= polarMaxAttempts; attempt++ {
-		metrics, retry, err := fetchPolarSubscriptionsAttempt(ctx, client, bearer)
+		metrics, retry, err := fetchPolarSubscriptionsAttempt(ctx, client, bearer, orgID)
 		if err == nil {
 			return metrics, nil
 		}
@@ -258,8 +264,9 @@ func fetchPolarSubscriptions(ctx context.Context, client *http.Client, bearer st
 	return polarMetrics{}, lastErr
 }
 
-func fetchPolarSubscriptionsAttempt(ctx context.Context, client *http.Client, bearer string) (polarMetrics, bool, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, polarSubscriptionsURL, nil)
+func fetchPolarSubscriptionsAttempt(ctx context.Context, client *http.Client, bearer string, orgID string) (polarMetrics, bool, error) {
+	endpoint := polarSubscriptionsURL + "?organization_id=" + url.QueryEscape(orgID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return polarMetrics{}, false, fmt.Errorf("create polar request: %w", err)
 	}
