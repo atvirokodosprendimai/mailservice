@@ -1,0 +1,27 @@
+.github/workflows/polar-discover-org.yml
+  s_03e53372d1378a::t_cb329b580fdbd3 1-21
+cmd/pulse/main.go
+  s_03e53372d1378a::t_4e9b27475f4d35 246,249
+  s_03e53372d1378a::t_a7fd17e1e8f2e8 267-269
+  s_03e53372d1378a::t_2eb0338001321c 46
+  s_03e53372d1378a::t_3ec23d5a463773 125
+  s_03e53372d1378a::t_975744d266c9a8 167-170,181
+.github/workflows/pulse.yml
+  s_03e53372d1378a::t_0b87b43d249c24 22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "c65325e744a1f9bbab98f0af178ca3919b11da9e",
+  "prompts": {},
+  "sessions": {
+    "s_03e53372d1378a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17c54220-3d12-4ce5-9278-9297328a1ba9",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
