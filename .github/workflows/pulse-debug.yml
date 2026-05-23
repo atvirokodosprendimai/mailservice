@@ -1,0 +1,79 @@
+name: Pulse Debug Drift
+
+on:
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      POLAR_PULSE_TOKEN: ${{ secrets.POLAR_PULSE_TOKEN }}
+      POLAR_ORGANIZATION_ID: ${{ vars.POLAR_ORGANIZATION_ID }}
+      TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Polar subscriptions dump
+        run: |
+          set -euo pipefail
+          curl -sS \
+            -H "Authorization: Bearer $POLAR_PULSE_TOKEN" \
+            "https://api.polar.sh/v1/subscriptions/?organization_id=$POLAR_ORGANIZATION_ID&limit=100" \
+            | jq '.items[] | {id, status, customer_email: .customer.email, product_id, created_at, current_period_end, cancel_at_period_end, ended_at}'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Turso mailboxes dump
+        run: |
+          cat > /tmp/dump.go <<'EOF'
+          package main
+          import (
+            "context"
+            "fmt"
+            "log"
+            "os"
+            "github.com/atvirokodosprendimai/mailservice/internal/platform/database"
+          )
+          func main() {
+            db, err := database.OpenTurso(os.Getenv("TURSO_DATABASE_URL"), os.Getenv("TURSO_AUTH_TOKEN"))
+            if err != nil { log.Fatal(err) }
+            sqlDB, err := db.DB()
+            if err != nil { log.Fatal(err) }
+            defer sqlDB.Close()
+
+            ctx := context.Background()
+            row := sqlDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM mailboxes")
+            var total int64
+            row.Scan(&total)
+            fmt.Printf("total mailboxes: %d\n", total)
+
+            rows, err := sqlDB.QueryContext(ctx, "SELECT status, COUNT(*) FROM mailboxes GROUP BY status")
+            if err != nil { log.Fatal(err) }
+            defer rows.Close()
+            for rows.Next() {
+              var status string
+              var count int64
+              rows.Scan(&status, &count)
+              fmt.Printf("status=%s count=%d\n", status, count)
+            }
+
+            allRows, err := sqlDB.QueryContext(ctx, "SELECT id, billing_email, status, paid_at, created_at FROM mailboxes ORDER BY created_at DESC LIMIT 50")
+            if err != nil { log.Fatal(err) }
+            defer allRows.Close()
+            for allRows.Next() {
+              var id, email, status string
+              var paid, created interface{}
+              allRows.Scan(&id, &email, &status, &paid, &created)
+              fmt.Printf("id=%s email=%s status=%s paid_at=%v created_at=%v\n", id, email, status, paid, created)
+            }
+          }
+          EOF
+          mkdir -p cmd/dump && mv /tmp/dump.go cmd/dump/main.go
+          go run ./cmd/dump
