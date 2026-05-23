@@ -37,3 +37,26 @@ jobs:
           name: pulse-report
           path: docs/pulse-reports/*.md
           retention-days: 90
+
+      - name: Email pulse report via Mailgun
+        env:
+          MAILGUN_API_KEY: ${{ secrets.MAILGUN_API_KEY }}
+          MAILGUN_BASE_URL: ${{ vars.MAILGUN_BASE_URL }}
+          MAILGUN_DOMAIN: ${{ vars.MAILGUN_DOMAIN }}
+          MAILGUN_FROM_EMAIL: ${{ vars.MAILGUN_FROM_EMAIL }}
+          MAILGUN_FROM_NAME: ${{ vars.MAILGUN_FROM_NAME }}
+          PULSE_EMAIL_TO: ${{ vars.PULSE_EMAIL_TO }}
+        run: |
+          set -euo pipefail
+          REPORT="$(ls -1t docs/pulse-reports/*.md | head -1)"
+          if [ -z "$REPORT" ]; then
+            echo "no pulse report markdown found" >&2
+            exit 1
+          fi
+          SUBJECT="Pulse $(basename "$REPORT" .md)"
+          curl -sS --fail --user "api:${MAILGUN_API_KEY}" \
+            "${MAILGUN_BASE_URL}/v3/${MAILGUN_DOMAIN}/messages" \
+            -F from="${MAILGUN_FROM_NAME} <${MAILGUN_FROM_EMAIL}>" \
+            -F to="${PULSE_EMAIL_TO}" \
+            -F subject="${SUBJECT}" \
+            -F text="<${REPORT}"
