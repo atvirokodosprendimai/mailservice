@@ -41,28 +41,8 @@ jobs:
             "os"
             "github.com/atvirokodosprendimai/mailservice/internal/platform/database"
           )
+          const dropIndex = `DROP INDEX IF EXISTS idx_mailboxes_billing_email_active;`
           const recovery = `
-          WITH ranked_recovery_candidates AS (
-              SELECT
-                  rowid AS mailbox_rowid,
-                  ROW_NUMBER() OVER (
-                      PARTITION BY billing_email
-                      ORDER BY
-                          CASE WHEN paid_at IS NOT NULL THEN 0 ELSE 1 END,
-                          rowid DESC
-                  ) AS recovery_rank
-              FROM mailboxes
-              WHERE status = 'suspended'
-                AND billing_email <> ''
-                AND (account_id IS NULL OR account_id = '')
-                AND billing_email NOT IN (
-                    SELECT billing_email
-                    FROM mailboxes
-                    WHERE status IN ('active', 'pending_payment')
-                      AND billing_email <> ''
-                      AND (account_id IS NULL OR account_id = '')
-                )
-          )
           UPDATE mailboxes
           SET
               status = CASE
@@ -71,11 +51,9 @@ jobs:
                   ELSE 'expired'
               END,
               updated_at = CURRENT_TIMESTAMP
-          WHERE rowid IN (
-              SELECT mailbox_rowid
-              FROM ranked_recovery_candidates
-              WHERE recovery_rank = 1
-          );`
+          WHERE status = 'suspended'
+            AND billing_email <> ''
+            AND (account_id IS NULL OR account_id = '');`
           func main() {
             db, err := database.OpenTurso(os.Getenv("TURSO_DATABASE_URL"), os.Getenv("TURSO_AUTH_TOKEN"))
             if err != nil { log.Fatal(err) }
@@ -112,6 +90,9 @@ jobs:
             }
 
             dump("BEFORE recovery")
+
+            if _, err := tx.ExecContext(ctx, dropIndex); err != nil { log.Fatal("drop index exec: ", err) }
+            fmt.Println("\nidx_mailboxes_billing_email_active dropped (within tx)")
 
             res, err := tx.ExecContext(ctx, recovery)
             if err != nil { log.Fatal("recovery exec: ", err) }
