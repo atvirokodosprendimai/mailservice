@@ -1,0 +1,53 @@
+internal/platform/database/migrations/20260524000000_restore_wrongly_suspended_mailboxes.sql
+  s_b211b67615dfe8::t_796fa819cd8ac0 1-35
+STRATEGY.md
+  ai_agent 1-66
+.gitignore
+  s_7ecc974826b9a4::t_d3618461f6e3e4 32-34
+.github/workflows/pulse-debug.yml
+  s_03e53372d1378a::t_e33b8a736601fb 33,35,44-71,80,82,84-104,106-117,120-121
+docs/pulse-reports/2026-05-10_10-18.md
+  s_957d17c24f963c::t_2a21418cd99a05 1-36
+docs/architecture/diagrams/actors-flow.excalidraw
+  s_7ecc974826b9a4::t_548afb5889062d 1-1455
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "2e1492190a703bf2bf7b0ce5f299136efdb1dd7e",
+  "prompts": {},
+  "sessions": {
+    "s_03e53372d1378a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17c54220-3d12-4ce5-9278-9297328a1ba9",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    },
+    "s_7ecc974826b9a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "23152d48-7548-4f6b-8cc7-d88ed55e396b",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    },
+    "s_957d17c24f963c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9f28c048-e1a9-47ed-af1e-9d2655a52c50",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    },
+    "s_b211b67615dfe8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e588c-5ce8-7d80-9bf4-5e4d9a0cf35b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
