@@ -55,6 +55,13 @@ jobs:
               WHERE status = 'suspended'
                 AND billing_email <> ''
                 AND (account_id IS NULL OR account_id = '')
+                AND billing_email NOT IN (
+                    SELECT billing_email
+                    FROM mailboxes
+                    WHERE status IN ('active', 'pending_payment')
+                      AND billing_email <> ''
+                      AND (account_id IS NULL OR account_id = '')
+                )
           )
           UPDATE mailboxes
           SET

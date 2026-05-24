@@ -2,6 +2,9 @@
 -- Recovery for 20260414120000_add_billing_email_unique_constraint.sql:
 -- its HAVING COUNT(*) > 1 subquery caused unique active/pending key-bound
 -- mailboxes to be suspended. Restore one legitimate winner per billing email.
+-- Filter: skip emails that already own an active/pending_payment row.
+-- Otherwise restoring a suspended row would violate
+-- idx_mailboxes_billing_email_active (one active/pending row per email).
 WITH ranked_recovery_candidates AS (
     SELECT
         rowid AS mailbox_rowid,
@@ -15,6 +18,13 @@ WITH ranked_recovery_candidates AS (
     WHERE status = 'suspended'
       AND billing_email <> ''
       AND (account_id IS NULL OR account_id = '')
+      AND billing_email NOT IN (
+          SELECT billing_email
+          FROM mailboxes
+          WHERE status IN ('active', 'pending_payment')
+            AND billing_email <> ''
+            AND (account_id IS NULL OR account_id = '')
+      )
 )
 UPDATE mailboxes
 SET
