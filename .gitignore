@@ -17,6 +17,9 @@ id_reddit.pub
 bin/
 dist/
 result
+/pulse
+/cmd/dump/
+/cmd/dryrun/
 
 # OpenTofu local working files
 infra/opentofu/.terraform/
