@@ -29,3 +29,6 @@ infra/opentofu/terraform.tfstate.backup
 
 # Dolt database files (added by bd init)
 .dolt/
+
+# compound-engineering local config (machine-local, gitignored)
+.compound-engineering/

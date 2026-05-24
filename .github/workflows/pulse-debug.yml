@@ -30,9 +30,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Turso mailboxes dump
+      - name: Recovery dry-run (BEGIN; UPDATE; SELECT diff; ROLLBACK;)
         run: |
-          cat > /tmp/dump.go <<'EOF'
+          cat > /tmp/dryrun.go <<'EOF'
           package main
           import (
             "context"
@@ -41,39 +41,81 @@ jobs:
             "os"
             "github.com/atvirokodosprendimai/mailservice/internal/platform/database"
           )
+          const recovery = `
+          WITH ranked_recovery_candidates AS (
+              SELECT
+                  rowid AS mailbox_rowid,
+                  ROW_NUMBER() OVER (
+                      PARTITION BY billing_email
+                      ORDER BY
+                          CASE WHEN paid_at IS NOT NULL THEN 0 ELSE 1 END,
+                          rowid DESC
+                  ) AS recovery_rank
+              FROM mailboxes
+              WHERE status = 'suspended'
+                AND billing_email <> ''
+                AND (account_id IS NULL OR account_id = '')
+          )
+          UPDATE mailboxes
+          SET
+              status = CASE
+                  WHEN paid_at IS NULL THEN 'pending_payment'
+                  WHEN expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP THEN 'active'
+                  ELSE 'expired'
+              END,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE rowid IN (
+              SELECT mailbox_rowid
+              FROM ranked_recovery_candidates
+              WHERE recovery_rank = 1
+          );`
           func main() {
             db, err := database.OpenTurso(os.Getenv("TURSO_DATABASE_URL"), os.Getenv("TURSO_AUTH_TOKEN"))
             if err != nil { log.Fatal(err) }
             sqlDB, err := db.DB()
             if err != nil { log.Fatal(err) }
             defer sqlDB.Close()
-
             ctx := context.Background()
-            row := sqlDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM mailboxes")
-            var total int64
-            row.Scan(&total)
-            fmt.Printf("total mailboxes: %d\n", total)
 
-            rows, err := sqlDB.QueryContext(ctx, "SELECT status, COUNT(*) FROM mailboxes GROUP BY status")
+            tx, err := sqlDB.BeginTx(ctx, nil)
             if err != nil { log.Fatal(err) }
-            defer rows.Close()
-            for rows.Next() {
-              var status string
-              var count int64
-              rows.Scan(&status, &count)
-              fmt.Printf("status=%s count=%d\n", status, count)
+            defer tx.Rollback()
+
+            dump := func(label string) {
+              fmt.Printf("\n=== %s ===\n", label)
+              rows, err := tx.QueryContext(ctx, "SELECT status, COUNT(*) FROM mailboxes GROUP BY status ORDER BY status")
+              if err != nil { log.Fatal(err) }
+              defer rows.Close()
+              for rows.Next() {
+                var s string
+                var c int64
+                rows.Scan(&s, &c)
+                fmt.Printf("  status=%s count=%d\n", s, c)
+              }
+              detail, err := tx.QueryContext(ctx, "SELECT billing_email, status, paid_at IS NOT NULL, expires_at FROM mailboxes WHERE billing_email <> '' AND (account_id IS NULL OR account_id = '') ORDER BY billing_email, rowid")
+              if err != nil { log.Fatal(err) }
+              defer detail.Close()
+              for detail.Next() {
+                var email, status string
+                var hasPaid bool
+                var expiresAt interface{}
+                detail.Scan(&email, &status, &hasPaid, &expiresAt)
+                fmt.Printf("  email=%s status=%s paid=%v expires=%v\n", email, status, hasPaid, expiresAt)
+              }
             }
 
-            allRows, err := sqlDB.QueryContext(ctx, "SELECT id, billing_email, status, paid_at, created_at FROM mailboxes ORDER BY created_at DESC LIMIT 50")
-            if err != nil { log.Fatal(err) }
-            defer allRows.Close()
-            for allRows.Next() {
-              var id, email, status string
-              var paid, created interface{}
-              allRows.Scan(&id, &email, &status, &paid, &created)
-              fmt.Printf("id=%s email=%s status=%s paid_at=%v created_at=%v\n", id, email, status, paid, created)
-            }
+            dump("BEFORE recovery")
+
+            res, err := tx.ExecContext(ctx, recovery)
+            if err != nil { log.Fatal("recovery exec: ", err) }
+            n, _ := res.RowsAffected()
+            fmt.Printf("\nrows affected by recovery: %d\n", n)
+
+            dump("AFTER recovery (uncommitted)")
+
+            if err := tx.Rollback(); err != nil { log.Fatal("rollback: ", err) }
+            fmt.Println("\nrolled back — production data untouched")
           }
           EOF
-          mkdir -p cmd/dump && mv /tmp/dump.go cmd/dump/main.go
-          go run ./cmd/dump
+          mkdir -p cmd/dryrun && mv /tmp/dryrun.go cmd/dryrun/main.go
+          go run ./cmd/dryrun
