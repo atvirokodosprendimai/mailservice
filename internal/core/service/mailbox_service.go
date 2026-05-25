@@ -11,6 +11,7 @@ import (
 
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
+	"github.com/atvirokodosprendimai/mailservice/internal/platform/metrics"
 )
 
 type GiftCouponConfig struct {
@@ -36,6 +37,7 @@ type MailboxService struct {
 	imapPort    int
 	giftCoupon  GiftCouponConfig
 	support     SupportConfig
+	metrics     *metrics.Registry
 }
 
 func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, mailDomain string, imapHost string, imapPort int, giftCoupon ...GiftCouponConfig) *MailboxService {
@@ -74,6 +76,10 @@ func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepos
 	}
 }
 
+func (s *MailboxService) SetMetrics(registry *metrics.Registry) {
+	s.metrics = registry
+}
+
 type CreateMailboxRequest struct {
 	Account *domain.Account
 }
@@ -93,6 +99,7 @@ type ResolveAccessResult = ResolveIMAPResult
 const giftGrantedMonths = 3
 
 func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, key ports.VerifiedKey, couponCode string) (*domain.Mailbox, bool, error) {
+	s.metrics.Counter("key_proof_total").Add(1)
 	billingEmail = strings.TrimSpace(strings.ToLower(billingEmail))
 	if billingEmail == "" || !strings.Contains(billingEmail, "@") {
 		return nil, false, errors.New("billing_email must be a valid email")
@@ -100,6 +107,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	key.Fingerprint = strings.TrimSpace(strings.ToLower(key.Fingerprint))
 	key.Algorithm = strings.TrimSpace(strings.ToLower(key.Algorithm))
 	if key.Fingerprint == "" || key.Algorithm == "" {
+		s.metrics.Counter("key_proof_failed").Add(1)
 		return nil, false, ports.ErrInvalidKeyProof
 	}
 
@@ -515,6 +523,7 @@ func (s *MailboxService) validateMailboxSubscription(ctx context.Context, mailbo
 }
 
 func (s *MailboxService) ResolveAccessByToken(ctx context.Context, accessToken string, protocol string) (*ResolveAccessResult, error) {
+	s.metrics.Counter("resolve_calls").Add(1)
 	if !supportsProtocol(protocol) {
 		return nil, errors.New("unsupported protocol")
 	}
@@ -546,12 +555,15 @@ func (s *MailboxService) ResolveIMAPByToken(ctx context.Context, accessToken str
 }
 
 func (s *MailboxService) ResolveAccessByKey(ctx context.Context, key ports.VerifiedKey, protocol string) (*ResolveAccessResult, error) {
+	s.metrics.Counter("resolve_calls").Add(1)
 	if !supportsProtocol(protocol) {
 		return nil, errors.New("unsupported protocol")
 	}
+	s.metrics.Counter("key_proof_total").Add(1)
 	key.Fingerprint = strings.TrimSpace(strings.ToLower(key.Fingerprint))
 	key.Algorithm = strings.TrimSpace(strings.ToLower(key.Algorithm))
 	if key.Fingerprint == "" || key.Algorithm == "" {
+		s.metrics.Counter("key_proof_failed").Add(1)
 		return nil, ports.ErrInvalidKeyProof
 	}
 

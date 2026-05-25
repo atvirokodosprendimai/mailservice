@@ -21,6 +21,7 @@ import (
 	"github.com/atvirokodosprendimai/mailservice/internal/core/service"
 	"github.com/atvirokodosprendimai/mailservice/internal/platform/config"
 	"github.com/atvirokodosprendimai/mailservice/internal/platform/database"
+	"github.com/atvirokodosprendimai/mailservice/internal/platform/metrics"
 )
 
 func main() {
@@ -28,6 +29,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	metricsRegistry := metrics.NewRegistry(ctx)
 
 	// Local SQLite — always needed for Postfix/Dovecot mail_users and mail_domains tables
 	localDB, err := database.OpenAndMigrate(cfg.DatabaseDSN)
@@ -101,6 +105,7 @@ func main() {
 		log.Printf("gift coupon config present but Polar not fully configured; gift coupons disabled")
 	}
 	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort, giftOpts...)
+	mailboxService.SetMetrics(metricsRegistry)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	mailboxService.SetSupportConfig(service.SupportConfig{
 		SupportEmail: cfg.SupportEmail,
@@ -126,11 +131,12 @@ func main() {
 		ChallengeAuth:       edproof.NewAuthenticator([]byte(cfg.EdproofHMACSecret)),
 		AgentAPISkillDoc:    docs.AgentAPISkill,
 		MockPaymentMode:     mockPaymentMode,
+		Metrics:             metricsRegistry,
 	})
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           handler.Routes(),
+		Handler:           httpapi.NewHTTPMiddleware(handler.Routes(), metricsRegistry),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -140,9 +146,6 @@ func main() {
 			log.Fatalf("http server: %v", err)
 		}
 	}()
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	// Background sweep: expire mailboxes whose ExpiresAt has passed.
 	go func() {

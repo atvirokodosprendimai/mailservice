@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/core/service"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
+	"github.com/atvirokodosprendimai/mailservice/internal/platform/metrics"
 )
 
 func TestDecodeJSONRejectsMultiplePayloads(t *testing.T) {
@@ -96,6 +98,70 @@ func TestHandleHomeReturns304OnMatchingETag(t *testing.T) {
 	}
 	if rec.Body.Len() != 0 {
 		t.Fatalf("expected empty body on 304, got %d bytes", rec.Body.Len())
+	}
+}
+
+func TestHandleAdminMetricsRequiresAuthAndReturnsShape(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registry := metrics.NewRegistry(ctx)
+	registry.Counter("resolve_calls").Add(4)
+	registry.Counter("key_proof_total").Add(8)
+	registry.Counter("key_proof_failed").Add(2)
+	for _, value := range []int64{10, 25, 50} {
+		registry.Histogram("http_latency_ms").Observe(value)
+	}
+	registry.TopN("top_errors").Inc("database exploded")
+
+	handler := NewHandler(Config{
+		AdminAPIKey: "secret",
+		Metrics:     registry,
+		Logger:      log.New(io.Discard, "", 0),
+	})
+
+	unauthorized := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/admin/metrics", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status 401 without bearer, got %d body=%s", unauthorized.Code, unauthorized.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/metrics", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200 with bearer, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		Window              string          `json:"window"`
+		ResolveCalls        int64           `json:"resolve_calls"`
+		KeyProofTotal       int64           `json:"key_proof_total"`
+		KeyProofFailed      int64           `json:"key_proof_failed"`
+		FailedKeyProofRatio float64         `json:"failed_key_proof_ratio"`
+		HTTPP50MS           int64           `json:"http_p50_ms"`
+		HTTPP95MS           int64           `json:"http_p95_ms"`
+		HTTPP99MS           int64           `json:"http_p99_ms"`
+		TopErrors           json.RawMessage `json:"top_errors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode admin metrics: %v", err)
+	}
+	if payload.Window != "24h" {
+		t.Fatalf("window = %q, want 24h", payload.Window)
+	}
+	if payload.ResolveCalls != 4 || payload.KeyProofTotal != 8 || payload.KeyProofFailed != 2 {
+		t.Fatalf("unexpected counters: %#v", payload)
+	}
+	if payload.FailedKeyProofRatio != 0.25 {
+		t.Fatalf("failed_key_proof_ratio = %v, want 0.25", payload.FailedKeyProofRatio)
+	}
+	if payload.HTTPP50MS == 0 || payload.HTTPP95MS == 0 || payload.HTTPP99MS == 0 {
+		t.Fatalf("expected latency percentiles, got p50=%d p95=%d p99=%d", payload.HTTPP50MS, payload.HTTPP95MS, payload.HTTPP99MS)
+	}
+	if len(payload.TopErrors) == 0 || string(payload.TopErrors) == "null" {
+		t.Fatalf("expected top_errors JSON array, got %s", payload.TopErrors)
 	}
 }
 

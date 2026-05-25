@@ -19,6 +19,7 @@ import (
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/core/service"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
+	"github.com/atvirokodosprendimai/mailservice/internal/platform/metrics"
 )
 
 type Config struct {
@@ -37,6 +38,7 @@ type Config struct {
 	ChallengeAuth       ports.ChallengeAuthenticator
 	AgentAPISkillDoc    string
 	MockPaymentMode     bool
+	Metrics             *metrics.Registry
 }
 
 type Handler struct {
@@ -55,6 +57,7 @@ type Handler struct {
 	challengeAuth       ports.ChallengeAuthenticator
 	agentAPISkillDoc    string
 	mockPaymentMode     bool
+	metrics             *metrics.Registry
 }
 
 const challengeMaxAge = 30 * time.Second
@@ -83,6 +86,7 @@ func NewHandler(cfg Config) *Handler {
 		challengeAuth:       cfg.ChallengeAuth,
 		agentAPISkillDoc:    cfg.AgentAPISkillDoc,
 		mockPaymentMode:     cfg.MockPaymentMode,
+		metrics:             cfg.Metrics,
 	}
 }
 
@@ -107,6 +111,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/imap/messages", h.handleListIMAPMessages)
 	mux.HandleFunc("POST /v1/imap/messages/get", h.handleGetIMAPMessageByUID)
 	mux.HandleFunc("POST /v1/webhooks/stripe", h.handleStripeWebhook)
+	mux.HandleFunc("GET /admin/metrics", h.withAdminKey(h.handleAdminMetrics))
 	mux.HandleFunc("POST /admin/mailboxes/reprovision", h.withAdminKey(h.handleReprovisionMailbox))
 	mux.HandleFunc("POST /admin/payments/reconcile", h.withAdminKey(h.handleReconcilePayments))
 	mux.HandleFunc("POST /v1/support/messages", h.handleSendSupportMessage)
@@ -1606,6 +1611,37 @@ func (h *Handler) withAdminKey(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		next(w, r)
+	}
+}
+
+func (h *Handler) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
+	window := strings.TrimSpace(r.URL.Query().Get("window"))
+	if window == "" {
+		window = "24h"
+	}
+
+	snapshot := h.metrics.Snapshot(window)
+	total := snapshotInt64(snapshot, "key_proof_total")
+	failed := snapshotInt64(snapshot, "key_proof_failed")
+	ratio := 0.0
+	if total > 0 {
+		ratio = float64(failed) / float64(total)
+	}
+	snapshot["failed_key_proof_ratio"] = ratio
+
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func snapshotInt64(snapshot map[string]any, key string) int64 {
+	switch value := snapshot[key].(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case float64:
+		return int64(value)
+	default:
+		return 0
 	}
 }
 

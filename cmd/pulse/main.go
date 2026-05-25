@@ -45,6 +45,7 @@ type pulseConfig struct {
 	PolarBearer   string
 	PolarOrgID    string
 	PublicBaseURL string
+	AdminAPIKey   string
 }
 
 type databaseMetrics struct {
@@ -57,6 +58,18 @@ type databaseMetrics struct {
 
 type polarMetrics struct {
 	SubscriptionsObserved int
+}
+
+type adminTopError struct {
+	Msg   string `json:"msg"`
+	Count int64  `json:"count"`
+}
+
+type adminMetrics struct {
+	ResolveCalls        int64
+	FailedKeyProofRatio float64
+	Latency             map[string]int64
+	TopErrors           []adminTopError
 }
 
 type healthMetrics struct {
@@ -74,6 +87,7 @@ type pulseReport struct {
 	WindowEnd   time.Time
 	Database    databaseMetrics
 	Polar       polarMetrics
+	Admin       adminMetrics
 	Health      healthMetrics
 }
 
@@ -127,6 +141,11 @@ func run(ctx context.Context, args []string, logger *log.Logger) error {
 		return fmt.Errorf("fetch polar subscriptions: %w", err)
 	}
 
+	admin, err := fetchAdminMetrics(ctx, client, cfg.PublicBaseURL, cfg.AdminAPIKey, *windowFlag)
+	if err != nil {
+		return fmt.Errorf("fetch admin metrics: %w", err)
+	}
+
 	health, err := probeHealthz(ctx, client, cfg.PublicBaseURL)
 	if err != nil {
 		return fmt.Errorf("probe healthz: %w", err)
@@ -139,6 +158,7 @@ func run(ctx context.Context, args []string, logger *log.Logger) error {
 		WindowEnd:   windowEnd,
 		Database:    dbMetrics,
 		Polar:       polar,
+		Admin:       admin,
 		Health:      health,
 	})
 
@@ -168,6 +188,10 @@ func loadPulseConfig() (pulseConfig, error) {
 	if err != nil {
 		return pulseConfig{}, err
 	}
+	adminAPIKey, err := requiredEnv("ADMIN_API_KEY")
+	if err != nil {
+		return pulseConfig{}, err
+	}
 
 	publicBaseURL := strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL"))
 	if publicBaseURL == "" {
@@ -180,6 +204,7 @@ func loadPulseConfig() (pulseConfig, error) {
 		PolarBearer:   polarBearer,
 		PolarOrgID:    polarOrgID,
 		PublicBaseURL: publicBaseURL,
+		AdminAPIKey:   adminAPIKey,
 	}, nil
 }
 
@@ -318,6 +343,59 @@ func countPolarSubscriptions(payload any) int {
 	return 0
 }
 
+func fetchAdminMetrics(ctx context.Context, client *http.Client, baseURL string, adminKey string, window string) (adminMetrics, error) {
+	endpoint, err := url.JoinPath(baseURL, "admin/metrics")
+	if err != nil {
+		return adminMetrics{}, fmt.Errorf("admin metrics url: %w", err)
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return adminMetrics{}, fmt.Errorf("parse admin metrics url: %w", err)
+	}
+	query := parsed.Query()
+	query.Set("window", window)
+	parsed.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return adminMetrics{}, fmt.Errorf("create admin metrics request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+adminKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return adminMetrics{}, fmt.Errorf("do admin metrics request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return adminMetrics{}, fmt.Errorf("admin metrics status %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		ResolveCalls        int64           `json:"resolve_calls"`
+		FailedKeyProofRatio float64         `json:"failed_key_proof_ratio"`
+		HTTPP50MS           int64           `json:"http_p50_ms"`
+		HTTPP95MS           int64           `json:"http_p95_ms"`
+		HTTPP99MS           int64           `json:"http_p99_ms"`
+		TopErrors           []adminTopError `json:"top_errors"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return adminMetrics{}, fmt.Errorf("decode admin metrics: %w", err)
+	}
+
+	return adminMetrics{
+		ResolveCalls:        payload.ResolveCalls,
+		FailedKeyProofRatio: payload.FailedKeyProofRatio,
+		Latency: map[string]int64{
+			"p50_ms": payload.HTTPP50MS,
+			"p95_ms": payload.HTTPP95MS,
+			"p99_ms": payload.HTTPP99MS,
+		},
+		TopErrors: payload.TopErrors,
+	}, nil
+}
+
 func probeHealthz(ctx context.Context, client *http.Client, publicBaseURL string) (healthMetrics, error) {
 	healthURL, err := url.JoinPath(publicBaseURL, "healthz")
 	if err != nil {
@@ -384,6 +462,7 @@ func percentileDuration(samples []time.Duration, percentile int) time.Duration {
 
 func renderReport(report pulseReport) string {
 	conversion := conversionPercent(report.Database.Activated, report.Database.NewClaims)
+	resolveCallsPerMailbox := formatResolveCallsPerActiveMailbox(report.Admin.ResolveCalls, report.Database.ActivePaidMailboxes)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Pulse Report\n")
@@ -406,23 +485,44 @@ func renderReport(report pulseReport) string {
 	fmt.Fprintf(&b, "- support_volume: %d\n", report.Database.SupportVolume)
 	fmt.Fprintf(&b, "- imap_login: %s\n", pendingMetricNote)
 	fmt.Fprintf(&b, "- imap_message_fetched: %s\n", pendingMetricNote)
-	fmt.Fprintf(&b, "- resolve_calls_per_active_mailbox_per_week: %s\n", pendingMetricNote)
-	fmt.Fprintf(&b, "- failed_key_proof_ratio: %s\n\n", pendingMetricNote)
+	fmt.Fprintf(&b, "- resolve_calls_per_active_mailbox_per_week: %s\n", resolveCallsPerMailbox)
+	fmt.Fprintf(&b, "- failed_key_proof_ratio: %.4f\n\n", report.Admin.FailedKeyProofRatio)
 
 	fmt.Fprintf(&b, "## System\n")
 	fmt.Fprintf(&b, "- healthz p50/p95/p99 (CI-side, not prod-side): %s / %s / %s\n", report.Health.P50, report.Health.P95, report.Health.P99)
 	fmt.Fprintf(&b, "- healthz non_200: %d/%d\n", report.Health.Non200, report.Health.ProbeCount)
 	fmt.Fprintf(&b, "- polar_subscriptions_observed: %d\n", report.Polar.SubscriptionsObserved)
-	fmt.Fprintf(&b, "- top_errors: %s\n", pendingMetricNote)
-	fmt.Fprintf(&b, "- latency_p50_p95_p99: %s\n\n", pendingMetricNote)
+	fmt.Fprintf(&b, "- top_errors: %s\n", formatTopErrors(report.Admin.TopErrors))
+	fmt.Fprintf(&b, "- latency_p50_p95_p99: %dms / %dms / %dms\n\n",
+		report.Admin.Latency["p50_ms"],
+		report.Admin.Latency["p95_ms"],
+		report.Admin.Latency["p99_ms"])
 
 	fmt.Fprintf(&b, "## Followups\n")
-	fmt.Fprintf(&b, "1. Ship prod telemetry for pending IMAP, resolve, key-proof, errors, and latency metrics.\n")
+	fmt.Fprintf(&b, "1. Ship prod telemetry for pending IMAP metrics.\n")
 	fmt.Fprintf(&b, "2. Compare Polar subscription count against active paid mailboxes for billing drift.\n")
 	fmt.Fprintf(&b, "3. Investigate any healthz non-200 probes from this CI-side sample.\n")
-	fmt.Fprintf(&b, "4. Add admin metrics or log shipping before treating pulse latency as prod-side truth.\n")
+	fmt.Fprintf(&b, "4. Add IMAP log shipping before treating mailbox read activity as prod-side truth.\n")
 	fmt.Fprintf(&b, "5. Review support volume changes when the next report lands.\n")
 	return b.String()
+}
+
+func formatResolveCallsPerActiveMailbox(resolveCalls int64, activePaidMailboxes int64) string {
+	if activePaidMailboxes <= 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.1f", float64(resolveCalls)*7/float64(activePaidMailboxes))
+}
+
+func formatTopErrors(errors []adminTopError) string {
+	if len(errors) == 0 {
+		return "none"
+	}
+	parts := make([]string, 0, len(errors))
+	for _, item := range errors {
+		parts = append(parts, fmt.Sprintf("%s (%d)", item.Msg, item.Count))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func conversionPercent(activated int64, newClaims int64) float64 {
