@@ -1,0 +1,26 @@
+internal/adapters/httpapi/handler.go
+  s_0a34eef3b3b22a::t_ae0e9e3dd39dbb 1196-1199,1236-1251
+internal/adapters/httpapi/polar_webhook_test.go
+  s_0a34eef3b3b22a::t_34fceecb44a317 162-170,172-179,181-187,189-195,197-204,206-208,215-228,232-252,339-353
+  s_0a34eef3b3b22a::t_d4d184f5510385 171,180,188,196,205,209-214,229-231
+internal/core/service/mailbox_service.go
+  s_0a34eef3b3b22a::t_1db8a203413849 385-393
+internal/adapters/httpapi/handler_test.go
+  s_0a34eef3b3b22a::t_5c6e1178db92e2 460,506
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "75b438dc6c1de5c5917013e3c0aadf8e6c4c77a9",
+  "prompts": {},
+  "sessions": {
+    "s_0a34eef3b3b22a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e609b-72dd-76c1-82d0-f2032f92d20e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
