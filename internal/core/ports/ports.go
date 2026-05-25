@@ -29,7 +29,6 @@ var (
 	ErrCouponInvalid     = errors.New("invalid coupon code")
 	ErrCouponExhausted   = errors.New("coupon expired or exhausted")
 	ErrCouponAlreadyUsed = errors.New("coupon already used by this key")
-	ErrBillingEmailInUse = errors.New("billing email already in use by another mailbox")
 )
 
 // ChallengeAuthenticator generates and verifies challenge-response proofs.
@@ -50,7 +49,6 @@ type MailboxRepository interface {
 	GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
 	GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error)
 	GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error)
-	GetActiveOrPendingByBillingEmail(ctx context.Context, billingEmail string) (*domain.Mailbox, error)
 	ListActiveExpired(ctx context.Context, now time.Time) ([]domain.Mailbox, error)
 }
 

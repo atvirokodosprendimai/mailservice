@@ -205,59 +205,6 @@ func TestHandleClaimMailboxRejectsMissingChallenge(t *testing.T) {
 	}
 }
 
-func TestHandleClaimMailboxRejectsDuplicateBillingEmail(t *testing.T) {
-	pub, priv, _ := ed25519.GenerateKey(nil)
-	pubkey := makeSSHPubkey(pub)
-	now := time.Now().UTC()
-	future := now.Add(time.Hour)
-
-	challenge, _ := edproof.GenerateChallenge(pubkey, testHMACSecret, now)
-	sig := ed25519.Sign(priv, []byte(challenge))
-	sigB64 := base64.StdEncoding.EncodeToString(sig)
-
-	repo := &httpMailboxRepo{
-		activeOrPendingByBillingEmail: map[string]*domain.Mailbox{
-			"taken@example.com": {
-				ID:             "mbx-other",
-				BillingEmail:   "taken@example.com",
-				KeyFingerprint: "edproof:other-key",
-				Status:         domain.MailboxStatusActive,
-				PaidAt:         ptrTime(now),
-				ExpiresAt:      &future,
-			},
-		},
-	}
-	handler := NewHandler(Config{
-		ChallengeAuth:    edproof.NewAuthenticator(testHMACSecret),
-		KeyProofVerifier: edproof.NewVerifier(nil),
-		PaymentGateway:   &httpPaymentGateway{},
-		MailboxService: service.NewMailboxService(
-			repo,
-			&httpAccountRepo{},
-			&httpPaymentGateway{},
-			&httpNotifier{},
-			httpTokenGenerator{token: "token"},
-			&httpProvisioner{},
-			&httpMailReader{},
-			"mail.test.local",
-			"imap.test.local",
-			1143,
-		),
-		Logger: log.New(io.Discard, "", 0),
-		Now:    func() time.Time { return now },
-	})
-
-	body := fmt.Sprintf(`{"billing_email":"taken@example.com","edproof":%q,"challenge":%q,"signature":%q}`, pubkey, challenge, sigB64)
-	req := httptest.NewRequest("POST", "/v1/mailboxes/claim", strings.NewReader(body))
-	rec := httptest.NewRecorder()
-
-	handler.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != 409 {
-		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestHandleResolveAccessReturnsIMAPDetailsForValidKey(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	pubkey := makeSSHPubkey(pub)
@@ -587,15 +534,6 @@ func (r *httpMailboxRepo) GetByAccessToken(_ context.Context, _ string) (*domain
 func (r *httpMailboxRepo) GetByKeyFingerprint(_ context.Context, keyFingerprint string) (*domain.Mailbox, error) {
 	if item, ok := r.byKeyFingerprint[keyFingerprint]; ok {
 		return item, nil
-	}
-	return nil, ports.ErrMailboxNotFound
-}
-
-func (r *httpMailboxRepo) GetActiveOrPendingByBillingEmail(_ context.Context, billingEmail string) (*domain.Mailbox, error) {
-	if r.activeOrPendingByBillingEmail != nil {
-		if item, ok := r.activeOrPendingByBillingEmail[billingEmail]; ok {
-			return item, nil
-		}
 	}
 	return nil, ports.ErrMailboxNotFound
 }
