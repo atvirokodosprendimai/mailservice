@@ -1192,6 +1192,17 @@ func (h *Handler) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	switch event.Type {
+	case "checkout.updated", "checkout.created":
+		h.handleCheckoutEvent(w, r, event)
+	case "subscription.updated", "subscription.created", "order.created", "order.paid":
+		h.handleSubscriptionRenewal(w, r, event)
+	default:
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+	}
+}
+
+func (h *Handler) handleCheckoutEvent(w http.ResponseWriter, r *http.Request, event *polarWebhookEvent) {
 	checkoutID := polarCheckoutID(event)
 	if checkoutID == "" {
 		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
@@ -1210,6 +1221,31 @@ func (h *Handler) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := h.mailboxService.MarkMailboxPaid(r.Context(), session.SessionID); err != nil {
 		if errors.Is(err, ports.ErrMailboxNotFound) {
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleSubscriptionRenewal(w http.ResponseWriter, r *http.Request, event *polarWebhookEvent) {
+	mailboxID, expiresAt, ok := polarSubscriptionFields(event.Data)
+	if !ok {
+		if h.logger != nil {
+			h.logger.Printf("polar subscription renewal ignored: missing mailbox_id or current_period_end")
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+
+	if err := h.mailboxService.RenewMailbox(r.Context(), mailboxID, time.Now(), expiresAt); err != nil {
+		if errors.Is(err, ports.ErrMailboxNotFound) {
+			if h.logger != nil {
+				h.logger.Printf("polar subscription renewal ignored: mailbox not found mailbox_id=%s", mailboxID)
+			}
 			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
 			return
 		}

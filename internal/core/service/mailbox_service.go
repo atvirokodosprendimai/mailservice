@@ -383,6 +383,19 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 	return mailbox, nil
 }
 
+func (s *MailboxService) RenewMailbox(ctx context.Context, mailboxID string, paidAt time.Time, expiresAt time.Time) error {
+	mailbox, err := s.repo.GetByID(ctx, mailboxID)
+	if err != nil {
+		return err
+	}
+
+	mailbox.Status = domain.MailboxStatusActive
+	mailbox.PaidAt = &paidAt
+	mailbox.ExpiresAt = &expiresAt
+
+	return s.repo.Update(ctx, mailbox)
+}
+
 // ReconcileResult holds the outcome of a single mailbox reconciliation attempt.
 type ReconcileResult struct {
 	MailboxID string `json:"mailbox_id"`

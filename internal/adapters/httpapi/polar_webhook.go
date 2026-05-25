@@ -18,17 +18,21 @@ const polarWebhookTolerance = 5 * time.Minute
 var errInvalidPolarWebhook = errors.New("invalid polar webhook")
 
 type polarWebhookEvent struct {
-	Type string `json:"type"`
-	Data struct {
-		ID       string `json:"id"`
-		Status   string `json:"status"`
-		Checkout *struct {
-			ID string `json:"id"`
-		} `json:"checkout"`
-		Object *struct {
-			ID string `json:"id"`
-		} `json:"object"`
-	} `json:"data"`
+	Type string                `json:"type"`
+	Data polarWebhookEventData `json:"data"`
+}
+
+type polarWebhookEventData struct {
+	ID               string            `json:"id"`
+	Status           string            `json:"status"`
+	Metadata         map[string]string `json:"metadata"`
+	CurrentPeriodEnd *time.Time        `json:"current_period_end"`
+	Checkout         *struct {
+		ID string `json:"id"`
+	} `json:"checkout"`
+	Object *struct {
+		ID string `json:"id"`
+	} `json:"object"`
 }
 
 func verifyPolarWebhook(secret string, headers map[string]string, body []byte, now time.Time) error {
@@ -116,4 +120,12 @@ func polarCheckoutID(event *polarWebhookEvent) string {
 		}
 	}
 	return ""
+}
+
+func polarSubscriptionFields(data polarWebhookEventData) (mailboxID string, expiresAt time.Time, ok bool) {
+	mailboxID = strings.TrimSpace(data.Metadata["mailbox_id"])
+	if mailboxID == "" || data.CurrentPeriodEnd == nil || data.CurrentPeriodEnd.IsZero() {
+		return "", time.Time{}, false
+	}
+	return mailboxID, *data.CurrentPeriodEnd, true
 }

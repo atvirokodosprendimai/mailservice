@@ -510,6 +510,7 @@ type httpMailboxRepo struct {
 	byPaymentSession              map[string]*domain.Mailbox
 	byKeyFingerprint              map[string]*domain.Mailbox
 	activeOrPendingByBillingEmail map[string]*domain.Mailbox
+	updateCount                   int
 }
 
 func (r *httpMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) error {
@@ -533,6 +534,7 @@ func (r *httpMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) err
 }
 
 func (r *httpMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) error {
+	r.updateCount++
 	if r.byID == nil {
 		r.byID = map[string]*domain.Mailbox{}
 	}
