@@ -1,0 +1,30 @@
+internal/core/service/mailbox_service.go
+  s_2caf2d7e1381c8::t_4227c42a6502de 386-398
+internal/adapters/httpapi/handler_test.go
+  s_2caf2d7e1381c8::t_a59e85d9864862 513,537
+internal/adapters/httpapi/handler.go
+  s_2caf2d7e1381c8::t_629f9258a71da2 1244
+  s_2caf2d7e1381c8::t_04b18ecdce7044 1195-1205,1234-1243,1246-1248
+internal/adapters/httpapi/polar_webhook_test.go
+  s_2caf2d7e1381c8::t_e58e5c0564c718 93-96,98-99,101-111,114-189,222-261
+  s_2caf2d7e1381c8::t_aab8882e286fb6 97,100,112-113
+internal/adapters/httpapi/polar_webhook.go
+  s_2caf2d7e1381c8::t_6604d588dfdb6f 21
+  s_2caf2d7e1381c8::t_63ee79f0211df3 22-35,124-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "b8d7d546e5c58a741b242cc341fe085df5bb2bc9",
+  "prompts": {},
+  "sessions": {
+    "s_2caf2d7e1381c8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e5f05-c4d5-70e3-b1bb-dbb18023cfcf",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
