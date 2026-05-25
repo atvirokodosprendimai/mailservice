@@ -457,6 +457,7 @@ type httpMailboxRepo struct {
 	byPaymentSession              map[string]*domain.Mailbox
 	byKeyFingerprint              map[string]*domain.Mailbox
 	activeOrPendingByBillingEmail map[string]*domain.Mailbox
+	getByIDCount                  int
 	updateCount                   int
 }
 
@@ -502,6 +503,7 @@ func (r *httpMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) err
 }
 
 func (r *httpMailboxRepo) GetByID(_ context.Context, id string) (*domain.Mailbox, error) {
+	r.getByIDCount++
 	if item, ok := r.byID[id]; ok {
 		return item, nil
 	}

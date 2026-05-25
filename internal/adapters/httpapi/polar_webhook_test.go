@@ -159,6 +159,97 @@ func TestHandlePolarWebhookSubscriptionUpdatedMailboxNotFoundIgnored(t *testing.
 	}
 }
 
+func TestHandlePolarWebhookSubscriptionCancellationAndRevocation(t *testing.T) {
+	paidAt := time.Date(2026, 5, 14, 12, 30, 0, 0, time.UTC)
+	expiresAt := time.Date(2026, 6, 14, 12, 30, 0, 0, time.UTC)
+
+	tests := []struct {
+		name              string
+		mailboxID         string
+		body              string
+		wantStatus        string
+		wantGetByIDCount  int
+		wantUpdateCount   int
+		wantMailboxStatus domain.MailboxStatus
+	}{
+		{
+			name:              "subscription.canceled acks without expiring mailbox",
+			mailboxID:         "mbx-1",
+			body:              `{"type":"subscription.canceled","data":{"metadata":{"mailbox_id":"mbx-1"},"current_period_end":"2026-06-14T12:30:00Z"}}`,
+			wantStatus:        `"status":"ok"`,
+			wantGetByIDCount:  0,
+			wantMailboxStatus: domain.MailboxStatusActive,
+		},
+		{
+			name:              "subscription.uncanceled acks without expiring mailbox",
+			mailboxID:         "mbx-1",
+			body:              `{"type":"subscription.uncanceled","data":{"metadata":{"mailbox_id":"mbx-1"},"current_period_end":"2026-06-14T12:30:00Z"}}`,
+			wantStatus:        `"status":"ok"`,
+			wantGetByIDCount:  0,
+			wantMailboxStatus: domain.MailboxStatusActive,
+		},
+		{
+			name:              "subscription.revoked expires mailbox",
+			mailboxID:         "mbx-1",
+			body:              `{"type":"subscription.revoked","data":{"metadata":{"mailbox_id":"mbx-1"},"current_period_end":"2026-06-14T12:30:00Z"}}`,
+			wantStatus:        `"status":"ok"`,
+			wantGetByIDCount:  1,
+			wantUpdateCount:   1,
+			wantMailboxStatus: domain.MailboxStatusExpired,
+		},
+		{
+			name:              "subscription.revoked missing mailbox id ignored",
+			mailboxID:         "mbx-1",
+			body:              `{"type":"subscription.revoked","data":{"metadata":{},"current_period_end":"2026-06-14T12:30:00Z"}}`,
+			wantStatus:        `"status":"ignored"`,
+			wantGetByIDCount:  0,
+			wantMailboxStatus: domain.MailboxStatusActive,
+		},
+		{
+			name:             "subscription.revoked mailbox not found ignored",
+			body:             `{"type":"subscription.revoked","data":{"metadata":{"mailbox_id":"missing"},"current_period_end":"2026-06-14T12:30:00Z"}}`,
+			wantStatus:       `"status":"ignored"`,
+			mailboxID:        "",
+			wantGetByIDCount: 1,
+			wantUpdateCount:  0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, handler := newPolarWebhookCancellationHandler(tt.mailboxID, paidAt, expiresAt)
+
+			rec := serveSignedPolarWebhook(handler, tt.body)
+
+			if rec.Code != 202 {
+				t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tt.wantStatus) {
+				t.Fatalf("expected body to contain %s, got %s", tt.wantStatus, rec.Body.String())
+			}
+			if repo.getByIDCount != tt.wantGetByIDCount {
+				t.Fatalf("expected %d mailbox lookups, got %d", tt.wantGetByIDCount, repo.getByIDCount)
+			}
+			if repo.updateCount != tt.wantUpdateCount {
+				t.Fatalf("expected %d mailbox updates, got %d", tt.wantUpdateCount, repo.updateCount)
+			}
+			if tt.mailboxID == "" {
+				return
+			}
+			mailbox := repo.byID[tt.mailboxID]
+			if mailbox.Status != tt.wantMailboxStatus {
+				t.Fatalf("expected mailbox status %s, got %s", tt.wantMailboxStatus, mailbox.Status)
+			}
+			if mailbox.PaidAt == nil || !mailbox.PaidAt.Equal(paidAt) {
+				t.Fatalf("expected paid_at to remain %s, got %v", paidAt, mailbox.PaidAt)
+			}
+			if mailbox.ExpiresAt == nil || !mailbox.ExpiresAt.Equal(expiresAt) {
+				t.Fatalf("expected expires_at to remain %s, got %v", expiresAt, mailbox.ExpiresAt)
+			}
+		})
+	}
+}
+
 func TestHandlePolarWebhookOrderCreatedRenewsMailbox(t *testing.T) {
 	repo, handler := newPolarWebhookRenewalHandler("mbx-1")
 	body := `{"type":"order.created","data":{"metadata":{"mailbox_id":"mbx-1"},"current_period_end":"2026-06-14T12:30:00Z"}}`
@@ -226,6 +317,40 @@ func newPolarWebhookRenewalHandler(mailboxID string) (*httpMailboxRepo, *Handler
 			ID:             mailboxID,
 			KeyFingerprint: "edproof:key-1",
 			Status:         domain.MailboxStatusExpired,
+			IMAPUsername:   "mbx_abc",
+			IMAPPassword:   "secret",
+		}
+	}
+	paymentGateway := &httpPaymentGateway{}
+	handler := NewHandler(Config{
+		PolarWebhookSecret: "polar_whs_testsecret",
+		PaymentGateway:     paymentGateway,
+		MailboxService: service.NewMailboxService(
+			repo,
+			&httpAccountRepo{},
+			paymentGateway,
+			&httpNotifier{},
+			httpTokenGenerator{token: "token"},
+			&httpProvisioner{},
+			&httpMailReader{},
+			"mail.test.local",
+			"imap.test.local",
+			1143,
+		),
+		Now: func() time.Time { return time.Unix(1700000000, 0).UTC() },
+	})
+	return repo, handler
+}
+
+func newPolarWebhookCancellationHandler(mailboxID string, paidAt time.Time, expiresAt time.Time) (*httpMailboxRepo, *Handler) {
+	repo := &httpMailboxRepo{byID: map[string]*domain.Mailbox{}}
+	if mailboxID != "" {
+		repo.byID[mailboxID] = &domain.Mailbox{
+			ID:             mailboxID,
+			KeyFingerprint: "edproof:key-1",
+			Status:         domain.MailboxStatusActive,
+			PaidAt:         &paidAt,
+			ExpiresAt:      &expiresAt,
 			IMAPUsername:   "mbx_abc",
 			IMAPPassword:   "secret",
 		}

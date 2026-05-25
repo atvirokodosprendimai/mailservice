@@ -382,6 +382,15 @@ func (s *MailboxService) RenewMailbox(ctx context.Context, mailboxID string, pai
 	return s.repo.Update(ctx, mailbox)
 }
 
+func (s *MailboxService) ExpireMailboxByID(ctx context.Context, mailboxID string) error {
+	mailbox, err := s.repo.GetByID(ctx, mailboxID)
+	if err != nil {
+		return err
+	}
+	mailbox.Status = domain.MailboxStatusExpired
+	return s.repo.Update(ctx, mailbox)
+}
+
 // ReconcileResult holds the outcome of a single mailbox reconciliation attempt.
 type ReconcileResult struct {
 	MailboxID string `json:"mailbox_id"`

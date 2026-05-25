@@ -1193,6 +1193,10 @@ func (h *Handler) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
 	switch event.Type {
 	case "checkout.updated", "checkout.created":
 		h.handleCheckoutEvent(w, r, event)
+	case "subscription.canceled", "subscription.uncanceled":
+		h.handleSubscriptionCancellation(w, r, event)
+	case "subscription.revoked":
+		h.handleSubscriptionRevocation(w, r, event)
 	case "subscription.updated", "subscription.created", "order.created", "order.paid":
 		h.handleSubscriptionRenewal(w, r, event)
 	default:
@@ -1218,6 +1222,33 @@ func (h *Handler) handleCheckoutEvent(w http.ResponseWriter, r *http.Request, ev
 	}
 
 	if _, err := h.mailboxService.MarkMailboxPaid(r.Context(), session.SessionID); err != nil {
+		if errors.Is(err, ports.ErrMailboxNotFound) {
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleSubscriptionCancellation(w http.ResponseWriter, _ *http.Request, event *polarWebhookEvent) {
+	mailboxID := strings.TrimSpace(event.Data.Metadata["mailbox_id"])
+	if h.logger != nil {
+		h.logger.Printf("polar subscription cancellation event ack type=%s mailbox_id=%s", event.Type, mailboxID)
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) handleSubscriptionRevocation(w http.ResponseWriter, r *http.Request, event *polarWebhookEvent) {
+	mailboxID, _, ok := polarSubscriptionFields(event.Data)
+	if !ok {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+
+	if err := h.mailboxService.ExpireMailboxByID(r.Context(), mailboxID); err != nil {
 		if errors.Is(err, ports.ErrMailboxNotFound) {
 			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
 			return
