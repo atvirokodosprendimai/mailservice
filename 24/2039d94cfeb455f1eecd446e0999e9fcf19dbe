@@ -1,0 +1,41 @@
+cmd/pulse/main.go
+  s_4ae788cbbfae55::t_0e181293d65ba2 48,63-74,90,144-148,161,191-194,207,346-398,465,488-489,495-499,502,505,510-525
+.github/workflows/pulse.yml
+  s_4ae788cbbfae55::t_cd94d0cedf88fa 23
+internal/adapters/httpapi/metrics_middleware.go
+  s_4ae788cbbfae55::t_9c6b1f229f639a 1-48
+internal/platform/metrics/metrics.go
+  s_4ae788cbbfae55::t_fe76871889e866 1-413
+internal/adapters/httpapi/metrics_middleware_test.go
+  s_4ae788cbbfae55::t_a2d1e928259b9d 1-56
+internal/platform/metrics/metrics_test.go
+  s_4ae788cbbfae55::t_5b038970737905 4,54
+  s_4ae788cbbfae55::t_a2d1e928259b9d 1-3,5-53,55-85
+cmd/pulse/main_test.go
+  s_4ae788cbbfae55::t_bb532e29a89730 4-6,61-72,93-94,96-97,105-106,114-152
+internal/core/service/mailbox_service.go
+  s_4ae788cbbfae55::t_17b2f3526c90f4 14,40,79-82,102,110,526,558,562,566
+cmd/app/main.go
+  s_4ae788cbbfae55::t_2093ac5aa2f58a 24,32-34,108,134,139
+internal/adapters/httpapi/handler_test.go
+  s_4ae788cbbfae55::t_c9aebd4e9bc7d1 12,22,104-164
+internal/adapters/httpapi/handler.go
+  s_4ae788cbbfae55::t_b40cdfd6a1082b 22,41,60,89,114
+  s_4ae788cbbfae55::t_aaccad7fa7f457 1617-1647
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "242039d94cfeb455f1eecd446e0999e9fcf19dbe",
+  "prompts": {},
+  "sessions": {
+    "s_4ae788cbbfae55": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e60a0-de04-7481-8f04-0987513eab7d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
