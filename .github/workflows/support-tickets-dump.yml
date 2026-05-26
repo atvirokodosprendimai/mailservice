@@ -2,6 +2,11 @@ name: Support Tickets Dump
 
 on:
   workflow_dispatch:
+    inputs:
+      clear_session_mailbox_id:
+        description: "Optional mailbox UUID — if set, clears payment_session_id and payment_url on that row inside a transaction; commits only if exactly 1 row matched."
+        required: false
+        default: ""
 
 permissions: { contents: read }
 
@@ -13,6 +18,7 @@ jobs:
     env:
       TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
       TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+      CLEAR_SESSION_MAILBOX_ID: ${{ github.event.inputs.clear_session_mailbox_id }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,6 +54,34 @@ jobs:
               rows.Scan(&id, &mbid, &fp, &subj, &body, &created)
               fmt.Printf("---\nid=%s\nmailbox=%s\nfp=%s\ncreated=%v\nsubject=%s\nbody=%s\n", id, mbid, fp, created, subj, body)
             }
+            rows.Close()
+
+            target := os.Getenv("CLEAR_SESSION_MAILBOX_ID")
+            if target == "" {
+              fmt.Println("\nno CLEAR_SESSION_MAILBOX_ID set, skipping update")
+              return
+            }
+            fmt.Printf("\n=== UPDATE pass for mailbox id=%s ===\n", target)
+            tx, err := sqlDB.BeginTx(ctx, nil)
+            if err != nil { log.Fatal(err) }
+            var pre struct{ id, sid, url, status string; paid interface{} }
+            err = tx.QueryRowContext(ctx, "SELECT id, payment_session_id, payment_url, status, paid_at FROM mailboxes WHERE id = ?", target).Scan(&pre.id, &pre.sid, &pre.url, &pre.status, &pre.paid)
+            if err != nil { tx.Rollback(); log.Fatal("pre-select: ", err) }
+            fmt.Printf("BEFORE: status=%s paid_at=%v\n  session_id=%s\n  url=%s\n", pre.status, pre.paid, pre.sid, pre.url)
+            res, err := tx.ExecContext(ctx, "UPDATE mailboxes SET payment_session_id='', payment_url='', updated_at=CURRENT_TIMESTAMP WHERE id = ?", target)
+            if err != nil { tx.Rollback(); log.Fatal("update: ", err) }
+            n, _ := res.RowsAffected()
+            fmt.Printf("rows affected: %d\n", n)
+            if n != 1 {
+              tx.Rollback()
+              log.Fatalf("expected exactly 1 row, got %d — rolled back, no change", n)
+            }
+            var post struct{ sid, url string }
+            err = tx.QueryRowContext(ctx, "SELECT payment_session_id, payment_url FROM mailboxes WHERE id = ?", target).Scan(&post.sid, &post.url)
+            if err != nil { tx.Rollback(); log.Fatal("post-select: ", err) }
+            fmt.Printf("AFTER (uncommitted): session_id=%q url=%q\n", post.sid, post.url)
+            if err := tx.Commit(); err != nil { log.Fatal("commit: ", err) }
+            fmt.Println("COMMITTED")
           }
           EOF
           mkdir -p cmd/dump && mv /tmp/dump.go cmd/dump/main.go
