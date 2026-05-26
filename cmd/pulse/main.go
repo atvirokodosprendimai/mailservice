@@ -66,12 +66,14 @@ type adminTopError struct {
 }
 
 type adminMetrics struct {
-	ImapLogin              int64 `json:"imap_login"`
-	ImapLoginAvailable     bool  `json:"-"`
-	ResolveCalls           int64
-	FailedKeyProofRatio    float64
-	Latency                map[string]int64
-	TopErrors              []adminTopError
+	ImapLogin                   int64 `json:"imap_login"`
+	ImapLoginAvailable          bool  `json:"-"`
+	ImapMessageFetched          int64 `json:"imap_message_fetched"`
+	ImapMessageFetchedAvailable bool  `json:"-"`
+	ResolveCalls                int64
+	FailedKeyProofRatio         float64
+	Latency                     map[string]int64
+	TopErrors                   []adminTopError
 }
 
 type healthMetrics struct {
@@ -376,6 +378,7 @@ func fetchAdminMetrics(ctx context.Context, client *http.Client, baseURL string,
 
 	var payload struct {
 		ImapLogin           int64           `json:"imap_login"`
+		ImapMessageFetched  int64           `json:"imap_message_fetched"`
 		ResolveCalls        int64           `json:"resolve_calls"`
 		FailedKeyProofRatio float64         `json:"failed_key_proof_ratio"`
 		HTTPP50MS           int64           `json:"http_p50_ms"`
@@ -388,10 +391,12 @@ func fetchAdminMetrics(ctx context.Context, client *http.Client, baseURL string,
 	}
 
 	return adminMetrics{
-		ImapLogin:              payload.ImapLogin,
-		ImapLoginAvailable:     true,
-		ResolveCalls:           payload.ResolveCalls,
-		FailedKeyProofRatio:    payload.FailedKeyProofRatio,
+		ImapLogin:                   payload.ImapLogin,
+		ImapLoginAvailable:          true,
+		ImapMessageFetched:          payload.ImapMessageFetched,
+		ImapMessageFetchedAvailable: true,
+		ResolveCalls:                payload.ResolveCalls,
+		FailedKeyProofRatio:         payload.FailedKeyProofRatio,
 		Latency: map[string]int64{
 			"p50_ms": payload.HTTPP50MS,
 			"p95_ms": payload.HTTPP95MS,
@@ -493,7 +498,11 @@ func renderReport(report pulseReport) string {
 	} else {
 		fmt.Fprintf(&b, "- imap_login: %s\n", pendingMetricNote)
 	}
-	fmt.Fprintf(&b, "- imap_message_fetched: %s\n", pendingMetricNote)
+	if report.Admin.ImapMessageFetchedAvailable {
+		fmt.Fprintf(&b, "- imap_message_fetched: %d\n", report.Admin.ImapMessageFetched)
+	} else {
+		fmt.Fprintf(&b, "- imap_message_fetched: %s\n", pendingMetricNote)
+	}
 	fmt.Fprintf(&b, "- resolve_calls_per_active_mailbox_per_week: %s\n", resolveCallsPerMailbox)
 	fmt.Fprintf(&b, "- failed_key_proof_ratio: %.4f\n\n", report.Admin.FailedKeyProofRatio)
 

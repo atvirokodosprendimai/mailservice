@@ -362,29 +362,31 @@ func (r *Registry) Snapshot(window string) map[string]any {
 	}
 	if r == nil {
 		return map[string]any{
-			"window":           window,
-			"imap_login":       int64(0),
-			"resolve_calls":    int64(0),
-			"key_proof_total":  int64(0),
-			"key_proof_failed": int64(0),
-			"http_p50_ms":      int64(0),
-			"http_p95_ms":      int64(0),
-			"http_p99_ms":      int64(0),
-			"top_errors":       []TopNEntry{},
+			"window":               window,
+			"imap_login":           int64(0),
+			"imap_message_fetched": int64(0),
+			"resolve_calls":        int64(0),
+			"key_proof_total":      int64(0),
+			"key_proof_failed":     int64(0),
+			"http_p50_ms":          int64(0),
+			"http_p95_ms":          int64(0),
+			"http_p99_ms":          int64(0),
+			"top_errors":           []TopNEntry{},
 		}
 	}
 
 	latency := r.Histogram("http_latency_ms")
 	return map[string]any{
-		"window":           window,
-		"imap_login":       r.Counter("imap_login").Sum24h(),
-		"resolve_calls":    r.Counter("resolve_calls").Sum24h(),
-		"key_proof_total":  r.Counter("key_proof_total").Sum24h(),
-		"key_proof_failed": r.Counter("key_proof_failed").Sum24h(),
-		"http_p50_ms":      latency.Percentile(0.50),
-		"http_p95_ms":      latency.Percentile(0.95),
-		"http_p99_ms":      latency.Percentile(0.99),
-		"top_errors":       r.TopN("top_errors").Snapshot(),
+		"window":               window,
+		"imap_login":           r.Counter("imap_login").Sum24h(),
+		"imap_message_fetched": r.Counter("imap_message_fetched").Sum24h(),
+		"resolve_calls":        r.Counter("resolve_calls").Sum24h(),
+		"key_proof_total":      r.Counter("key_proof_total").Sum24h(),
+		"key_proof_failed":     r.Counter("key_proof_failed").Sum24h(),
+		"http_p50_ms":          latency.Percentile(0.50),
+		"http_p95_ms":          latency.Percentile(0.95),
+		"http_p99_ms":          latency.Percentile(0.99),
+		"top_errors":           r.TopN("top_errors").Snapshot(),
 	}
 }
 

@@ -1629,6 +1629,7 @@ func (h *Handler) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	snapshot["failed_key_proof_ratio"] = ratio
 	snapshot["imap_login"] = h.metrics.Counter("imap_login").Sum24h()
+	snapshot["imap_message_fetched"] = h.metrics.Counter("imap_message_fetched").Sum24h()
 
 	writeJSON(w, http.StatusOK, snapshot)
 }

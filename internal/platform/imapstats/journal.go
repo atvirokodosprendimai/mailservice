@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +77,9 @@ func (s *Shipper) Run(ctx context.Context) error {
 			if isImapLogin(entry.Message) {
 				s.reg.Counter("imap_login").Add(1)
 			}
+			if n, ok := imapLogoutBodyCount(entry.Message); ok && n > 0 {
+				s.reg.Counter("imap_message_fetched").Add(n)
+			}
 		}
 		if err := scanner.Err(); err != nil && ctx.Err() == nil && s.logger != nil {
 			s.logger.Printf("imapstats journal scan: %v", err)
@@ -100,4 +104,24 @@ func (s *Shipper) Run(ctx context.Context) error {
 
 func isImapLogin(message string) bool {
 	return strings.Contains(message, "imap-login:") && strings.Contains(message, " Login: user=")
+}
+
+func imapLogoutBodyCount(message string) (int64, bool) {
+	const marker = " body_count="
+
+	index := strings.Index(message, marker)
+	if index < 0 {
+		return 0, false
+	}
+
+	value := message[index+len(marker):]
+	if space := strings.Index(value, " "); space >= 0 {
+		value = value[:space]
+	}
+
+	n, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
