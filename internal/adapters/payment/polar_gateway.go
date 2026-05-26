@@ -101,6 +101,10 @@ func (g *PolarGateway) GetPaymentSession(ctx context.Context, sessionID string) 
 		Status string `json:"status"`
 	}
 	if err := g.doJSON(ctx, http.MethodGet, "/v1/checkouts/"+sessionID, nil, &resp); err != nil {
+		var apiErr *polarAPIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return nil, ports.ErrPaymentSessionNotFound
+		}
 		return nil, err
 	}
 	if resp.ID == "" {

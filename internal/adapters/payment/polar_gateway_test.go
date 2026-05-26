@@ -3,6 +3,7 @@ package payment
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -102,5 +103,35 @@ func TestPolarGatewayGetPaymentSession(t *testing.T) {
 	}
 	if session.Status != ports.PaymentSessionStatusSucceeded {
 		t.Fatalf("unexpected status: %q", session.Status)
+	}
+}
+
+func TestPolarGatewayGetPaymentSessionNotFound(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("expected GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/v1/checkouts/missing_session" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"error": "not found",
+		})
+	}))
+	defer server.Close()
+
+	gateway := NewPolarGateway(PolarConfig{
+		ServerURL: server.URL,
+		Token:     "polar-token",
+		ProductID: "prod_123",
+	})
+
+	session, err := gateway.GetPaymentSession(context.Background(), "missing_session")
+	if !errors.Is(err, ports.ErrPaymentSessionNotFound) {
+		t.Fatalf("expected ErrPaymentSessionNotFound, got session=%v err=%v", session, err)
 	}
 }

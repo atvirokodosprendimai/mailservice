@@ -131,6 +131,137 @@ func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
 	}
 }
 
+func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
+	transientErr := errors.New("polar unavailable")
+
+	tests := []struct {
+		name              string
+		getPaymentSession func(context.Context, string) (*ports.PaymentSession, error)
+		wantSessionID     string
+		wantPaymentURL    string
+		wantCreateCalls   int
+		wantNotifierCalls int
+		wantErr           error
+	}{
+		{
+			name: "open session is reused",
+			getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+				return &ports.PaymentSession{
+					SessionID: sessionID,
+					Status:    ports.PaymentSessionStatusOpen,
+				}, nil
+			},
+			wantSessionID:   "existing-session-123",
+			wantPaymentURL:  "https://checkout.polar.sh/existing",
+			wantCreateCalls: 0,
+		},
+		{
+			name: "missing session regenerates",
+			getPaymentSession: func(_ context.Context, _ string) (*ports.PaymentSession, error) {
+				return nil, ports.ErrPaymentSessionNotFound
+			},
+			wantSessionID:     "sess-1",
+			wantPaymentURL:    "http://pay/1",
+			wantCreateCalls:   1,
+			wantNotifierCalls: 1,
+		},
+		{
+			name: "expired session regenerates",
+			getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+				return &ports.PaymentSession{
+					SessionID: sessionID,
+					Status:    ports.PaymentSessionStatusExpired,
+				}, nil
+			},
+			wantSessionID:     "sess-1",
+			wantPaymentURL:    "http://pay/1",
+			wantCreateCalls:   1,
+			wantNotifierCalls: 1,
+		},
+		{
+			name: "failed session regenerates",
+			getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+				return &ports.PaymentSession{
+					SessionID: sessionID,
+					Status:    ports.PaymentSessionStatusFailed,
+				}, nil
+			},
+			wantSessionID:     "sess-1",
+			wantPaymentURL:    "http://pay/1",
+			wantCreateCalls:   1,
+			wantNotifierCalls: 1,
+		},
+		{
+			name: "transient error returns wrapped error",
+			getPaymentSession: func(_ context.Context, _ string) (*ports.PaymentSession, error) {
+				return nil, transientErr
+			},
+			wantErr: transientErr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &fakeMailboxRepo{
+				byKeyFingerprint: map[string]*domain.Mailbox{
+					"edproof:key-reuse": {
+						ID:               "mbx-reuse",
+						BillingEmail:     "billing@example.com",
+						KeyFingerprint:   "edproof:key-reuse",
+						Status:           domain.MailboxStatusPendingPayment,
+						PaymentSessionID: "existing-session-123",
+						PaymentURL:       "https://checkout.polar.sh/existing",
+					},
+				},
+			}
+			payment := &fakePaymentGateway{getPaymentSession: tt.getPaymentSession}
+			notifier := &fakeMailboxNotifier{}
+			service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+			mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+				Fingerprint: "edproof:key-reuse",
+				Algorithm:   "ed25519",
+			}, "")
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("expected wrapped %v, got %v", tt.wantErr, err)
+				}
+				if payment.calls != 0 {
+					t.Fatalf("expected no new payment link creation, got %d calls", payment.calls)
+				}
+				if notifier.calls != 0 {
+					t.Fatalf("expected no notifier call, got %d calls", notifier.calls)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ClaimMailbox failed: %v", err)
+			}
+			if created {
+				t.Fatalf("expected existing mailbox reuse, got created=true")
+			}
+			if payment.getCalls != 1 {
+				t.Fatalf("expected one payment session lookup, got %d", payment.getCalls)
+			}
+			if mailbox.PaymentSessionID != tt.wantSessionID {
+				t.Fatalf("expected session ID %q, got %q", tt.wantSessionID, mailbox.PaymentSessionID)
+			}
+			if mailbox.PaymentURL != tt.wantPaymentURL {
+				t.Fatalf("expected payment URL %q, got %q", tt.wantPaymentURL, mailbox.PaymentURL)
+			}
+			if payment.calls != tt.wantCreateCalls {
+				t.Fatalf("expected %d payment link creations, got %d", tt.wantCreateCalls, payment.calls)
+			}
+			if notifier.calls != tt.wantNotifierCalls {
+				t.Fatalf("expected %d notifier calls, got %d", tt.wantNotifierCalls, notifier.calls)
+			}
+		})
+	}
+}
+
 func TestClaimMailboxCreatesPendingMailboxForNewKey(t *testing.T) {
 	repo := &fakeMailboxRepo{}
 	payment := &fakePaymentGateway{}
@@ -1151,8 +1282,10 @@ func (f *fakeMailboxRepo) ListActiveExpired(_ context.Context, now time.Time) ([
 }
 
 type fakePaymentGateway struct {
-	calls   int
-	lastReq ports.PaymentLinkRequest
+	calls             int
+	getCalls          int
+	lastReq           ports.PaymentLinkRequest
+	getPaymentSession func(context.Context, string) (*ports.PaymentSession, error)
 }
 
 func (f *fakePaymentGateway) CreatePaymentLink(_ context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
@@ -1161,7 +1294,11 @@ func (f *fakePaymentGateway) CreatePaymentLink(_ context.Context, req ports.Paym
 	return &ports.PaymentLink{SessionID: "sess-1", URL: "http://pay/1"}, nil
 }
 
-func (f *fakePaymentGateway) GetPaymentSession(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+func (f *fakePaymentGateway) GetPaymentSession(ctx context.Context, sessionID string) (*ports.PaymentSession, error) {
+	f.getCalls++
+	if f.getPaymentSession != nil {
+		return f.getPaymentSession(ctx, sessionID)
+	}
 	return &ports.PaymentSession{
 		SessionID: sessionID,
 		Status:    ports.PaymentSessionStatusSucceeded,

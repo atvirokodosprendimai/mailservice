@@ -128,11 +128,14 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 			return nil, false, ports.ErrCouponAlreadyUsed
 		}
 
-		// If the mailbox already has a pending payment session, return it
-		// without creating a new checkout. Creating a new session would
-		// invalidate the one the user may have already started paying.
 		if existing.Status == domain.MailboxStatusPendingPayment && existing.PaymentSessionID != "" && existing.PaymentURL != "" {
-			return existing, false, nil
+			reusable, err := s.paymentSessionReusable(ctx, existing.PaymentSessionID)
+			if err != nil {
+				return nil, false, fmt.Errorf("validate payment session: %w", err)
+			}
+			if reusable {
+				return existing, false, nil
+			}
 		}
 
 		paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
@@ -209,6 +212,20 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	}
 
 	return mailbox, true, nil
+}
+
+func (s *MailboxService) paymentSessionReusable(ctx context.Context, sessionID string) (bool, error) {
+	sess, err := s.payment.GetPaymentSession(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, ports.ErrPaymentSessionNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if sess.Status == ports.PaymentSessionStatusExpired || sess.Status == ports.PaymentSessionStatusFailed {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxRequest) (*domain.Mailbox, bool, error) {
