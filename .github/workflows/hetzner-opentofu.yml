@@ -173,7 +173,7 @@ jobs:
       - name: OpenTofu plan
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.BEERPUB_CLOUDFLARE_API_TOKEN }}
           TF_VAR_name: ${{ github.event.inputs.name }}
           TF_VAR_ssh_key_fingerprint: ${{ secrets.HETZNER_SSH_KEY_FINGERPRINT }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
@@ -268,7 +268,7 @@ jobs:
       - name: OpenTofu apply
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.BEERPUB_CLOUDFLARE_API_TOKEN }}
           TF_VAR_name: ${{ github.event.inputs.name }}
           TF_VAR_ssh_key_fingerprint: ${{ secrets.HETZNER_SSH_KEY_FINGERPRINT }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
@@ -344,7 +344,7 @@ jobs:
       - name: OpenTofu apply
         env:
           TF_VAR_hcloud_token: ${{ secrets.HCLOUD_API }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_api_token: ${{ secrets.BEERPUB_CLOUDFLARE_API_TOKEN }}
           TF_VAR_name: ${{ vars.TOFU_SERVER_NAME }}
           TF_VAR_ssh_key_fingerprint: ${{ secrets.HETZNER_SSH_KEY_FINGERPRINT }}
           TF_VAR_public_base_url: ${{ vars.PUBLIC_BASE_URL }}
