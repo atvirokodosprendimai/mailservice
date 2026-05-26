@@ -121,11 +121,13 @@ in
         RestartSec = 5;
         WorkingDirectory = "/var/lib/mailservice";
         EnvironmentFile = cfg.environmentFile;
+        SupplementaryGroups = [ "systemd-journal" ];
         ExecStart = "${cfg.package}/bin/app";
       };
       environment = {
         HTTP_ADDR = "127.0.0.1:8080";
         DATABASE_DSN = mailDbPath;
+        IMAP_LOG_JOURNAL_UNIT = "dovecot2.service";
         MAIL_DOMAIN = cfg.mailDomain;
       };
     };

@@ -21,6 +21,7 @@ import (
 	"github.com/atvirokodosprendimai/mailservice/internal/core/service"
 	"github.com/atvirokodosprendimai/mailservice/internal/platform/config"
 	"github.com/atvirokodosprendimai/mailservice/internal/platform/database"
+	"github.com/atvirokodosprendimai/mailservice/internal/platform/imapstats"
 	"github.com/atvirokodosprendimai/mailservice/internal/platform/metrics"
 )
 
@@ -32,6 +33,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	metricsRegistry := metrics.NewRegistry(ctx)
+	journalUnit := os.Getenv("IMAP_LOG_JOURNAL_UNIT")
+	shipper := imapstats.NewShipper(metricsRegistry, journalUnit, log.Default())
+	go func() {
+		if err := shipper.Run(ctx); err != nil && err != context.Canceled {
+			log.Printf("imapstats shipper: %v", err)
+		}
+	}()
 
 	// Local SQLite — always needed for Postfix/Dovecot mail_users and mail_domains tables
 	localDB, err := database.OpenAndMigrate(cfg.DatabaseDSN)
