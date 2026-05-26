@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       clear_session_mailbox_id:
-        description: "Optional mailbox UUID — if set, clears payment_session_id and payment_url on that row inside a transaction; commits only if exactly 1 row matched."
+        description: "Optional mailbox UUID — if set, clears stripe_session_id and payment_url on that row inside a transaction; commits only if exactly 1 row matched."
         required: false
         default: ""
 
@@ -65,10 +65,10 @@ jobs:
             tx, err := sqlDB.BeginTx(ctx, nil)
             if err != nil { log.Fatal(err) }
             var pre struct{ id, sid, url, status string; paid interface{} }
-            err = tx.QueryRowContext(ctx, "SELECT id, payment_session_id, payment_url, status, paid_at FROM mailboxes WHERE id = ?", target).Scan(&pre.id, &pre.sid, &pre.url, &pre.status, &pre.paid)
+            err = tx.QueryRowContext(ctx, "SELECT id, stripe_session_id, payment_url, status, paid_at FROM mailboxes WHERE id = ?", target).Scan(&pre.id, &pre.sid, &pre.url, &pre.status, &pre.paid)
             if err != nil { tx.Rollback(); log.Fatal("pre-select: ", err) }
             fmt.Printf("BEFORE: status=%s paid_at=%v\n  session_id=%s\n  url=%s\n", pre.status, pre.paid, pre.sid, pre.url)
-            res, err := tx.ExecContext(ctx, "UPDATE mailboxes SET payment_session_id='', payment_url='', updated_at=CURRENT_TIMESTAMP WHERE id = ?", target)
+            res, err := tx.ExecContext(ctx, "UPDATE mailboxes SET stripe_session_id='', payment_url='', updated_at=CURRENT_TIMESTAMP WHERE id = ?", target)
             if err != nil { tx.Rollback(); log.Fatal("update: ", err) }
             n, _ := res.RowsAffected()
             fmt.Printf("rows affected: %d\n", n)
@@ -77,7 +77,7 @@ jobs:
               log.Fatalf("expected exactly 1 row, got %d — rolled back, no change", n)
             }
             var post struct{ sid, url string }
-            err = tx.QueryRowContext(ctx, "SELECT payment_session_id, payment_url FROM mailboxes WHERE id = ?", target).Scan(&post.sid, &post.url)
+            err = tx.QueryRowContext(ctx, "SELECT stripe_session_id, payment_url FROM mailboxes WHERE id = ?", target).Scan(&post.sid, &post.url)
             if err != nil { tx.Rollback(); log.Fatal("post-select: ", err) }
             fmt.Printf("AFTER (uncommitted): session_id=%q url=%q\n", post.sid, post.url)
             if err := tx.Commit(); err != nil { log.Fatal("commit: ", err) }
