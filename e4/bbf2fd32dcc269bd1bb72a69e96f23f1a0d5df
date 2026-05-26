@@ -1,0 +1,19 @@
+.github/workflows/hetzner-opentofu.yml
+  s_03e53372d1378a::t_1d6a2e13f7e170 176,271,347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "e4bbf2fd32dcc269bd1bb72a69e96f23f1a0d5df",
+  "prompts": {},
+  "sessions": {
+    "s_03e53372d1378a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17c54220-3d12-4ce5-9278-9297328a1ba9",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
