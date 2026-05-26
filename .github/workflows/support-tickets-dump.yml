@@ -1,0 +1,58 @@
+name: Support Tickets Dump
+
+on:
+  workflow_dispatch:
+
+permissions: { contents: read }
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    env:
+      TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
+      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Dump support_messages
+        run: |
+          cat > /tmp/dump.go <<'EOF'
+          package main
+          import (
+            "context"
+            "fmt"
+            "log"
+            "os"
+            "github.com/atvirokodosprendimai/mailservice/internal/platform/database"
+          )
+          func main() {
+            db, err := database.OpenTurso(os.Getenv("TURSO_DATABASE_URL"), os.Getenv("TURSO_AUTH_TOKEN"))
+            if err != nil { log.Fatal(err) }
+            sqlDB, err := db.DB()
+            if err != nil { log.Fatal(err) }
+            defer sqlDB.Close()
+            ctx := context.Background()
+
+            var total int64
+            sqlDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM support_messages").Scan(&total)
+            fmt.Printf("total support_messages: %d\n\n", total)
+
+            rows, err := sqlDB.QueryContext(ctx, `SELECT id, mailbox_id, key_fingerprint, subject, body, created_at FROM support_messages ORDER BY created_at DESC LIMIT 100`)
+            if err != nil { log.Fatal(err) }
+            defer rows.Close()
+            for rows.Next() {
+              var id, mbid, fp, subj, body string
+              var created interface{}
+              rows.Scan(&id, &mbid, &fp, &subj, &body, &created)
+              fmt.Printf("---\nid=%s\nmailbox=%s\nfp=%s\ncreated=%v\nsubject=%s\nbody=%s\n", id, mbid, fp, created, subj, body)
+            }
+          }
+          EOF
+          mkdir -p cmd/dump && mv /tmp/dump.go cmd/dump/main.go
+          go run ./cmd/dump
