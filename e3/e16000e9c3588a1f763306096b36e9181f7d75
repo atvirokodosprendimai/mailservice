@@ -1,0 +1,29 @@
+internal/core/service/mailbox_service.go
+  s_c9caf9fdf1e8b0::t_5220ea60231a56 132-138,217-228
+internal/adapters/payment/polar_gateway.go
+  s_c9caf9fdf1e8b0::t_820adb8c5149b0 104-107
+internal/core/service/mailbox_service_test.go
+  s_c9caf9fdf1e8b0::t_5b88c11d24bb5c 134-264
+  s_c9caf9fdf1e8b0::t_d228b785e9f933 1285-1288,1298-1299,1301
+  s_c9caf9fdf1e8b0::t_c25b96b576206c 1297,1300
+internal/adapters/payment/polar_gateway_test.go
+  s_c9caf9fdf1e8b0::t_91a688b76c4b2e 6,108-135
+internal/core/ports/ports.go
+  s_c9caf9fdf1e8b0::t_0af67b5cfad2ac 12-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "e3e16000e9c3588a1f763306096b36e9181f7d75",
+  "prompts": {},
+  "sessions": {
+    "s_c9caf9fdf1e8b0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e649e-2b54-7971-9c7d-8b45a20b1d54",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
