@@ -1,0 +1,28 @@
+internal/adapters/httpapi/handler.go
+  s_1a1881bd95481d::t_f7510142ab8a0d 1632
+internal/platform/metrics/metrics.go
+  s_1a1881bd95481d::t_870d46cc42b889 365-374,380-389
+cmd/pulse/main.go
+  s_1a1881bd95481d::t_5ae002c8ca6ed7 69-71,73-76,381,394-399
+  s_1a1881bd95481d::t_4dbd519d3606d1 72,501-505
+internal/platform/imapstats/journal.go
+  s_1a1881bd95481d::t_8ea9f111aded8f 10,80-82,108-126
+internal/platform/imapstats/journal_test.go
+  s_1a1881bd95481d::t_1679c867d1aa5a 51-99,110,133-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "3b0976f0203e73942fa52de3994d7f35e55813d2",
+  "prompts": {},
+  "sessions": {
+    "s_1a1881bd95481d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6332-4feb-7f52-9330-c93b208a87c9",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
