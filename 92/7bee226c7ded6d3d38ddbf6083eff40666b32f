@@ -1,0 +1,21 @@
+.github/workflows/support-tickets-dump.yml
+  s_03e53372d1378a::t_d481edd1b7ce03 57-84
+  s_03e53372d1378a::t_b40f62def1c605 5-9
+  s_03e53372d1378a::t_660bc5382814f8 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "927bee226c7ded6d3d38ddbf6083eff40666b32f",
+  "prompts": {},
+  "sessions": {
+    "s_03e53372d1378a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "17c54220-3d12-4ce5-9278-9297328a1ba9",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
