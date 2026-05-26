@@ -23,6 +23,7 @@ Practical guidance for coding agents working in this repository.
   - Config loader: `internal/platform/config`
   - DB + migrations: `internal/platform/database`
 - Entrypoint wiring only: `cmd/app/main.go`
+- `docs/solutions/` — documented solutions to past problems (bugs, best practices, workflow patterns), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in documented areas.
 
 Rule of thumb: core packages depend on ports/domain, never on concrete adapters.
 
