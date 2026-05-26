@@ -1,0 +1,34 @@
+internal/platform/imapstats/journal.go
+  s_18d717bea5bf55::t_cfefaf83f30eb1 54-63,85
+  s_18d717bea5bf55::t_e0086b77eb4967 1-53,64-84,86-103
+internal/platform/metrics/metrics.go
+  s_18d717bea5bf55::t_b7404df54dc213 366,380
+internal/platform/imapstats/journal_test.go
+  s_18d717bea5bf55::t_0c0fb968162804 1-84
+internal/adapters/httpapi/handler.go
+  s_18d717bea5bf55::t_e1ea3d66196f7c 1631
+cmd/pulse/main.go
+  s_18d717bea5bf55::t_475f2d4525d973 71-74,391-394,491-495
+  s_18d717bea5bf55::t_ce20233b8a3a02 69-70
+  s_18d717bea5bf55::t_b9abc1a95ca254 378
+nix/modules/mailservice-gitops.nix
+  s_18d717bea5bf55::t_63c76aefed794a 124,130
+cmd/app/main.go
+  s_18d717bea5bf55::t_127fffd2fccc45 24,36-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.1",
+  "base_commit_sha": "7404cca49692aa0b45588ef3268cdde953be53f1",
+  "prompts": {},
+  "sessions": {
+    "s_18d717bea5bf55": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e6303-8a90-7c12-b46d-7817f59bba70",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
