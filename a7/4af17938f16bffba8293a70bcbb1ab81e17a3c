@@ -1,0 +1,28 @@
+internal/adapters/httpapi/handler.go
+  s_93f3b6714540ea::t_21f28af3401403 116
+internal/adapters/httpapi/paddle_checkout_test.go
+  s_93f3b6714540ea::t_2d932bf3ad1edd 93-96,105-156,158
+  s_93f3b6714540ea::t_27f4f19dfc6ffd 157,305-311
+  s_93f3b6714540ea::t_40f8fb665b6b6f 302-304
+  s_93f3b6714540ea::t_ed2d403c80607b 159
+internal/adapters/httpapi/paddle_checkout.go
+  s_93f3b6714540ea::t_514ec705a03b60 340,349-353
+  s_93f3b6714540ea::t_bba05439e6b2a5 23,27-37,44-45
+  s_93f3b6714540ea::t_a1c12631cf3861 200-278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a74af17938f16bffba8293a70bcbb1ab81e17a3c",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
