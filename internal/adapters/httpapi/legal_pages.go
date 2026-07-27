@@ -200,13 +200,15 @@ const legalPageCSS = `
 
 const termsBodyHTML = `
     <h2>1. Who operates this service</h2>
-    <p>TrueVIP Access Mailbox ("the Service") is operated by
-      <span class="todo"><!-- TODO(legal): replace before submitting to Paddle for domain approval -->
-      [COMPANY LEGAL NAME], registration number [REGISTRATION NUMBER], registered address [REGISTERED ADDRESS]</span>
-      ("we", "us"). Our current expectation is that this will be <strong>IT Uoga MB</strong>, a Lithuanian
-      mažoji bendrija (small partnership) — but that name came from an unrelated payment-provider account
-      record, not a verified company register filing, so it must be confirmed by a human before this page
-      is published.</p>
+    <p>TrueVIP Access Mailbox ("the Service") is operated by <strong>Martynas Sklizmantas</strong>, a
+      self-employed sole trader (<i>trabajador autónomo</i>) established in Spain ("we", "us").</p>
+    <ul>
+      <li>VAT / tax identification number: <strong>ESY9832835G</strong></li>
+      <li>Registered address: Carrer pla de L'Era 17, Salou, Spain</li>
+      <li>Contact: see our <a href="/contact">Contact</a> page</li>
+    </ul>
+    <p>These details are published in accordance with Spanish Law 34/2002 on information society services
+      and electronic commerce (LSSI-CE).</p>
 
     <h2>2. The service</h2>
     <p>The Service provides one inbound-only email mailbox per customer, bound to an Ed25519 key ("EdProof").
@@ -256,8 +258,13 @@ const termsBodyHTML = `
       charge or invoice: contact Paddle directly, since Paddle is the merchant of record for your purchase.</p>
 
     <h2>10. Governing law</h2>
-    <p><span class="todo"><!-- TODO(legal): confirm governing law / jurisdiction before publishing -->
-      [GOVERNING LAW / JURISDICTION]</span></p>
+    <p>These Terms are governed by the laws of Spain. Disputes fall to the courts of Spain.</p>
+    <p>If you are a consumer resident in the European Union, this does not deprive you of the protection of
+      mandatory consumer-protection rules of your own country of residence, and you may also bring
+      proceedings there. Nothing in these Terms limits your statutory rights as a consumer, including the
+      right of withdrawal described in our <a href="/refund-policy">Refund Policy</a>.</p>
+    <p>The European Commission provides an online dispute resolution platform for consumers at
+      <a href="https://ec.europa.eu/consumers/odr">ec.europa.eu/consumers/odr</a>.</p>
 `
 
 const refundPolicyBodyHTML = `
@@ -299,11 +306,13 @@ const refundPolicyBodyHTML = `
 
 const privacyBodyHTML = `
     <h2>1. Who is responsible for your data</h2>
-    <p>The data controller for TrueVIP Access Mailbox is
-      <span class="todo"><!-- TODO(legal): replace before submitting to Paddle for domain approval -->
-      [COMPANY LEGAL NAME], [REGISTRATION NUMBER], [REGISTERED ADDRESS], an EU (Lithuanian) entity</span>
-      ("we", "us"). For payment processing, Paddle.com Market Limited ("Paddle") acts as an independent data
-      controller in its own right — see Section 6.</p>
+    <p>The data controller for TrueVIP Access Mailbox is <strong>Martynas Sklizmantas</strong>, a
+      self-employed sole trader (<i>trabajador autónomo</i>) established in Spain, VAT number
+      <strong>ESY9832835G</strong>, Carrer pla de L'Era 17, Salou, Spain ("we", "us"). As an EU-established
+      controller we process personal data under the General Data Protection Regulation (EU) 2016/679
+      (GDPR) and Spanish Organic Law 3/2018 (LOPDGDD).</p>
+    <p>For payment processing, Paddle.com Market Limited ("Paddle") acts as an independent data controller
+      in its own right — see Section 6.</p>
 
     <h2>2. What we collect</h2>
     <ul>
@@ -341,9 +350,10 @@ const privacyBodyHTML = `
       format. To exercise any of these, use our <a href="/contact">Contact</a> page. Requests relating
       specifically to payment/billing data held by Paddle should also be directed to Paddle, since Paddle acts
       as an independent controller for that data.</p>
-    <p>You also have the right to lodge a complaint with your local data protection authority — in Lithuania,
-      the <a href="https://vdai.lrv.lt/">State Data Protection Inspectorate (Valstybinė duomenų apsaugos
-      inspekcija)</a>.</p>
+    <p>You also have the right to lodge a complaint with a supervisory authority. Our lead authority is the
+      Spanish <a href="https://www.aepd.es/">Agencia Española de Protección de Datos (AEPD)</a>. If you live
+      elsewhere in the EU or EEA, you may instead complain to the data protection authority in your own
+      country of residence.</p>
 
     <h2>6. Paddle as an independent controller</h2>
     <p>Paddle processes your billing details (name, billing address, payment instrument, transaction history)
@@ -389,6 +399,13 @@ const contactBodyHTML = `
       <a href="/refund-policy">Refund Policy</a> for the refund process.</p>
 
     <h2>Business details</h2>
-    <p><span class="todo"><!-- TODO(legal): replace before submitting to Paddle for domain approval -->
-      [COMPANY LEGAL NAME], [REGISTRATION NUMBER], [REGISTERED ADDRESS]</span></p>
+    <p>Published in accordance with Spanish Law 34/2002 (LSSI-CE):</p>
+    <ul>
+      <li><strong>Martynas Sklizmantas</strong> — self-employed sole trader (<i>trabajador autónomo</i>)</li>
+      <li>VAT / tax identification number: <strong>ESY9832835G</strong></li>
+      <li>Registered address: Carrer pla de L'Era 17, Salou, Spain</li>
+      <li>Activity: provision of inbound email mailboxes as an online service</li>
+    </ul>
+    <p>Payments are processed by Paddle.com Market Limited, which acts as the merchant of record. Billing
+      and invoice enquiries are handled by Paddle — see our <a href="/refund-policy">Refund Policy</a>.</p>
 `
