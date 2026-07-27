@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -335,6 +336,98 @@ func TestFetchPaddleSubscriptionsRetriesRetryableStatusThenSucceeds(t *testing.T
 	}
 	if got.SubscriptionsObserved != 4 {
 		t.Fatalf("SubscriptionsObserved = %d, want 4", got.SubscriptionsObserved)
+	}
+}
+
+// TestFetchPaddleSubscriptionsRetriesTransportErrorThenSucceeds is a
+// regression test for a real behavior bug: the old Polar path retried
+// unconditionally on any client.Do error (timeout, connection reset, DNS
+// failure), since it never inspected a status code for that case. A prior
+// version of fetchPaddleSubscriptionsAttempt required a successful
+// errors.As(err, &apiErr) conversion to mark a failure retryable at all —
+// but transport-level failures never convert to *paddleerr.Error, so they
+// were silently treated as non-retryable, dropping exactly the failure class
+// retries exist for on a scheduled runner. This proves retry is the default
+// for non-API errors.
+func TestFetchPaddleSubscriptionsRetriesTransportErrorThenSucceeds(t *testing.T) {
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"meta":{"request_id":"req_3","pagination":{"per_page":50,"next":"","has_more":false,"estimated_total":6}}}`))
+	}))
+	defer server.Close()
+
+	// A stub Do that fails on the first call only, then delegates to the real
+	// server, so the transport error is transient rather than permanent.
+	var doCalls int
+	doer := transportErrThenServerDoer{server: server, failFirst: &doCalls}
+
+	sdk, err := paddle.New("paddle-pulse-secret", paddle.WithBaseURL(server.URL), paddle.WithClient(doer))
+	if err != nil {
+		t.Fatalf("paddle.New failed: %v", err)
+	}
+
+	got, err := fetchPaddleSubscriptions(context.Background(), sdk)
+	if err != nil {
+		t.Fatalf("fetchPaddleSubscriptions returned error: %v", err)
+	}
+	if doCalls < 2 {
+		t.Fatalf("doCalls = %d, want at least 2 (one failed transport attempt, one real request)", doCalls)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts to real server = %d, want 1", attempts)
+	}
+	if got.SubscriptionsObserved != 6 {
+		t.Fatalf("SubscriptionsObserved = %d, want 6", got.SubscriptionsObserved)
+	}
+}
+
+// transportErrThenServerDoer implements client.HTTPDoer structurally
+// (Do(req) (*http.Response, error)) and fails the first call with a raw
+// transport-level error — no HTTP response at all, as with a connection
+// reset or DNS failure — before delegating to the real test server. The
+// Paddle SDK's HandleError passes such errors through unchanged (see
+// internal/response/response_api_error_handler.go in the SDK module), so
+// they never convert to *paddleerr.Error.
+type transportErrThenServerDoer struct {
+	server    *httptest.Server
+	failFirst *int
+}
+
+func (d transportErrThenServerDoer) Do(req *http.Request) (*http.Response, error) {
+	*d.failFirst++
+	if *d.failFirst == 1 {
+		return nil, errors.New("connection reset by peer")
+	}
+	return d.server.Client().Do(req)
+}
+
+// TestFetchPaddleSubscriptionsDoesNotRetryNonRetryableAPIError confirms the
+// narrowing side of the inverted retry logic: a decoded Paddle API error with
+// a non-retryable status (e.g. 400) must NOT retry, even though the default
+// for unrecognized errors is now retryable.
+func TestFetchPaddleSubscriptionsDoesNotRetryNonRetryableAPIError(t *testing.T) {
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"type":"request_error","code":"bad_request","detail":"nope"}}`))
+	}))
+	defer server.Close()
+
+	sdk, err := paddle.New("paddle-pulse-secret", paddle.WithBaseURL(server.URL), paddle.WithClient(server.Client()))
+	if err != nil {
+		t.Fatalf("paddle.New failed: %v", err)
+	}
+
+	_, err = fetchPaddleSubscriptions(context.Background(), sdk)
+	if err == nil {
+		t.Fatal("fetchPaddleSubscriptions expected error for 400 response")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 (non-retryable 400 must not retry)", attempts)
 	}
 }
 
