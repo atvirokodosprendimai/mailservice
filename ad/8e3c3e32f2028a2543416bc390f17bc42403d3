@@ -1,0 +1,22 @@
+ops/paddle-checkout-confirm.js
+  s_93f3b6714540ea::t_7d76585b6fb776 16-22
+  s_93f3b6714540ea::t_db243d846ee052 114-128
+  s_93f3b6714540ea::t_03f7214f8889e1 64-74,82
+  s_93f3b6714540ea::t_8a6e478d18a145 156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "ad8e3c3e32f2028a2543416bc390f17bc42403d3",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
