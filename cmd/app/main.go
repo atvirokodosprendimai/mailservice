@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -71,33 +72,7 @@ func main() {
 	notifier, notifierProvider := selectNotifier(cfg, log.Default())
 	log.Printf("%s notifier enabled", notifierProvider)
 
-	mockPaymentMode := true
-	var paymentGateway ports.PaymentGateway = payment.NewMockGateway(cfg.PublicBaseURL)
-	if cfg.PolarToken != "" && cfg.PolarProductID != "" {
-		paymentGateway = payment.NewPolarGateway(payment.PolarConfig{
-			ServerURL:  cfg.PolarServerURL,
-			Token:      cfg.PolarToken,
-			ProductID:  cfg.PolarProductID,
-			SuccessURL: cfg.PolarSuccessURL,
-			ReturnURL:  cfg.PolarReturnURL,
-		})
-		mockPaymentMode = false
-		log.Printf("polar enabled")
-	} else if cfg.PolarToken != "" || cfg.PolarProductID != "" {
-		log.Printf("polar partially configured, falling back to legacy payment provider selection")
-	} else if cfg.StripeSecretKey != "" {
-		paymentGateway = payment.NewStripeGateway(payment.StripeConfig{
-			SecretKey:  cfg.StripeSecretKey,
-			PriceCents: cfg.MailboxPriceCents,
-			Currency:   cfg.StripeCurrency,
-			SuccessURL: cfg.StripeSuccessURL,
-			CancelURL:  cfg.StripeCancelURL,
-		})
-		mockPaymentMode = false
-		log.Printf("stripe enabled")
-	} else {
-		log.Printf("real payment providers disabled, using mock payment links")
-	}
+	paymentGateway, mockPaymentMode := selectPaymentGateway(cfg, log.Default())
 
 	// Gift coupons are only supported when Polar is the active payment gateway.
 	var giftOpts []service.GiftCouponConfig
@@ -128,6 +103,7 @@ func main() {
 		AdminAPIKey:         cfg.AdminAPIKey,
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
 		PolarWebhookSecret:  cfg.PolarWebhookSecret,
+		PaddleWebhookSecret: cfg.PaddleWebhookSecret,
 		MaxConcurrentReqs:   cfg.MaxConcurrentReqs,
 		BuildNumber:         cfg.BuildNumber,
 		CacheBuster:         cfg.CacheBuster,
@@ -229,4 +205,58 @@ func selectNotifierCascade(cfg *config.Config, logger *log.Logger) (ports.Notifi
 		return notify.NewSendGridNotifier(cfg.SendGridAPIKey, cfg.SendGridFromEmail, cfg.SendGridFromName), "sendgrid"
 	}
 	return notify.NewLogNotifier(logger), "log"
+}
+
+// selectPaymentGateway picks the active payment provider. Paddle takes
+// priority when fully configured, then Polar, then Stripe, falling back to
+// the mock gateway when none are configured.
+func selectPaymentGateway(cfg *config.Config, logger *log.Logger) (ports.PaymentGateway, bool) {
+	if cfg.PaddleAPIKey != "" && cfg.PaddlePriceID != "" {
+		paddleBaseURL := "https://api.paddle.com"
+		if strings.EqualFold(cfg.PaddleEnvironment, "sandbox") {
+			paddleBaseURL = "https://sandbox-api.paddle.com"
+		}
+		paddleGateway, err := payment.NewPaddleGateway(payment.PaddleConfig{
+			BaseURL:               paddleBaseURL,
+			APIKey:                cfg.PaddleAPIKey,
+			PriceID:               cfg.PaddlePriceID,
+			DefaultPaymentLinkURL: cfg.PaddleDefaultPaymentLinkURL,
+		})
+		if err != nil {
+			log.Fatalf("paddle gateway init: %v", err)
+		}
+		logger.Printf("paddle enabled (%s)", cfg.PaddleEnvironment)
+		return paddleGateway, false
+	}
+	if cfg.PaddleAPIKey != "" || cfg.PaddlePriceID != "" {
+		logger.Printf("paddle partially configured, falling back to legacy payment provider selection")
+	}
+
+	if cfg.PolarToken != "" && cfg.PolarProductID != "" {
+		logger.Printf("polar enabled")
+		return payment.NewPolarGateway(payment.PolarConfig{
+			ServerURL:  cfg.PolarServerURL,
+			Token:      cfg.PolarToken,
+			ProductID:  cfg.PolarProductID,
+			SuccessURL: cfg.PolarSuccessURL,
+			ReturnURL:  cfg.PolarReturnURL,
+		}), false
+	}
+	if cfg.PolarToken != "" || cfg.PolarProductID != "" {
+		logger.Printf("polar partially configured, falling back to legacy payment provider selection")
+	}
+
+	if cfg.StripeSecretKey != "" {
+		logger.Printf("stripe enabled")
+		return payment.NewStripeGateway(payment.StripeConfig{
+			SecretKey:  cfg.StripeSecretKey,
+			PriceCents: cfg.MailboxPriceCents,
+			Currency:   cfg.StripeCurrency,
+			SuccessURL: cfg.StripeSuccessURL,
+			CancelURL:  cfg.StripeCancelURL,
+		}), false
+	}
+
+	logger.Printf("real payment providers disabled, using mock payment links")
+	return payment.NewMockGateway(cfg.PublicBaseURL), true
 }

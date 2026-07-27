@@ -3,6 +3,7 @@ module github.com/atvirokodosprendimai/mailservice
 go 1.25.7
 
 require (
+	github.com/PaddleHQ/paddle-go-sdk/v5 v5.2.0
 	github.com/emersion/go-imap v1.2.1
 	github.com/glebarez/sqlite v1.11.0
 	github.com/google/uuid v1.6.0
@@ -15,7 +16,6 @@ require (
 )
 
 require (
-	github.com/PaddleHQ/paddle-go-sdk/v5 v5.2.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

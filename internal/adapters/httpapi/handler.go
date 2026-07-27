@@ -26,6 +26,7 @@ type Config struct {
 	AdminAPIKey         string
 	StripeWebhookSecret string
 	PolarWebhookSecret  string
+	PaddleWebhookSecret string
 	MaxConcurrentReqs   int
 	BuildNumber         string
 	CacheBuster         string
@@ -45,6 +46,7 @@ type Handler struct {
 	adminAPIKey         string
 	stripeWebhookSecret string
 	polarWebhookSecret  string
+	paddleWebhookSecret string
 	concurrencySem      chan struct{}
 	keyProofVerifier    ports.KeyProofVerifier
 	paymentGateway      ports.PaymentGateway
@@ -74,6 +76,7 @@ func NewHandler(cfg Config) *Handler {
 		adminAPIKey:         cfg.AdminAPIKey,
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
 		polarWebhookSecret:  cfg.PolarWebhookSecret,
+		paddleWebhookSecret: cfg.PaddleWebhookSecret,
 		concurrencySem:      sem,
 		keyProofVerifier:    cfg.KeyProofVerifier,
 		paymentGateway:      cfg.PaymentGateway,
