@@ -307,30 +307,70 @@ func TestPaddleGatewayCreatePaymentLinkDiscountRejected(t *testing.T) {
 	}
 }
 
-func TestPaddleGatewayCreatePaymentLinkDiscountExpired(t *testing.T) {
+// TestPaddleGatewayDiscountErrorCodeMapping covers every discount-related
+// error code Paddle documents as reachable from POST /transactions, plus the
+// fallback for codes we haven't enumerated and the negative case for a
+// non-discount error. Codes confirmed against developer.paddle.com/errors/
+// on 2026-07-27.
+func TestPaddleGatewayDiscountErrorCodeMapping(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paddleErrorResponse(t, w, http.StatusBadRequest, "discount_expired")
-	}))
-	defer server.Close()
-
-	gateway, err := NewPaddleGateway(PaddleConfig{
-		BaseURL: server.URL,
-		APIKey:  "paddle-key",
-		PriceID: "pri_123",
-	})
-	if err != nil {
-		t.Fatalf("NewPaddleGateway failed: %v", err)
+	tests := []struct {
+		name    string
+		code    string
+		wantErr error
+	}{
+		{name: "expired discount is exhausted", code: "discount_expired", wantErr: ports.ErrCouponExhausted},
+		{name: "usage limit reached is exhausted", code: "discount_usage_limit_exceeded", wantErr: ports.ErrCouponExhausted},
+		{name: "unknown discount id is invalid", code: "transaction_discount_not_found", wantErr: ports.ErrCouponInvalid},
+		{name: "ineligible for items is invalid", code: "transaction_discount_not_eligible", wantErr: ports.ErrCouponInvalid},
+		{name: "currency mismatch is invalid", code: "transaction_invalid_discount_currency", wantErr: ports.ErrCouponInvalid},
+		{name: "restricted product inactive is invalid", code: "discount_restricted_product_not_active", wantErr: ports.ErrCouponInvalid},
+		{name: "restricted price inactive is invalid", code: "discount_restricted_product_price_not_active", wantErr: ports.ErrCouponInvalid},
+		// Guards the fallback: an unenumerated discount-shaped code must still
+		// surface as a coupon error, not a generic failure.
+		{name: "unenumerated discount code falls back to invalid", code: "discount_some_future_code", wantErr: ports.ErrCouponInvalid},
+		// Negative case: a non-discount error must not be mapped to a coupon
+		// sentinel, or unrelated failures would masquerade as bad coupons.
+		{name: "non-discount error is not a coupon error", code: "transaction_price_not_found", wantErr: nil},
 	}
 
-	_, err = gateway.CreatePaymentLink(context.Background(), ports.PaymentLinkRequest{
-		MailboxID:  "mbx-1",
-		OwnerEmail: "billing@example.com",
-		DiscountID: "dsc_expired",
-	})
-	if !errors.Is(err, ports.ErrCouponExhausted) {
-		t.Fatalf("expected ErrCouponExhausted, got %v", err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paddleErrorResponse(t, w, http.StatusBadRequest, tc.code)
+			}))
+			defer server.Close()
+
+			gateway, err := NewPaddleGateway(PaddleConfig{
+				BaseURL: server.URL,
+				APIKey:  "paddle-key",
+				PriceID: "pri_123",
+			})
+			if err != nil {
+				t.Fatalf("NewPaddleGateway failed: %v", err)
+			}
+
+			_, err = gateway.CreatePaymentLink(context.Background(), ports.PaymentLinkRequest{
+				MailboxID:  "mbx-1",
+				OwnerEmail: "billing@example.com",
+				DiscountID: "dsc_test",
+			})
+			if err == nil {
+				t.Fatalf("expected an error for code %q, got nil", tc.code)
+			}
+			if tc.wantErr == nil {
+				if errors.Is(err, ports.ErrCouponInvalid) || errors.Is(err, ports.ErrCouponExhausted) {
+					t.Fatalf("code %q must not map to a coupon sentinel, got %v", tc.code, err)
+				}
+				return
+			}
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("code %q: expected %v, got %v", tc.code, tc.wantErr, err)
+			}
+		})
 	}
 }
 
