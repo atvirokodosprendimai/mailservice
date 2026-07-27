@@ -1,0 +1,26 @@
+internal/adapters/repository/mailbox_gorm.go
+  s_93f3b6714540ea::t_710a4f1658c652 164
+  s_93f3b6714540ea::t_2c4b33e7ec0a9f 26
+internal/adapters/repository/mailbox_gorm_test.go
+  s_93f3b6714540ea::t_09ab1c7576c0d6 131-204
+internal/platform/database/migrations/20260727120000_rename_payment_session_add_provider.sql
+  s_93f3b6714540ea::t_c46c730b24e829 1-40
+internal/platform/database/migrations_test.go
+  s_93f3b6714540ea::t_c5f2b2c67d37b0 4,7-10,30-179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5666bbc9727c9578b0ddbee96b3f768671931f5c",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
