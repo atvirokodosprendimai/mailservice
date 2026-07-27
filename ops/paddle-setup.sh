@@ -237,7 +237,7 @@ fi
 
 # --- Webhook notification destination -------------------------------------
 
-HTTP_CODE=$(paddle_get "/notification-settings")
+HTTP_CODE=$(paddle_get "/notification-settings?per_page=100")
 require_ok "$HTTP_CODE" "list notification destinations"
 DESTINATION_ID=$(jq -r --arg url "$WEBHOOK_URL" '.data[]? | select(.destination == $url) | .id' "$TMPBODY" | head -1)
 
