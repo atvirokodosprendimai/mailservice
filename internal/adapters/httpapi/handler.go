@@ -113,6 +113,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
 	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
 	mux.HandleFunc("GET /v1/payments/paddle/checkout", h.handlePaddleCheckout)
+	mux.HandleFunc("GET /v1/payments/paddle/checkout.js", h.handlePaddleCheckoutJS)
 	mux.HandleFunc("GET /v1/payments/paddle/success", h.handlePaddleSuccess)
 	mux.HandleFunc("POST /v1/webhooks/paddle", h.handlePaddleWebhook)
 	mux.HandleFunc("POST /v1/imap/resolve", h.handleResolveIMAP)

@@ -90,13 +90,70 @@ func TestPaddleCheckoutRendersFallbackContentForOpenSession(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"mbx-1", "mbx_abc", paddleJSScriptSrc, "test_client_token_123",
-		`Paddle.Environment.set("sandbox")`, "Open payment window",
+		"mbx-1", "mbx_abc", "test_client_token_123",
+		`data-paddle-js-src="` + paddleJSScriptSrc + `"`,
+		`data-environment="sandbox"`, `src="/v1/payments/paddle/checkout.js"`,
+		"Open payment window",
 		"<main>", "<h1>", `name="viewport"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected body to contain %q, got:\n%s", want, body)
 		}
+	}
+}
+
+// TestPaddleCheckoutHasNoInlineEventHandlers guards the CSP fix: a strict
+// script-src (no 'unsafe-inline') blocks not just inline <script> blocks but
+// also inline event-handler attributes like onclick/onerror. Go's html/test
+// harness can't execute JS to catch a CSP violation directly, so this
+// asserts the markup itself never regresses to inline wiring.
+func TestPaddleCheckoutHasNoInlineEventHandlers(t *testing.T) {
+	gateway := paddleCheckoutGateway{session: &ports.PaymentSession{SessionID: "txn_noinline1", Status: ports.PaymentSessionStatusOpen}}
+	_, handler := newPaddleCheckoutHandler(gateway, &domain.Mailbox{
+		ID: "mbx-noinline", PaymentSessionID: "txn_noinline1", Status: domain.MailboxStatusPendingPayment,
+	})
+
+	req := httptest.NewRequest("GET", "/v1/payments/paddle/checkout?_ptxn=txn_noinline1", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, forbidden := range []string{"onclick=", "onerror=", "<script>"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("checkout page must not use inline event handlers or inline <script> blocks (blocked by strict CSP), found %q in:\n%s", forbidden, body)
+		}
+	}
+}
+
+// TestPaddleCheckoutJSServedSameOrigin asserts the external script the
+// checkout page depends on is actually reachable at the same-origin path
+// its script-src relies on, and wires up openPaddleCheckout-equivalent
+// behavior via addEventListener rather than inline attributes.
+func TestPaddleCheckoutJSServedSameOrigin(t *testing.T) {
+	_, handler := newPaddleCheckoutHandler(paddleCheckoutGateway{})
+
+	req := httptest.NewRequest("GET", "/v1/payments/paddle/checkout.js", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	ct := rec.Header().Get("Content-Type")
+	if !strings.Contains(ct, "javascript") {
+		t.Fatalf("expected javascript content-type, got %q", ct)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"addEventListener", "document.currentScript", "Paddle.Checkout.open"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected checkout.js to contain %q, got:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "onclick=") || strings.Contains(body, "onerror=") {
+		t.Fatalf("checkout.js must not itself reintroduce inline handler wiring, got:\n%s", body)
 	}
 }
 
@@ -241,6 +298,16 @@ func assertPaddleCSPSplit(t *testing.T, rec *httptest.ResponseRecorder, page str
 	enforced := rec.Header().Get("Content-Security-Policy")
 	if !strings.Contains(enforced, "script-src 'self' https://cdn.paddle.com") {
 		t.Fatalf("%s page missing expected enforced script-src, got %q", page, enforced)
+	}
+	scriptSrcDirective := "script-src 'self' " + paddleJSScriptSrc + ";"
+	if !strings.Contains(enforced, scriptSrcDirective) {
+		t.Fatalf("%s page must not loosen script-src beyond 'self' plus the Paddle CDN origin (no 'unsafe-inline'), got %q", page, enforced)
+	}
+	if !strings.Contains(enforced, "img-src 'self' https://cdn.paddle.com") {
+		t.Fatalf("%s page missing expected img-src, got %q", page, enforced)
+	}
+	if !strings.Contains(enforced, "font-src 'self' https://cdn.paddle.com") {
+		t.Fatalf("%s page missing expected font-src, got %q", page, enforced)
 	}
 	if strings.Contains(enforced, "checkout.paddle.com") {
 		t.Fatalf("%s page enforces unverified checkout.paddle.com origin in Content-Security-Policy (should be report-only), got %q", page, enforced)

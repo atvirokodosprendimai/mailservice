@@ -20,9 +20,20 @@ const paddleJSScriptSrc = "https://cdn.paddle.com/paddle/v2/paddle.js"
 // paddleContentSecurityPolicy locks the checkout/success pages down to what
 // is actually confirmed: script-src to 'self' plus Paddle's documented CDN
 // origin (verified against Paddle's own docs). Inline <style> blocks (this
-// codebase's existing template convention, see paymentSuccessHTMLTemplate)
+// codebase's existing template convention, see paddleSuccessHTMLSource)
 // require 'unsafe-inline' on style-src; there is no nonce infrastructure
 // here to tighten that further without a broader refactor.
+//
+// The checkout page's own script is served from paddleCheckoutJSSource via
+// the /v1/payments/paddle/checkout.js route (same-origin, covered by
+// 'self') — there is no inline <script> block and no inline event-handler
+// attribute (onclick/onerror) on this page; those are exactly what a strict
+// script-src without 'unsafe-inline' blocks, so the wiring lives in that
+// external file instead (DOM element creation + addEventListener).
+//
+// img-src/font-src are scoped to 'self' plus Paddle's CDN origin, since
+// default-src 'none' would otherwise block any asset the Paddle.js overlay
+// loads from there once script-src lets it run.
 //
 // frame-src/connect-src are deliberately left unrestricted here (not
 // tightened to Paddle's checkout origins) — see
@@ -30,6 +41,8 @@ const paddleJSScriptSrc = "https://cdn.paddle.com/paddle/v2/paddle.js"
 const paddleContentSecurityPolicy = "default-src 'none'; " +
 	"script-src 'self' " + paddleJSScriptSrc + "; " +
 	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' https://cdn.paddle.com; " +
+	"font-src 'self' https://cdn.paddle.com; " +
 	"frame-src *; " +
 	"connect-src *; " +
 	"base-uri 'none'"
@@ -184,6 +197,85 @@ type paddleSuccessView struct {
 	TxnID string
 }
 
+// handlePaddleCheckoutJS serves the checkout page's client-side wiring as a
+// same-origin static script, so it is allowed by a strict `script-src
+// 'self'` CSP with no 'unsafe-inline'. It is static (no per-request
+// templating): the checkout page passes per-request values (txn ID, client
+// token, environment, Paddle.js URL) via data-* attributes on its <script>
+// tag, which this file reads via document.currentScript.
+func (h *Handler) handlePaddleCheckoutJS(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(paddleCheckoutJSSource))
+}
+
+// paddleCheckoutJSSource is the checkout page's entire client-side logic.
+// It deliberately avoids inline <script> content and inline event-handler
+// attributes (onclick/onerror) — both are blocked by the page's strict CSP
+// — wiring everything up instead via addEventListener after being loaded as
+// a normal same-origin <script src> tag.
+const paddleCheckoutJSSource = `(function () {
+  var scriptTag = document.currentScript;
+  var txnId = scriptTag.getAttribute('data-txn-id');
+  var clientToken = scriptTag.getAttribute('data-client-token');
+  var environment = scriptTag.getAttribute('data-environment');
+  var paddleJSSrc = scriptTag.getAttribute('data-paddle-js-src');
+
+  function showLoadError() {
+    var el = document.getElementById('paddle-load-error');
+    if (el) el.style.display = 'block';
+  }
+  function showRetry() {
+    var el = document.getElementById('paddle-retry');
+    if (el) el.style.display = 'block';
+  }
+
+  function initPaddle() {
+    if (typeof Paddle === 'undefined') {
+      showLoadError();
+      return;
+    }
+
+    Paddle.Environment.set(environment);
+    Paddle.Initialize({
+      token: clientToken,
+      eventCallback: function (event) {
+        // Exposed for the ops/paddle-checkout-confirm.js smoke-test
+        // helper, which cannot rely on Paddle's third-party overlay DOM
+        // and instead waits on Paddle.js's own documented event names
+        // (checkout.loaded / checkout.completed / checkout.error /
+        // checkout.closed). Harmless no-op for real users.
+        window.__paddleEvents = window.__paddleEvents || [];
+        if (event && event.name) {
+          window.__paddleEvents.push(event.name);
+        }
+        if (event && (event.name === 'checkout.error' || event.name === 'checkout.closed')) {
+          showRetry();
+        }
+      }
+    });
+
+    var openBtn = document.getElementById('paddle-open-btn');
+    if (openBtn) {
+      openBtn.disabled = false;
+      openBtn.addEventListener('click', function () {
+        var retryEl = document.getElementById('paddle-retry');
+        if (retryEl) retryEl.style.display = 'none';
+        Paddle.Checkout.open({ transactionId: txnId });
+      });
+    }
+  }
+
+  var paddleScript = document.createElement('script');
+  paddleScript.src = paddleJSSrc;
+  paddleScript.addEventListener('load', initPaddle);
+  paddleScript.addEventListener('error', showLoadError);
+  document.head.appendChild(paddleScript);
+})();
+`
+
 var paddleCheckoutTmpl = template.Must(template.New("paddle_checkout").Parse(paddleCheckoutHTMLSource))
 
 var paddleCheckoutInvalidTmpl = template.Must(template.New("paddle_checkout_invalid").Parse(paddleCheckoutInvalidHTMLSource))
@@ -245,7 +337,7 @@ const paddleCheckoutHTMLSource = `<!doctype html>
       <p>JavaScript is required to complete payment. Please enable JavaScript, or contact support at hi@truevipaccess.com.</p>
     </noscript>
 
-    <button id="paddle-open-btn" class="button" onclick="openPaddleCheckout()" disabled>Open payment window</button>
+    <button id="paddle-open-btn" class="button" disabled>Open payment window</button>
 
     <div id="paddle-load-error">
       <strong>The payment window could not load.</strong> Please contact support at hi@truevipaccess.com.
@@ -254,50 +346,11 @@ const paddleCheckoutHTMLSource = `<!doctype html>
       <strong>Payment was not completed.</strong> You can try again above.
     </div>
 
-    <script src="{{.PaddleJSSrc}}" onerror="document.getElementById('paddle-load-error').style.display='block'"></script>
-    <script>
-      (function () {
-        var txnId = "{{.TxnID}}";
-
-        function showLoadError() {
-          document.getElementById('paddle-load-error').style.display = 'block';
-        }
-        function showRetry() {
-          document.getElementById('paddle-retry').style.display = 'block';
-        }
-
-        if (typeof Paddle === 'undefined') {
-          showLoadError();
-          return;
-        }
-
-        Paddle.Environment.set("{{.Environment}}");
-        Paddle.Initialize({
-          token: "{{.ClientToken}}",
-          eventCallback: function (event) {
-            // Exposed for the ops/paddle-checkout-confirm.js smoke-test
-            // helper, which cannot rely on Paddle's third-party overlay DOM
-            // and instead waits on Paddle.js's own documented event names
-            // (checkout.loaded / checkout.completed / checkout.error /
-            // checkout.closed). Harmless no-op for real users.
-            window.__paddleEvents = window.__paddleEvents || [];
-            if (event && event.name) {
-              window.__paddleEvents.push(event.name);
-            }
-            if (event && (event.name === 'checkout.error' || event.name === 'checkout.closed')) {
-              showRetry();
-            }
-          }
-        });
-
-        var openBtn = document.getElementById('paddle-open-btn');
-        openBtn.disabled = false;
-        window.openPaddleCheckout = function () {
-          document.getElementById('paddle-retry').style.display = 'none';
-          Paddle.Checkout.open({ transactionId: txnId });
-        };
-      })();
-    </script>
+    <script src="/v1/payments/paddle/checkout.js"
+      data-txn-id="{{.TxnID}}"
+      data-client-token="{{.ClientToken}}"
+      data-environment="{{.Environment}}"
+      data-paddle-js-src="{{.PaddleJSSrc}}"></script>
   </main>
 </body>
 </html>`
