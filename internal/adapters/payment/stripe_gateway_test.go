@@ -16,10 +16,12 @@ import (
 // payment_status -> ports.PaymentSessionStatus mapping that
 // paymentSessionReusable (internal/core/service/mailbox_service.go) relies on
 // to decide whether a Stripe-backed pending mailbox's checkout session can be
-// reused. paymentSessionReusable is shared across gateways and was fixed to a
-// whitelist (only PaymentSessionStatusOpen is reusable); if Stripe's mapping
-// ever drifted so that a completed session stopped reporting Succeeded, that
-// fix would silently start reusing dead Stripe checkout URLs too.
+// reused. paymentSessionReusable rejects reuse only for PaymentSessionStatusFailed
+// (plus a 404) — a succeeded session stays reusable so ClaimMailbox never
+// overwrites PaymentSessionID and orphans an in-flight webhook (see KTD1a).
+// If Stripe's mapping ever drifted so that a completed session started
+// reporting Failed, that would incorrectly start regenerating live Stripe
+// checkout sessions; this test would catch it.
 func TestStripeGatewayGetPaymentSessionStatusMapping(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -34,16 +36,16 @@ func TestStripeGatewayGetPaymentSessionStatusMapping(t *testing.T) {
 			wantReusable:  true,
 		},
 		{
-			name:          "paid session is succeeded and not reusable",
+			name:          "paid session is succeeded and stays reusable",
 			paymentStatus: "paid",
 			wantStatus:    ports.PaymentSessionStatusSucceeded,
-			wantReusable:  false,
+			wantReusable:  true,
 		},
 		{
-			name:          "no_payment_required session is confirmed and not reusable",
+			name:          "no_payment_required session is confirmed and stays reusable",
 			paymentStatus: "no_payment_required",
 			wantStatus:    ports.PaymentSessionStatusConfirmed,
-			wantReusable:  false,
+			wantReusable:  true,
 		},
 	}
 
@@ -85,7 +87,7 @@ func TestStripeGatewayGetPaymentSessionStatusMapping(t *testing.T) {
 				t.Fatalf("unexpected status: got %q, want %q", session.Status, tt.wantStatus)
 			}
 
-			reusable := session.Status == ports.PaymentSessionStatusOpen
+			reusable := session.Status != ports.PaymentSessionStatusFailed
 			if reusable != tt.wantReusable {
 				t.Fatalf("unexpected reusability for status %q: got %v, want %v", session.Status, reusable, tt.wantReusable)
 			}

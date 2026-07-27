@@ -173,30 +173,32 @@ func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
 			wantNotifierCalls: 1,
 		},
 		{
-			name: "succeeded session regenerates",
+			// Succeeded must stay reusable: ClaimMailbox/MarkMailboxPaid join on
+			// PaymentSessionID, so minting a fresh session here would overwrite it
+			// and orphan a webhook still in flight for the original session
+			// (see KTD1a in the plan).
+			name: "succeeded session is reused, PaymentSessionID unchanged",
 			getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
 				return &ports.PaymentSession{
 					SessionID: sessionID,
 					Status:    ports.PaymentSessionStatusSucceeded,
 				}, nil
 			},
-			wantSessionID:     "sess-1",
-			wantPaymentURL:    "http://pay/1",
-			wantCreateCalls:   1,
-			wantNotifierCalls: 1,
+			wantSessionID:   "existing-session-123",
+			wantPaymentURL:  "https://checkout.polar.sh/existing",
+			wantCreateCalls: 0,
 		},
 		{
-			name: "expired session regenerates",
+			name: "expired session is reused",
 			getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
 				return &ports.PaymentSession{
 					SessionID: sessionID,
 					Status:    ports.PaymentSessionStatusExpired,
 				}, nil
 			},
-			wantSessionID:     "sess-1",
-			wantPaymentURL:    "http://pay/1",
-			wantCreateCalls:   1,
-			wantNotifierCalls: 1,
+			wantSessionID:   "existing-session-123",
+			wantPaymentURL:  "https://checkout.polar.sh/existing",
+			wantCreateCalls: 0,
 		},
 		{
 			name: "failed session regenerates",
