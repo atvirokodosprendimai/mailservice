@@ -1,0 +1,26 @@
+cmd/app/main.go
+  s_93f3b6714540ea::t_5828ede94fbc2c 220-222
+internal/adapters/payment/paddle_gateway_test.go
+  s_93f3b6714540ea::t_158b476053a597 67-69
+  s_93f3b6714540ea::t_71adc31cf8d335 155-204
+internal/adapters/payment/paddle_gateway.go
+  s_93f3b6714540ea::t_2eeedaffaeb97f 24-27,31-32
+  s_93f3b6714540ea::t_eed3c9986f4fa9 51-52
+  s_93f3b6714540ea::t_cd12c76492c29f 57-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "b9cb5b2ba87806cc56e0b715c991d7f0fd52031b",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
