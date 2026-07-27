@@ -1,0 +1,26 @@
+internal/platform/config/config.go
+  s_93f3b6714540ea::t_fb684b606a3709 135-136
+  s_93f3b6714540ea::t_7a80f78296284d 98-100
+  s_93f3b6714540ea::t_a8828bdf89364a 230,249-258,260,265,269-275
+  s_93f3b6714540ea::t_f69aca4dbc7589 276
+internal/platform/config/config_test.go
+  s_93f3b6714540ea::t_81ac69a9db5195 305-308
+  s_93f3b6714540ea::t_9aeaef4cc03610 278-283,292-304,309-325
+  s_93f3b6714540ea::t_69d2e7894b03d2 91-92,97-103,106-112,115-118,124-126,134-136,144-146,150-159,165-166,175-176,185-186,190-209,214
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "58a60d8fe785cd63b39725a42cf0d67d34374ab2",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
