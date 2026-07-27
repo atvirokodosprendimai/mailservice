@@ -416,6 +416,48 @@ func (s *MailboxService) ExpireMailboxByID(ctx context.Context, mailboxID string
 	return s.repo.Update(ctx, mailbox)
 }
 
+// GetMailboxBySubscriptionID looks up a mailbox by its payment provider
+// subscription ID, used to resolve webhook events that carry a
+// subscription ID but no mailbox ID.
+func (s *MailboxService) GetMailboxBySubscriptionID(ctx context.Context, subscriptionID string) (*domain.Mailbox, error) {
+	return s.repo.GetBySubscriptionID(ctx, subscriptionID)
+}
+
+// ScheduleMailboxExpiry sets a mailbox's expires_at without altering its
+// status or paid_at, so an already-active mailbox keeps working until the
+// scheduled time and is then picked up by the normal expiry sweep
+// (ListActiveExpired / ExpireMailboxes).
+func (s *MailboxService) ScheduleMailboxExpiry(ctx context.Context, mailboxID string, expiresAt time.Time) error {
+	mailbox, err := s.repo.GetByID(ctx, mailboxID)
+	if err != nil {
+		return err
+	}
+	mailbox.ExpiresAt = &expiresAt
+	return s.repo.Update(ctx, mailbox)
+}
+
+// RecordPaymentEvent stamps a mailbox with the payment provider event that
+// last drove a state change, so webhook idempotency/ordering checks
+// (dedup by event ID, then by occurred-at) have somewhere to compare
+// against. It also records the provider's subscription ID so future events
+// that don't carry custom_data can still resolve the target mailbox.
+func (s *MailboxService) RecordPaymentEvent(ctx context.Context, mailboxID, provider, subscriptionID, eventID string, occurredAt time.Time) error {
+	mailbox, err := s.repo.GetByID(ctx, mailboxID)
+	if err != nil {
+		return err
+	}
+	if provider != "" {
+		mailbox.PaymentProvider = provider
+	}
+	if subscriptionID != "" {
+		mailbox.SubscriptionID = subscriptionID
+	}
+	mailbox.LastPaymentEventID = eventID
+	occurredAtCopy := occurredAt
+	mailbox.LastPaymentEventAt = &occurredAtCopy
+	return s.repo.Update(ctx, mailbox)
+}
+
 // ReconcileResult holds the outcome of a single mailbox reconciliation attempt.
 type ReconcileResult struct {
 	MailboxID string `json:"mailbox_id"`

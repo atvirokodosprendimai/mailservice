@@ -202,6 +202,60 @@ func TestMailboxRepositoryNewMailboxDefaultsPaymentProviderToPaddle(t *testing.T
 }
 
 // No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryGetBySubscriptionIDFindsRowAndIgnoresEmpty(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+	withSub := &domain.Mailbox{
+		ID:               "mbx-sub",
+		AccountID:        "acc-1",
+		OwnerEmail:       "sub@example.com",
+		IMAPHost:         "imap.example.com",
+		IMAPPort:         143,
+		IMAPUsername:     "mbx_sub",
+		IMAPPassword:     "secret",
+		AccessToken:      "access-sub",
+		PaymentSessionID: "pse_test_sub",
+		PaymentURL:       "https://pay.example.com/session/sub",
+		Status:           domain.MailboxStatusActive,
+		SubscriptionID:   "sub_test_1",
+	}
+	withoutSub := &domain.Mailbox{
+		ID:           "mbx-nosub",
+		AccountID:    "acc-1",
+		OwnerEmail:   "nosub@example.com",
+		IMAPHost:     "imap.example.com",
+		IMAPPort:     143,
+		IMAPUsername: "mbx_nosub",
+		IMAPPassword: "secret",
+		AccessToken:  "access-nosub",
+		Status:       domain.MailboxStatusPendingPayment,
+	}
+
+	if err := repo.Create(context.Background(), withSub); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if err := repo.Create(context.Background(), withoutSub); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	found, err := repo.GetBySubscriptionID(context.Background(), "sub_test_1")
+	if err != nil {
+		t.Fatalf("GetBySubscriptionID failed: %v", err)
+	}
+	if found.ID != withSub.ID {
+		t.Fatalf("expected mailbox id %q, got %q", withSub.ID, found.ID)
+	}
+
+	if _, err := repo.GetBySubscriptionID(context.Background(), ""); err == nil {
+		t.Fatalf("expected empty subscription_id lookup to not match empty-string rows")
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
 func TestMailboxRepositoryAllowsSameBillingEmailForAccountBoundMailboxes(t *testing.T) {
 	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
 	if err != nil {

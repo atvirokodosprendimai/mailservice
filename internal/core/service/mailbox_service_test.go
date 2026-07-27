@@ -1248,6 +1248,10 @@ func (f *fakeMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID str
 	return nil, ports.ErrMailboxNotFound
 }
 
+func (f *fakeMailboxRepo) GetBySubscriptionID(_ context.Context, _ string) (*domain.Mailbox, error) {
+	return nil, ports.ErrMailboxNotFound
+}
+
 func (f *fakeMailboxRepo) GetByAccessToken(_ context.Context, accessToken string) (*domain.Mailbox, error) {
 	if f.byAccessToken != nil {
 		if item, ok := f.byAccessToken[accessToken]; ok {

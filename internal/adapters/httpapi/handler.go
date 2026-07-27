@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PaddleHQ/paddle-go-sdk/v5/pkg/paddlenotification"
 	"github.com/stripe/stripe-go/v83"
 	"github.com/stripe/stripe-go/v83/webhook"
 
@@ -110,6 +111,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
 	mux.HandleFunc("GET /v1/payments/polar/success", h.handlePolarSuccess)
 	mux.HandleFunc("POST /v1/webhooks/polar", h.handlePolarWebhook)
+	mux.HandleFunc("POST /v1/webhooks/paddle", h.handlePaddleWebhook)
 	mux.HandleFunc("POST /v1/imap/resolve", h.handleResolveIMAP)
 	mux.HandleFunc("POST /v1/imap/messages", h.handleListIMAPMessages)
 	mux.HandleFunc("POST /v1/imap/messages/get", h.handleGetIMAPMessageByUID)
@@ -1291,6 +1293,149 @@ func (h *Handler) handleSubscriptionRenewal(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
+}
+
+// handlePaddleWebhook verifies and routes a Paddle webhook event to the
+// right mailbox state transition. It resolves the target mailbox before
+// running any dedup/ordering check (those checks compare against the
+// mailbox's own last_payment_event_at/id columns, so the mailbox must be
+// known first), then short-circuits exact-duplicate redelivery by event_id,
+// then stale/out-of-order delivery by occurred_at, before finally routing
+// by event type. Every branch that actually changes mailbox state updates
+// last_payment_event_at/id so the next delivery's dedup/ordering check has
+// something to compare against.
+func (h *Handler) handlePaddleWebhook(w http.ResponseWriter, r *http.Request) {
+	body, err := verifyPaddleWebhook(h.paddleWebhookSecret, r.Header.Get("Paddle-Signature"), r.Body)
+	if err != nil {
+		if errors.Is(err, errPaddleWebhookSecretNotConfigured) {
+			writeError(w, http.StatusServiceUnavailable, err)
+			return
+		}
+		writeError(w, http.StatusUnauthorized, err)
+		return
+	}
+
+	event, err := parsePaddleWebhookEvent(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	mailbox, err := h.resolvePaddleMailbox(r.Context(), event.SubscriptionID, event.MailboxID)
+	if err != nil {
+		if errors.Is(err, ports.ErrMailboxNotFound) {
+			if h.logger != nil {
+				h.logger.Printf("paddle webhook ignored: mailbox not resolved event_type=%s event_id=%s subscription_id=%s mailbox_id=%s",
+					event.EventType, event.EventID, event.SubscriptionID, event.MailboxID)
+			}
+			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	if event.EventID != "" && mailbox.LastPaymentEventID == event.EventID {
+		if h.logger != nil {
+			h.logger.Printf("paddle webhook ignored: duplicate event_id=%s mailbox_id=%s", event.EventID, mailbox.ID)
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+	if mailbox.LastPaymentEventAt != nil && !event.OccurredAt.After(*mailbox.LastPaymentEventAt) {
+		if h.logger != nil {
+			h.logger.Printf("paddle webhook ignored: stale/out-of-order event_id=%s mailbox_id=%s occurred_at=%s last=%s",
+				event.EventID, mailbox.ID, event.OccurredAt, *mailbox.LastPaymentEventAt)
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+
+	applied, err := h.applyPaddleWebhookEvent(r.Context(), mailbox, event)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !applied {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+
+	if err := h.mailboxService.RecordPaymentEvent(r.Context(), mailbox.ID, "paddle", event.SubscriptionID, event.EventID, event.OccurredAt); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
+}
+
+// resolvePaddleMailbox resolves the mailbox a Paddle event concerns: by its
+// stored subscription_id first (the stable join key once a mailbox has been
+// activated at least once), falling back to custom_data.mailbox_id (needed
+// for first-payment events, before subscription_id is recorded).
+func (h *Handler) resolvePaddleMailbox(ctx context.Context, subscriptionID, mailboxID string) (*domain.Mailbox, error) {
+	if subscriptionID := strings.TrimSpace(subscriptionID); subscriptionID != "" {
+		mailbox, err := h.mailboxService.GetMailboxBySubscriptionID(ctx, subscriptionID)
+		if err == nil {
+			return mailbox, nil
+		}
+		if !errors.Is(err, ports.ErrMailboxNotFound) {
+			return nil, err
+		}
+	}
+	mailboxID = strings.TrimSpace(mailboxID)
+	if mailboxID == "" {
+		return nil, ports.ErrMailboxNotFound
+	}
+	return h.mailboxService.GetMailbox(ctx, mailboxID)
+}
+
+// applyPaddleWebhookEvent routes an already-resolved, already-deduplicated
+// event to the right mailbox state transition. It reports whether a change
+// was actually applied, so the caller knows whether to stamp
+// last_payment_event_at/id.
+func (h *Handler) applyPaddleWebhookEvent(ctx context.Context, mailbox *domain.Mailbox, event *paddlePaymentEvent) (bool, error) {
+	switch event.EventType {
+	case paddlenotification.EventTypeNameSubscriptionCreated, paddlenotification.EventTypeNameSubscriptionActivated:
+		// First-payment activation. MarkMailboxPaid is keyed by the
+		// mailbox's own stored payment_session_id rather than any
+		// per-event transaction ID: subscription.activated carries no
+		// transaction_id at all, and using the mailbox's already-resolved
+		// session ID works uniformly across both event types while staying
+		// safe for already-active mailboxes (MarkMailboxPaid no-ops rather
+		// than double-granting a period when status is already active).
+		if _, err := h.mailboxService.MarkMailboxPaid(ctx, mailbox.PaymentSessionID); err != nil {
+			return false, err
+		}
+		return true, nil
+	case paddlenotification.EventTypeNameTransactionCompleted:
+		if mailbox.Status == domain.MailboxStatusPendingPayment {
+			if _, err := h.mailboxService.MarkMailboxPaid(ctx, mailbox.PaymentSessionID); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+		if event.SubscriptionID == "" || event.BillingPeriodEndsAt == nil {
+			return false, nil
+		}
+		if err := h.mailboxService.RenewMailbox(ctx, mailbox.ID, h.now(), *event.BillingPeriodEndsAt); err != nil {
+			return false, err
+		}
+		return true, nil
+	case paddlenotification.EventTypeNameSubscriptionCanceled:
+		if event.BillingPeriodEndsAt == nil || !event.BillingPeriodEndsAt.After(h.now()) {
+			if err := h.mailboxService.ExpireMailboxByID(ctx, mailbox.ID); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+		if err := h.mailboxService.ScheduleMailboxExpiry(ctx, mailbox.ID, *event.BillingPeriodEndsAt); err != nil {
+			return false, err
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
 }
 
 func (h *Handler) withAccountToken(next http.HandlerFunc) http.HandlerFunc {

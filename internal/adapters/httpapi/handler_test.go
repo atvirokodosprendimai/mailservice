@@ -522,6 +522,7 @@ type httpMailboxRepo struct {
 	byID                          map[string]*domain.Mailbox
 	byPaymentSession              map[string]*domain.Mailbox
 	byKeyFingerprint              map[string]*domain.Mailbox
+	bySubscriptionID              map[string]*domain.Mailbox
 	activeOrPendingByBillingEmail map[string]*domain.Mailbox
 	getByIDCount                  int
 	updateCount                   int
@@ -544,6 +545,12 @@ func (r *httpMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) err
 	if mailbox.PaymentSessionID != "" {
 		r.byPaymentSession[mailbox.PaymentSessionID] = mailbox
 	}
+	if r.bySubscriptionID == nil {
+		r.bySubscriptionID = map[string]*domain.Mailbox{}
+	}
+	if mailbox.SubscriptionID != "" {
+		r.bySubscriptionID[mailbox.SubscriptionID] = mailbox
+	}
 	return nil
 }
 
@@ -564,6 +571,12 @@ func (r *httpMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) err
 	}
 	if mailbox.KeyFingerprint != "" {
 		r.byKeyFingerprint[mailbox.KeyFingerprint] = mailbox
+	}
+	if r.bySubscriptionID == nil {
+		r.bySubscriptionID = map[string]*domain.Mailbox{}
+	}
+	if mailbox.SubscriptionID != "" {
+		r.bySubscriptionID[mailbox.SubscriptionID] = mailbox
 	}
 	return nil
 }
@@ -590,6 +603,13 @@ func (r *httpMailboxRepo) ListPendingPayment(_ context.Context) ([]domain.Mailbo
 
 func (r *httpMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID string) (*domain.Mailbox, error) {
 	if item, ok := r.byPaymentSession[sessionID]; ok {
+		return item, nil
+	}
+	return nil, ports.ErrMailboxNotFound
+}
+
+func (r *httpMailboxRepo) GetBySubscriptionID(_ context.Context, subscriptionID string) (*domain.Mailbox, error) {
+	if item, ok := r.bySubscriptionID[subscriptionID]; ok {
 		return item, nil
 	}
 	return nil, ports.ErrMailboxNotFound

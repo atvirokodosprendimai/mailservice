@@ -11,25 +11,29 @@ const (
 )
 
 type Mailbox struct {
-	ID               string
-	AccountID        string
-	OwnerEmail       string
-	BillingEmail     string
-	KeyFingerprint   string
-	IMAPHost         string
-	IMAPPort         int
-	IMAPUsername     string
-	IMAPPassword     string
-	AccessToken      string
-	PaymentSessionID string
-	PaymentURL       string
-	Status           MailboxStatus
-	GrantedMonths    int
-	CouponUsed       bool
-	PaidAt           *time.Time
-	ExpiresAt        *time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                 string
+	AccountID          string
+	OwnerEmail         string
+	BillingEmail       string
+	KeyFingerprint     string
+	IMAPHost           string
+	IMAPPort           int
+	IMAPUsername       string
+	IMAPPassword       string
+	AccessToken        string
+	PaymentSessionID   string
+	PaymentURL         string
+	Status             MailboxStatus
+	GrantedMonths      int
+	CouponUsed         bool
+	PaidAt             *time.Time
+	ExpiresAt          *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	PaymentProvider    string
+	SubscriptionID     string
+	LastPaymentEventAt *time.Time
+	LastPaymentEventID string
 }
 
 func (m Mailbox) Usable() bool {
