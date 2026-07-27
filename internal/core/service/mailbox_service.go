@@ -884,8 +884,9 @@ func (s *MailboxService) recordDiscountRejection(err error) {
 	}
 }
 
-// validateCoupon checks if the coupon code is valid and returns the Polar discount ID
-// and the number of months to grant. Returns ("", 0, nil) when no coupon is provided.
+// validateCoupon checks if the coupon code is valid and returns the payment
+// gateway discount ID and the number of months to grant. Returns ("", 0, nil)
+// when no coupon is provided.
 func (s *MailboxService) validateCoupon(couponCode string) (discountID string, grantedMonths int, err error) {
 	if couponCode == "" {
 		return "", 0, nil

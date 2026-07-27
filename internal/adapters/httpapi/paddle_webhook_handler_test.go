@@ -576,7 +576,7 @@ func TestHandlePaddleWebhookAlreadyActiveDoesNotAdvanceDedupBaseline(t *testing.
 // TestHandlePaddleWebhookAlreadyActiveNoOpStillPersistsSubscriptionIdentity
 // covers the round-2 regression: a mailbox activated OUTSIDE the webhook
 // path entirely (checkout-success/claim flows call MarkMailboxPaid
-// directly, e.g. handler.go's handlePolarSuccess-equivalent for Paddle)
+// directly, e.g. handler.go's handlePaddleSuccess)
 // has no subscription_id yet, so it can only be resolved by
 // custom_data.mailbox_id. When the subscription.created/activated webhook
 // for that same activation arrives afterward, MarkMailboxPaid no-ops

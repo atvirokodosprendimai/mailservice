@@ -111,7 +111,7 @@ func NewMockGateway(baseURL string) *MockGateway {
 
 func (g *MockGateway) CreatePaymentLink(_ context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
 	sessionID := "mock_" + uuid.NewString()
-	// DiscountID accepted and ignored — Polar-only feature.
+	// DiscountID accepted and ignored — not supported by this gateway.
 	return &ports.PaymentLink{
 		SessionID: sessionID,
 		URL:       fmt.Sprintf("%s/mock/pay/%s", g.baseURL, sessionID),

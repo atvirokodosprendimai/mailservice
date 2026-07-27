@@ -100,7 +100,7 @@ func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
 				KeyFingerprint:   "edproof:key-reuse",
 				Status:           domain.MailboxStatusPendingPayment,
 				PaymentSessionID: "existing-session-123",
-				PaymentURL:       "https://checkout.polar.sh/existing",
+				PaymentURL:       "https://checkout.example.com/existing",
 			},
 		},
 	}
@@ -128,7 +128,7 @@ func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
 	if mailbox.PaymentSessionID != "existing-session-123" {
 		t.Fatalf("expected existing session ID preserved, got %q", mailbox.PaymentSessionID)
 	}
-	if mailbox.PaymentURL != "https://checkout.polar.sh/existing" {
+	if mailbox.PaymentURL != "https://checkout.example.com/existing" {
 		t.Fatalf("expected existing payment URL preserved, got %q", mailbox.PaymentURL)
 	}
 	if payment.calls != 0 {
@@ -140,7 +140,7 @@ func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
 }
 
 func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
-	transientErr := errors.New("polar unavailable")
+	transientErr := errors.New("payment gateway unavailable")
 
 	tests := []struct {
 		name              string
@@ -160,7 +160,7 @@ func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
 				}, nil
 			},
 			wantSessionID:   "existing-session-123",
-			wantPaymentURL:  "https://checkout.polar.sh/existing",
+			wantPaymentURL:  "https://checkout.example.com/existing",
 			wantCreateCalls: 0,
 		},
 		{
@@ -186,7 +186,7 @@ func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
 				}, nil
 			},
 			wantSessionID:   "existing-session-123",
-			wantPaymentURL:  "https://checkout.polar.sh/existing",
+			wantPaymentURL:  "https://checkout.example.com/existing",
 			wantCreateCalls: 0,
 		},
 		{
@@ -234,7 +234,7 @@ func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
 						KeyFingerprint:   "edproof:key-reuse",
 						Status:           domain.MailboxStatusPendingPayment,
 						PaymentSessionID: "existing-session-123",
-						PaymentURL:       "https://checkout.polar.sh/existing",
+						PaymentURL:       "https://checkout.example.com/existing",
 					},
 				},
 			}

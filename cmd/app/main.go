@@ -90,7 +90,6 @@ func main() {
 	handler := httpapi.NewHandler(httpapi.Config{
 		AdminAPIKey:         cfg.AdminAPIKey,
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
-		PolarWebhookSecret:  cfg.PolarWebhookSecret,
 		PaddleWebhookSecret: cfg.PaddleWebhookSecret,
 		PaddleClientToken:   cfg.PaddleClientToken,
 		PaddleEnvironment:   cfg.PaddleEnvironment,
@@ -198,8 +197,8 @@ func selectNotifierCascade(cfg *config.Config, logger *log.Logger) (ports.Notifi
 }
 
 // selectPaymentGateway picks the active payment provider. Paddle takes
-// priority when fully configured, then Polar, then Stripe, falling back to
-// the mock gateway when none are configured.
+// priority when fully configured, then Stripe, falling back to the mock
+// gateway when none are configured.
 func selectPaymentGateway(cfg *config.Config, logger *log.Logger, metricsRegistry *metrics.Registry) (ports.PaymentGateway, bool) {
 	if cfg.PaddleAPIKey != "" && cfg.PaddlePriceID != "" {
 		paddleBaseURL := "https://api.paddle.com"
@@ -223,20 +222,6 @@ func selectPaymentGateway(cfg *config.Config, logger *log.Logger, metricsRegistr
 		logger.Printf("paddle partially configured, falling back to legacy payment provider selection")
 	}
 
-	if cfg.PolarToken != "" && cfg.PolarProductID != "" {
-		logger.Printf("polar enabled")
-		return payment.NewPolarGateway(payment.PolarConfig{
-			ServerURL:  cfg.PolarServerURL,
-			Token:      cfg.PolarToken,
-			ProductID:  cfg.PolarProductID,
-			SuccessURL: cfg.PolarSuccessURL,
-			ReturnURL:  cfg.PolarReturnURL,
-		}), false
-	}
-	if cfg.PolarToken != "" || cfg.PolarProductID != "" {
-		logger.Printf("polar partially configured, falling back to legacy payment provider selection")
-	}
-
 	if cfg.StripeSecretKey != "" {
 		logger.Printf("stripe enabled")
 		return payment.NewStripeGateway(payment.StripeConfig{
@@ -252,13 +237,10 @@ func selectPaymentGateway(cfg *config.Config, logger *log.Logger, metricsRegistr
 	return payment.NewMockGateway(cfg.PublicBaseURL), true
 }
 
-// selectGiftCouponConfig picks the gift coupon wired up for whichever payment
-// gateway selectPaymentGateway actually selected (Paddle takes priority over
-// Polar, matching the same precedence check). A discount ID is only valid
-// against the gateway it was provisioned for, so gift coupons follow the
-// active gateway rather than being wired for both simultaneously — Polar and
-// Paddle gift env vars can coexist in config during the migration window
-// (KTD2), but only the active provider's pair is ever used.
+// selectGiftCouponConfig picks the gift coupon wired up for the Paddle
+// gateway, when Paddle is fully configured. A discount ID is only valid
+// against the gateway it was provisioned for, so gift coupons are only
+// enabled when Paddle itself is active.
 func selectGiftCouponConfig(cfg *config.Config, logger *log.Logger) []service.GiftCouponConfig {
 	if cfg.PaddleAPIKey != "" && cfg.PaddlePriceID != "" {
 		if cfg.PaddleGiftDiscountID != "" && cfg.PaddleGiftCouponCode != "" {
@@ -270,20 +252,6 @@ func selectGiftCouponConfig(cfg *config.Config, logger *log.Logger) []service.Gi
 		}
 		if cfg.PaddleGiftDiscountID != "" || cfg.PaddleGiftCouponCode != "" {
 			logger.Printf("paddle gift coupon config incomplete; gift coupons disabled")
-		}
-		return nil
-	}
-
-	if cfg.PolarToken != "" && cfg.PolarProductID != "" {
-		if cfg.PolarGiftDiscountID != "" && cfg.PolarGiftCouponCode != "" {
-			logger.Printf("gift coupon enabled via polar (code: %s)", cfg.PolarGiftCouponCode)
-			return []service.GiftCouponConfig{{
-				DiscountID: cfg.PolarGiftDiscountID,
-				CouponCode: cfg.PolarGiftCouponCode,
-			}}
-		}
-		if cfg.PolarGiftDiscountID != "" || cfg.PolarGiftCouponCode != "" {
-			logger.Printf("polar gift coupon config incomplete; gift coupons disabled")
 		}
 	}
 

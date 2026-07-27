@@ -499,97 +499,6 @@ func TestHandleResolveAccessRejectsUnsupportedProtocol(t *testing.T) {
 	}
 }
 
-func TestHandlePolarSuccessActivatesMailboxAfterVerifiedCheckout(t *testing.T) {
-	repo := &httpMailboxRepo{
-		byPaymentSession: map[string]*domain.Mailbox{
-			"polar_1": {
-				ID:               "mbx-1",
-				KeyFingerprint:   "edproof:key-1",
-				PaymentSessionID: "polar_1",
-				Status:           domain.MailboxStatusPendingPayment,
-				IMAPUsername:     "mbx_abc",
-				IMAPPassword:     "secret",
-			},
-		},
-	}
-	handler := NewHandler(Config{
-		PaymentGateway: httpPaymentGateway{
-			session: &ports.PaymentSession{SessionID: "polar_1", Status: ports.PaymentSessionStatusSucceeded},
-		},
-		MailboxService: service.NewMailboxService(
-			repo,
-			&httpAccountRepo{},
-			&httpPaymentGateway{},
-			&httpNotifier{},
-			httpTokenGenerator{token: "token"},
-			&httpProvisioner{},
-			&httpMailReader{},
-			"mail.test.local",
-			"imap.test.local",
-			1143,
-		),
-		Logger: log.New(io.Discard, "", 0),
-	})
-
-	req := httptest.NewRequest("GET", "/v1/payments/polar/success?checkout_id=polar_1", nil)
-	rec := httptest.NewRecorder()
-
-	handler.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != 200 {
-		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if resp["status"] != "ok" {
-		t.Fatalf("expected ok status, got %#v", resp["status"])
-	}
-	if resp["mailbox_id"] != "mbx-1" {
-		t.Fatalf("expected mailbox_id, got %#v", resp["mailbox_id"])
-	}
-	if _, ok := resp["access_token"]; ok {
-		t.Fatalf("expected no access_token in response")
-	}
-	if _, ok := resp["payment_url"]; ok {
-		t.Fatalf("expected no payment_url in response")
-	}
-	if repo.byPaymentSession["polar_1"].Status != domain.MailboxStatusActive {
-		t.Fatalf("expected mailbox activation")
-	}
-}
-
-func TestHandlePolarSuccessRejectsUnpaidCheckout(t *testing.T) {
-	handler := NewHandler(Config{
-		PaymentGateway: httpPaymentGateway{
-			session: &ports.PaymentSession{SessionID: "polar_2", Status: ports.PaymentSessionStatusOpen},
-		},
-		MailboxService: service.NewMailboxService(
-			&httpMailboxRepo{},
-			&httpAccountRepo{},
-			&httpPaymentGateway{},
-			&httpNotifier{},
-			httpTokenGenerator{token: "token"},
-			&httpProvisioner{},
-			&httpMailReader{},
-			"mail.test.local",
-			"imap.test.local",
-			1143,
-		),
-		Logger: log.New(io.Discard, "", 0),
-	})
-
-	req := httptest.NewRequest("GET", "/v1/payments/polar/success?checkout_id=polar_2", nil)
-	rec := httptest.NewRecorder()
-
-	handler.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != 409 {
-		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
 type httpMailboxRepo struct {
 	byID                          map[string]*domain.Mailbox
 	byPaymentSession              map[string]*domain.Mailbox
@@ -1229,41 +1138,6 @@ func TestHandleStripeWebhookRejectsWhenSecretNotConfigured(t *testing.T) {
 
 	if rec.Code != 503 {
 		t.Fatalf("expected 503 when stripe secret is empty, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestHandlePolarWebhookRejectsWhenSecretNotConfigured(t *testing.T) {
-	t.Parallel()
-
-	handler := NewHandler(Config{
-		PolarWebhookSecret: "", // intentionally empty
-		PaymentGateway:     &httpPaymentGateway{},
-		MailboxService: service.NewMailboxService(
-			&httpMailboxRepo{},
-			&httpAccountRepo{},
-			&httpPaymentGateway{},
-			&httpNotifier{},
-			httpTokenGenerator{token: "token"},
-			&httpProvisioner{},
-			&httpMailReader{},
-			"mail.test.local",
-			"imap.test.local",
-			1143,
-		),
-		Logger: log.New(io.Discard, "", 0),
-		Now:    func() time.Time { return time.Unix(1700000000, 0).UTC() },
-	})
-
-	req := httptest.NewRequest("POST", "/v1/webhooks/polar", strings.NewReader(`{"type":"checkout.updated","data":{"id":"polar_1"}}`))
-	req.Header.Set("webhook-id", "msg_1")
-	req.Header.Set("webhook-timestamp", "1700000000")
-	req.Header.Set("webhook-signature", "v1,anything")
-	rec := httptest.NewRecorder()
-
-	handler.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != 401 && rec.Code != 500 && rec.Code != 503 {
-		t.Fatalf("expected rejection when polar secret is empty, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

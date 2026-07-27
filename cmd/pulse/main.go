@@ -317,9 +317,8 @@ func fetchPaddleSubscriptionsAttempt(ctx context.Context, sdk *paddle.SDK) (padd
 	if err != nil {
 		// Retryable by default: transport-level failures (timeout, connection
 		// reset, DNS failure) never convert to *paddleerr.Error and must still
-		// retry, matching the old Polar path's unconditional retry on any
-		// client.Do error. Only a decoded API error response narrows this
-		// down to its status code.
+		// retry unconditionally. Only a decoded API error response narrows
+		// this down to its status code.
 		retry := true
 		var apiErr *paddleerr.Error
 		if errors.As(err, &apiErr) && apiErr.Status != http.StatusTooManyRequests && apiErr.Status < http.StatusInternalServerError {

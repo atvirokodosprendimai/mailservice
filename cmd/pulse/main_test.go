@@ -201,17 +201,15 @@ func TestLoadPulseConfigRequiresPaddlePulseToken(t *testing.T) {
 	}
 }
 
-// TestLoadPulseConfigDoesNotRequirePolarEnv is a regression check that the
-// old Polar hard requirements were actually removed from loadPulseConfig, not
-// just superseded by leaving them set in the environment.
-func TestLoadPulseConfigDoesNotRequirePolarEnv(t *testing.T) {
+// TestLoadPulseConfigDefaultsBaseURLToProduction is a regression check that
+// loadPulseConfig's only hard requirement is PADDLE_PULSE_TOKEN, defaulting
+// everything else sensibly.
+func TestLoadPulseConfigDefaultsBaseURLToProduction(t *testing.T) {
 	setRequiredPulseEnv(t)
-	unsetenvForTest(t, "POLAR_PULSE_TOKEN")
-	unsetenvForTest(t, "POLAR_ORGANIZATION_ID")
 
 	cfg, err := loadPulseConfig()
 	if err != nil {
-		t.Fatalf("loadPulseConfig() returned error with Polar env unset: %v", err)
+		t.Fatalf("loadPulseConfig() returned error: %v", err)
 	}
 	if cfg.PaddleBearer != "paddle-pulse-secret" {
 		t.Fatalf("PaddleBearer = %q, want paddle-pulse-secret", cfg.PaddleBearer)
@@ -340,9 +338,9 @@ func TestFetchPaddleSubscriptionsRetriesRetryableStatusThenSucceeds(t *testing.T
 }
 
 // TestFetchPaddleSubscriptionsRetriesTransportErrorThenSucceeds is a
-// regression test for a real behavior bug: the old Polar path retried
-// unconditionally on any client.Do error (timeout, connection reset, DNS
-// failure), since it never inspected a status code for that case. A prior
+// regression test for a real behavior bug: transport-level failures (timeout,
+// connection reset, DNS failure) must retry unconditionally, since they never
+// convert to a decoded API error with a status code to inspect. A prior
 // version of fetchPaddleSubscriptionsAttempt required a successful
 // errors.As(err, &apiErr) conversion to mark a failure retryable at all —
 // but transport-level failures never convert to *paddleerr.Error, so they

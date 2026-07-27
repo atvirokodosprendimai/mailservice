@@ -443,7 +443,6 @@ func buildTestSSHSig(pub ed25519.PublicKey, priv ed25519.PrivateKey, message []b
 	return blob.Bytes()
 }
 
-
 func TestVerifySignatureSSHSIGFormat(t *testing.T) {
 	t.Parallel()
 

@@ -92,25 +92,25 @@ func TestPaddleConfigValidation(t *testing.T) {
 		wantErrSubstr string
 	}{
 		{
-			name:    "happy path sandbox",
-			apiKey:  "pdl_sdbx_apikey_test123",
-			env:     "sandbox",
+			name:        "happy path sandbox",
+			apiKey:      "pdl_sdbx_apikey_test123",
+			env:         "sandbox",
 			clientToken: "test_client123",
-			wantErr: false,
+			wantErr:     false,
 		},
 		{
-			name:    "happy path live",
-			apiKey:  "pdl_live_apikey_test123",
-			env:     "live",
+			name:        "happy path live",
+			apiKey:      "pdl_live_apikey_test123",
+			env:         "live",
 			clientToken: "live_client123",
-			wantErr: false,
+			wantErr:     false,
 		},
 		{
-			name:    "no api key set (paddle not configured)",
-			apiKey:  "",
-			env:     "sandbox",
+			name:        "no api key set (paddle not configured)",
+			apiKey:      "",
+			env:         "sandbox",
 			clientToken: "",
-			wantErr: false,
+			wantErr:     false,
 		},
 		{
 			name:          "invalid environment",
@@ -177,25 +177,25 @@ func TestPaddleConfigValidation(t *testing.T) {
 
 func TestLoadPaddleConfig(t *testing.T) {
 	tests := []struct {
-		name     string
-		env      map[string]string
-		wantErr  bool
+		name          string
+		env           map[string]string
+		wantErr       bool
 		wantErrSubstr string
-		checkFn  func(*testing.T, *Config)
+		checkFn       func(*testing.T, *Config)
 	}{
 		{
 			name: "load with all paddle vars set",
 			env: map[string]string{
-				"DATABASE_MODE":               "local",
-				"EDPROOF_HMAC_SECRET":         "0123456789abcdef0123456789abcdef",
-				"PADDLE_API_KEY":              "pdl_sdbx_apikey_test123",
-				"PADDLE_ENVIRONMENT":          "sandbox",
-				"PADDLE_CLIENT_TOKEN":         "test_client123",
-				"PADDLE_WEBHOOK_SECRET":       "whsec_test123",
-				"PADDLE_PRICE_ID":             "pri_test123",
+				"DATABASE_MODE":                   "local",
+				"EDPROOF_HMAC_SECRET":             "0123456789abcdef0123456789abcdef",
+				"PADDLE_API_KEY":                  "pdl_sdbx_apikey_test123",
+				"PADDLE_ENVIRONMENT":              "sandbox",
+				"PADDLE_CLIENT_TOKEN":             "test_client123",
+				"PADDLE_WEBHOOK_SECRET":           "whsec_test123",
+				"PADDLE_PRICE_ID":                 "pri_test123",
 				"PADDLE_DEFAULT_PAYMENT_LINK_URL": "https://paddle.example.com",
-				"PADDLE_GIFT_DISCOUNT_ID":     "dis_test123",
-				"PADDLE_GIFT_COUPON_CODE":     "gift_test",
+				"PADDLE_GIFT_DISCOUNT_ID":         "dis_test123",
+				"PADDLE_GIFT_COUPON_CODE":         "gift_test",
 			},
 			wantErr: false,
 			checkFn: func(t *testing.T, cfg *Config) {
@@ -228,9 +228,9 @@ func TestLoadPaddleConfig(t *testing.T) {
 		{
 			name: "load with sandbox defaults",
 			env: map[string]string{
-				"DATABASE_MODE":        "local",
-				"EDPROOF_HMAC_SECRET":  "0123456789abcdef0123456789abcdef",
-				"PADDLE_API_KEY":       "pdl_sdbx_apikey_test123",
+				"DATABASE_MODE":       "local",
+				"EDPROOF_HMAC_SECRET": "0123456789abcdef0123456789abcdef",
+				"PADDLE_API_KEY":      "pdl_sdbx_apikey_test123",
 			},
 			wantErr: false,
 			checkFn: func(t *testing.T, cfg *Config) {
