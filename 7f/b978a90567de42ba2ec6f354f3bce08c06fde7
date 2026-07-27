@@ -1,0 +1,23 @@
+cmd/pulse/main.go
+  s_93f3b6714540ea::t_904cb0191f4024 318-323,325-327
+cmd/pulse/main_test.go
+  s_93f3b6714540ea::t_4883d58ac8cf3f 386-392
+  s_93f3b6714540ea::t_6b4d955236ba09 342-385,393-433
+  s_93f3b6714540ea::t_fd2960c4a69591 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "7fb978a90567de42ba2ec6f354f3bce08c06fde7",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
