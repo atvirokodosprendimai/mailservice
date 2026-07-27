@@ -17,23 +17,41 @@ import (
 // paddleContentSecurityPolicy below.
 const paddleJSScriptSrc = "https://cdn.paddle.com/paddle/v2/paddle.js"
 
-// paddleContentSecurityPolicy locks the checkout/success pages down to only
-// what Paddle.js needs: itself from Paddle's CDN, and the checkout overlay
-// iframe/XHR calls it makes to Paddle's checkout origins (sandbox and live —
-// the served environment is config-driven, so both must be allowed).
-// Inline <style> blocks (this codebase's existing template convention, see
-// paymentSuccessHTMLTemplate) require 'unsafe-inline' on style-src; there is
-// no nonce infrastructure here to tighten that further without a broader
-// refactor.
+// paddleContentSecurityPolicy locks the checkout/success pages down to what
+// is actually confirmed: script-src to 'self' plus Paddle's documented CDN
+// origin (verified against Paddle's own docs). Inline <style> blocks (this
+// codebase's existing template convention, see paymentSuccessHTMLTemplate)
+// require 'unsafe-inline' on style-src; there is no nonce infrastructure
+// here to tighten that further without a broader refactor.
+//
+// frame-src/connect-src are deliberately left unrestricted here (not
+// tightened to Paddle's checkout origins) — see
+// paddleContentSecurityPolicyReportOnly below for why.
 const paddleContentSecurityPolicy = "default-src 'none'; " +
 	"script-src 'self' " + paddleJSScriptSrc + "; " +
 	"style-src 'self' 'unsafe-inline'; " +
-	"frame-src https://checkout.paddle.com https://sandbox-checkout.paddle.com; " +
-	"connect-src https://checkout.paddle.com https://sandbox-checkout.paddle.com; " +
+	"frame-src *; " +
+	"connect-src *; " +
 	"base-uri 'none'"
+
+// paddleContentSecurityPolicyReportOnly carries the candidate frame-src/
+// connect-src restriction (Paddle's checkout overlay iframe origins,
+// sandbox and live) as report-only, not enforced. Unlike the CDN script
+// origin, no authoritative source (Paddle's own docs, official starter
+// kits, or a reputable third party) was found confirming these are the
+// actual overlay-iframe origins as opposed to the hosted-checkout-redirect
+// domain used in transaction.checkout.url — a different thing. Enforcing a
+// wrong value here would silently break "Open payment window" the moment
+// Paddle.Checkout.open() tries to load the overlay. Once the plan's
+// mandated manual sandbox smoke test confirms the true origin (via
+// devtools/report violations), flip this to enforced with the verified
+// value and fold it back into paddleContentSecurityPolicy.
+const paddleContentSecurityPolicyReportOnly = "frame-src https://checkout.paddle.com https://sandbox-checkout.paddle.com; " +
+	"connect-src https://checkout.paddle.com https://sandbox-checkout.paddle.com"
 
 func setPaddleCSPHeader(w http.ResponseWriter) {
 	w.Header().Set("Content-Security-Policy", paddleContentSecurityPolicy)
+	w.Header().Set("Content-Security-Policy-Report-Only", paddleContentSecurityPolicyReportOnly)
 }
 
 // paddleTxnIDPattern matches Paddle Billing's transaction ID shape.
@@ -88,6 +106,9 @@ func (h *Handler) handlePaddleCheckout(w http.ResponseWriter, r *http.Request) {
 
 	mailbox, err := h.mailboxService.GetMailboxByPaymentSessionID(r.Context(), txnID)
 	if err != nil {
+		if h.logger != nil {
+			h.logger.Printf("paddle checkout: no mailbox found for open payment session txn_id=%s: %v", txnID, err)
+		}
 		h.renderPaddleCheckoutInvalid(w)
 		return
 	}

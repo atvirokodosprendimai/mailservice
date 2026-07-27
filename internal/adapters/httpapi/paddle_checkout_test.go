@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log"
@@ -148,6 +149,37 @@ func TestPaddleCheckoutRendersInvalidForNotFoundSession(t *testing.T) {
 	}
 }
 
+// TestPaddleCheckoutLogsMailboxLookupFailure guards against silently
+// swallowing a live-but-orphaned open Paddle transaction (no matching
+// mailbox row) — an operator-visible data-inconsistency signal, not just a
+// user-facing "link no longer valid" page.
+func TestPaddleCheckoutLogsMailboxLookupFailure(t *testing.T) {
+	gateway := paddleCheckoutGateway{session: &ports.PaymentSession{SessionID: "txn_orphan1", Status: ports.PaymentSessionStatusOpen}}
+	var logBuf bytes.Buffer
+	handler := NewHandler(Config{
+		PaymentGateway:    gateway,
+		PaddleClientToken: "test_client_token_123",
+		PaddleEnvironment: "sandbox",
+		MailboxService: service.NewMailboxService(
+			&httpMailboxRepo{byID: map[string]*domain.Mailbox{}, byPaymentSession: map[string]*domain.Mailbox{}},
+			&httpAccountRepo{}, gateway, &httpNotifier{}, httpTokenGenerator{token: "token"},
+			&httpProvisioner{}, &httpMailReader{}, "mail.test.local", "imap.test.local", 1143,
+		),
+		Logger: log.New(&logBuf, "", 0),
+	})
+
+	req := httptest.NewRequest("GET", "/v1/payments/paddle/checkout?_ptxn=txn_orphan1", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(logBuf.String(), "txn_orphan1") {
+		t.Fatalf("expected mailbox-lookup failure to be logged, got log: %q", logBuf.String())
+	}
+}
+
 func TestPaddleCheckoutBodyExcludesSecrets(t *testing.T) {
 	gateway := paddleCheckoutGateway{session: &ports.PaymentSession{SessionID: "txn_secret1", Status: ports.PaymentSessionStatusOpen}}
 	repo := &httpMailboxRepo{byID: map[string]*domain.Mailbox{}, byPaymentSession: map[string]*domain.Mailbox{}}
@@ -180,6 +212,12 @@ func TestPaddleCheckoutBodyExcludesSecrets(t *testing.T) {
 	}
 }
 
+// TestPaddleCheckoutAndSuccessSetCSPHeader asserts the enforced CSP locks
+// down script-src (confirmed against Paddle's docs) but does NOT enforce
+// frame-src/connect-src to the (unverified) Paddle checkout origins — those
+// are carried report-only instead, so a wrong guess can't silently break
+// the checkout overlay in production. See paddleContentSecurityPolicy's
+// doc comment.
 func TestPaddleCheckoutAndSuccessSetCSPHeader(t *testing.T) {
 	gateway := paddleCheckoutGateway{session: &ports.PaymentSession{SessionID: "txn_csp1", Status: ports.PaymentSessionStatusOpen}}
 	_, handler := newPaddleCheckoutHandler(gateway, &domain.Mailbox{
@@ -189,15 +227,31 @@ func TestPaddleCheckoutAndSuccessSetCSPHeader(t *testing.T) {
 	checkoutReq := httptest.NewRequest("GET", "/v1/payments/paddle/checkout?_ptxn=txn_csp1", nil)
 	checkoutRec := httptest.NewRecorder()
 	handler.Routes().ServeHTTP(checkoutRec, checkoutReq)
-	if csp := checkoutRec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self' https://cdn.paddle.com") {
-		t.Fatalf("checkout page missing expected CSP, got %q", csp)
-	}
+	assertPaddleCSPSplit(t, checkoutRec, "checkout")
 
 	successReq := httptest.NewRequest("GET", "/v1/payments/paddle/success?txn_id=txn_csp1", nil)
 	successRec := httptest.NewRecorder()
 	handler.Routes().ServeHTTP(successRec, successReq)
-	if csp := successRec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self' https://cdn.paddle.com") {
-		t.Fatalf("success page missing expected CSP, got %q", csp)
+	assertPaddleCSPSplit(t, successRec, "success")
+}
+
+func assertPaddleCSPSplit(t *testing.T, rec *httptest.ResponseRecorder, page string) {
+	t.Helper()
+
+	enforced := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(enforced, "script-src 'self' https://cdn.paddle.com") {
+		t.Fatalf("%s page missing expected enforced script-src, got %q", page, enforced)
+	}
+	if strings.Contains(enforced, "checkout.paddle.com") {
+		t.Fatalf("%s page enforces unverified checkout.paddle.com origin in Content-Security-Policy (should be report-only), got %q", page, enforced)
+	}
+
+	reportOnly := rec.Header().Get("Content-Security-Policy-Report-Only")
+	if !strings.Contains(reportOnly, "frame-src https://checkout.paddle.com https://sandbox-checkout.paddle.com") {
+		t.Fatalf("%s page missing expected report-only frame-src, got %q", page, reportOnly)
+	}
+	if !strings.Contains(reportOnly, "connect-src https://checkout.paddle.com https://sandbox-checkout.paddle.com") {
+		t.Fatalf("%s page missing expected report-only connect-src, got %q", page, reportOnly)
 	}
 }
 
