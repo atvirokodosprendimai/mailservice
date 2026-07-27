@@ -42,8 +42,8 @@ Git-managed:
 
 Not in Git:
 
-- `POLAR_TOKEN`
-- `POLAR_WEBHOOK_SECRET`
+- `PADDLE_API_KEY`
+- `PADDLE_WEBHOOK_SECRET`
 - `CLOUDFLARE_TUNNEL_TOKEN`
 - any other secret env values
 
@@ -71,8 +71,8 @@ variables on every deploy. No manual SSH is needed to manage app secrets.
 
 | Secret | Purpose |
 |--------|---------|
-| `POLAR_TOKEN` | Polar API token |
-| `POLAR_WEBHOOK_SECRET` | Polar webhook signature verification |
+| `PADDLE_API_KEY` | Paddle API token |
+| `PADDLE_WEBHOOK_SECRET` | Paddle webhook signature verification |
 | `UNSEND_KEY` | Unsend transactional email API key |
 | `DEPLOY_SSH_PRIVATE_KEY` | SSH key for deploy host access |
 | `DEPLOY_HOST_KEY` | Known hosts entry for deploy host |
@@ -88,10 +88,9 @@ variables on every deploy. No manual SSH is needed to manage app secrets.
 | `IMAP_HOST` | `truevipaccess.com` |
 | `IMAP_PORT` | `143` |
 | `MAX_CONCURRENT_REQUESTS` | `100` |
-| `POLAR_PRODUCT_ID` | `01f68f36-4b6f-402a-b670-c7ebde03a836` |
-| `POLAR_SERVER_URL` | `https://api.polar.sh` |
-| `POLAR_SUCCESS_URL` | `https://truevipaccess.com/v1/payments/polar/success?checkout_id={CHECKOUT_ID}` |
-| `POLAR_RETURN_URL` | `https://truevipaccess.com` |
+| `PADDLE_ENVIRONMENT` | `live` |
+| `PADDLE_CLIENT_TOKEN` | `live_...` |
+| `PADDLE_PRICE_ID` | `pri_...` |
 | `UNSEND_BASE_URL` | `https://unsend.admin.lt/api` |
 | `UNSEND_FROM_EMAIL` | `noreply@truevipaccess.com` |
 | `UNSEND_FROM_NAME` | `MailService` |

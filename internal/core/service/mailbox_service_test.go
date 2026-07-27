@@ -8,6 +8,7 @@ import (
 
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
+	"github.com/atvirokodosprendimai/mailservice/internal/platform/metrics"
 )
 
 func TestCreateMailboxReturnsExistingPendingMailbox(t *testing.T) {
@@ -99,11 +100,18 @@ func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
 				KeyFingerprint:   "edproof:key-reuse",
 				Status:           domain.MailboxStatusPendingPayment,
 				PaymentSessionID: "existing-session-123",
-				PaymentURL:       "https://checkout.polar.sh/existing",
+				PaymentURL:       "https://checkout.example.com/existing",
 			},
 		},
 	}
-	payment := &fakePaymentGateway{}
+	payment := &fakePaymentGateway{
+		getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+			return &ports.PaymentSession{
+				SessionID: sessionID,
+				Status:    ports.PaymentSessionStatusOpen,
+			}, nil
+		},
+	}
 	notifier := &fakeMailboxNotifier{}
 	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
@@ -120,7 +128,7 @@ func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
 	if mailbox.PaymentSessionID != "existing-session-123" {
 		t.Fatalf("expected existing session ID preserved, got %q", mailbox.PaymentSessionID)
 	}
-	if mailbox.PaymentURL != "https://checkout.polar.sh/existing" {
+	if mailbox.PaymentURL != "https://checkout.example.com/existing" {
 		t.Fatalf("expected existing payment URL preserved, got %q", mailbox.PaymentURL)
 	}
 	if payment.calls != 0 {
@@ -132,7 +140,7 @@ func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
 }
 
 func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
-	transientErr := errors.New("polar unavailable")
+	transientErr := errors.New("payment gateway unavailable")
 
 	tests := []struct {
 		name              string
@@ -152,7 +160,7 @@ func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
 				}, nil
 			},
 			wantSessionID:   "existing-session-123",
-			wantPaymentURL:  "https://checkout.polar.sh/existing",
+			wantPaymentURL:  "https://checkout.example.com/existing",
 			wantCreateCalls: 0,
 		},
 		{
@@ -164,6 +172,22 @@ func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
 			wantPaymentURL:    "http://pay/1",
 			wantCreateCalls:   1,
 			wantNotifierCalls: 1,
+		},
+		{
+			// Succeeded must stay reusable: ClaimMailbox/MarkMailboxPaid join on
+			// PaymentSessionID, so minting a fresh session here would overwrite it
+			// and orphan a webhook still in flight for the original session
+			// (see KTD1a in the plan).
+			name: "succeeded session is reused, PaymentSessionID unchanged",
+			getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+				return &ports.PaymentSession{
+					SessionID: sessionID,
+					Status:    ports.PaymentSessionStatusSucceeded,
+				}, nil
+			},
+			wantSessionID:   "existing-session-123",
+			wantPaymentURL:  "https://checkout.example.com/existing",
+			wantCreateCalls: 0,
 		},
 		{
 			name: "expired session regenerates",
@@ -210,7 +234,7 @@ func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
 						KeyFingerprint:   "edproof:key-reuse",
 						Status:           domain.MailboxStatusPendingPayment,
 						PaymentSessionID: "existing-session-123",
-						PaymentURL:       "https://checkout.polar.sh/existing",
+						PaymentURL:       "https://checkout.example.com/existing",
 					},
 				},
 			}
@@ -932,6 +956,53 @@ func TestClaimMailboxWithInvalidCouponReturnsError(t *testing.T) {
 	}
 }
 
+func TestClaimMailboxWithInvalidCouponIncrementsDiscountRejected(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143,
+		GiftCouponConfig{DiscountID: "disc-123", CouponCode: "OPENCLAWS"})
+	registry := metrics.NewRegistry(context.Background())
+	svc.SetMetrics(registry)
+
+	_, _, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:bad-key",
+		Algorithm:   "ed25519",
+	}, "WRONGCODE")
+	if !errors.Is(err, ports.ErrCouponInvalid) {
+		t.Fatalf("expected ErrCouponInvalid, got %v", err)
+	}
+	if got := registry.Counter("discount_rejected").Sum24h(); got != 1 {
+		t.Fatalf("discount_rejected = %d, want 1", got)
+	}
+}
+
+func TestClaimMailboxGatewayRejectedDiscountIncrementsDiscountRejected(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	payment := &fakePaymentGateway{
+		createPaymentLink: func(context.Context, ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
+			return nil, ports.ErrCouponExhausted
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143,
+		GiftCouponConfig{DiscountID: "disc-123", CouponCode: "OPENCLAWS"})
+	registry := metrics.NewRegistry(context.Background())
+	svc.SetMetrics(registry)
+
+	_, _, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:gateway-rejected-key",
+		Algorithm:   "ed25519",
+	}, "OPENCLAWS")
+	if !errors.Is(err, ports.ErrCouponExhausted) {
+		t.Fatalf("expected ErrCouponExhausted, got %v", err)
+	}
+	if got := registry.Counter("discount_rejected").Sum24h(); got != 1 {
+		t.Fatalf("discount_rejected = %d, want 1", got)
+	}
+}
+
 func TestClaimMailboxWithCouponButNoConfigReturnsError(t *testing.T) {
 	repo := &fakeMailboxRepo{}
 	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
@@ -1058,6 +1129,127 @@ func TestMarkMailboxPaidWithGrantedMonths0DefaultsTo1(t *testing.T) {
 	}
 }
 
+// TestMarkMailboxPaidAccountLinkedWithGrantedMonths3ExtendsMailboxOnly is a
+// regression test for the bug fixed by U7: on the account-linked branch,
+// mailbox.ExpiresAt must honor GrantedMonths (a coupon-granted period),
+// while account.SubscriptionExpiresAt (which sibling mailboxes on the same
+// account share) must keep advancing by exactly one billing period
+// regardless — a coupon on one mailbox must not extend sibling mailboxes.
+func TestMarkMailboxPaidAccountLinkedWithGrantedMonths3ExtendsMailboxOnly(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeMailboxRepo{
+		byStripeSession: map[string]*domain.Mailbox{
+			"sess-acct-gift": {
+				ID:               "mbx-acct-gift",
+				AccountID:        "acct-1",
+				PaymentSessionID: "sess-acct-gift",
+				Status:           domain.MailboxStatusPendingPayment,
+				GrantedMonths:    3,
+			},
+		},
+	}
+	accounts := &fakeMailboxAccountRepo{
+		byID: map[string]*domain.Account{
+			"acct-1": {ID: "acct-1"},
+		},
+	}
+	svc := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	mailbox, err := svc.MarkMailboxPaid(context.Background(), "sess-acct-gift")
+	if err != nil {
+		t.Fatalf("MarkMailboxPaid failed: %v", err)
+	}
+	if mailbox.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected active status, got %s", mailbox.Status)
+	}
+
+	expectedMailboxExpiry := now.AddDate(0, 3, 0)
+	if mailbox.ExpiresAt == nil {
+		t.Fatalf("expected ExpiresAt to be set")
+	}
+	if diff := mailbox.ExpiresAt.Sub(expectedMailboxExpiry); diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("expected mailbox.ExpiresAt ~%v, got %v (diff %v)", expectedMailboxExpiry, *mailbox.ExpiresAt, diff)
+	}
+
+	expectedAccountExpiry := now.AddDate(0, 1, 0)
+	if diff := accounts.lastSubscriptionUpdateExpiresAt.Sub(expectedAccountExpiry); diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("expected account.SubscriptionExpiresAt ~%v, got %v (diff %v)", expectedAccountExpiry, accounts.lastSubscriptionUpdateExpiresAt, diff)
+	}
+	if accounts.lastSubscriptionUpdateAccountID != "acct-1" {
+		t.Fatalf("expected subscription update for acct-1, got %q", accounts.lastSubscriptionUpdateAccountID)
+	}
+}
+
+// TestRenewMailboxNeverMovesExpiryBackward is a regression test: a renewal
+// webhook's billing period (typically monthly for Paddle) must not
+// overwrite a longer expiry already granted by a gift coupon's
+// GrantedMonths (see MarkMailboxPaid). Without this fix, the first
+// transaction.completed renewal after a multi-month coupon silently
+// discards the extra granted months.
+func TestRenewMailboxNeverMovesExpiryBackward(t *testing.T) {
+	now := time.Now().UTC()
+	giftExpiry := now.AddDate(0, 3, 0) // GrantedMonths=3 already applied
+	repo := &fakeMailboxRepo{
+		byID: map[string]*domain.Mailbox{
+			"mbx-gift-renew": {
+				ID:            "mbx-gift-renew",
+				Status:        domain.MailboxStatusActive,
+				GrantedMonths: 3,
+				ExpiresAt:     &giftExpiry,
+			},
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	renewalExpiry := now.AddDate(0, 1, 0) // Paddle's monthly billing period
+	if err := svc.RenewMailbox(context.Background(), "mbx-gift-renew", now, renewalExpiry); err != nil {
+		t.Fatalf("RenewMailbox failed: %v", err)
+	}
+
+	if repo.updated == nil || repo.updated.ExpiresAt == nil {
+		t.Fatalf("expected mailbox to be updated with ExpiresAt set")
+	}
+	if !repo.updated.ExpiresAt.Equal(giftExpiry) {
+		t.Fatalf("expected ExpiresAt to stay at gift-coupon expiry %v, got %v", giftExpiry, *repo.updated.ExpiresAt)
+	}
+}
+
+// TestRenewMailboxAdvancesExpiryWhenLater asserts the normal case: a
+// renewal with a later expiry than the mailbox's current one still
+// advances it as expected.
+func TestRenewMailboxAdvancesExpiryWhenLater(t *testing.T) {
+	now := time.Now().UTC()
+	oldExpiry := now.AddDate(0, -1, 0) // already elapsed
+	repo := &fakeMailboxRepo{
+		byID: map[string]*domain.Mailbox{
+			"mbx-normal-renew": {
+				ID:        "mbx-normal-renew",
+				Status:    domain.MailboxStatusActive,
+				ExpiresAt: &oldExpiry,
+			},
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	newExpiry := now.AddDate(0, 1, 0)
+	if err := svc.RenewMailbox(context.Background(), "mbx-normal-renew", now, newExpiry); err != nil {
+		t.Fatalf("RenewMailbox failed: %v", err)
+	}
+
+	if repo.updated == nil || repo.updated.ExpiresAt == nil {
+		t.Fatalf("expected mailbox to be updated with ExpiresAt set")
+	}
+	if !repo.updated.ExpiresAt.Equal(newExpiry) {
+		t.Fatalf("expected ExpiresAt to advance to %v, got %v", newExpiry, *repo.updated.ExpiresAt)
+	}
+}
+
 func TestExpireMailboxesSweepsExpiredOnly(t *testing.T) {
 	past := time.Now().UTC().Add(-24 * time.Hour)
 	future := time.Now().UTC().Add(24 * time.Hour)
@@ -1138,6 +1330,7 @@ func TestExpireMailboxesReturnsZeroWhenNothingExpired(t *testing.T) {
 type fakeMailboxRepo struct {
 	pendingByAccount              map[string]*domain.Mailbox
 	created                       []*domain.Mailbox
+	byID                          map[string]*domain.Mailbox
 	byStripeSession               map[string]*domain.Mailbox
 	byAccessToken                 map[string]*domain.Mailbox
 	byKeyFingerprint              map[string]*domain.Mailbox
@@ -1214,7 +1407,12 @@ func (f *fakeMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) err
 	return nil
 }
 
-func (f *fakeMailboxRepo) GetByID(_ context.Context, _ string) (*domain.Mailbox, error) {
+func (f *fakeMailboxRepo) GetByID(_ context.Context, id string) (*domain.Mailbox, error) {
+	if f.byID != nil {
+		if item, ok := f.byID[id]; ok {
+			return item, nil
+		}
+	}
 	return nil, ports.ErrMailboxNotFound
 }
 
@@ -1245,6 +1443,10 @@ func (f *fakeMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID str
 			return item, nil
 		}
 	}
+	return nil, ports.ErrMailboxNotFound
+}
+
+func (f *fakeMailboxRepo) GetBySubscriptionID(_ context.Context, _ string) (*domain.Mailbox, error) {
 	return nil, ports.ErrMailboxNotFound
 }
 
@@ -1286,11 +1488,15 @@ type fakePaymentGateway struct {
 	getCalls          int
 	lastReq           ports.PaymentLinkRequest
 	getPaymentSession func(context.Context, string) (*ports.PaymentSession, error)
+	createPaymentLink func(context.Context, ports.PaymentLinkRequest) (*ports.PaymentLink, error)
 }
 
-func (f *fakePaymentGateway) CreatePaymentLink(_ context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
+func (f *fakePaymentGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
 	f.calls++
 	f.lastReq = req
+	if f.createPaymentLink != nil {
+		return f.createPaymentLink(ctx, req)
+	}
 	return &ports.PaymentLink{SessionID: "sess-1", URL: "http://pay/1"}, nil
 }
 

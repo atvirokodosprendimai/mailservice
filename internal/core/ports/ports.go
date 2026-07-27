@@ -48,6 +48,7 @@ type MailboxRepository interface {
 	GetPendingByAccountID(ctx context.Context, accountID string) (*domain.Mailbox, error)
 	ListPendingPayment(ctx context.Context) ([]domain.Mailbox, error)
 	GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
+	GetBySubscriptionID(ctx context.Context, subscriptionID string) (*domain.Mailbox, error)
 	GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error)
 	GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error)
 	ListActiveExpired(ctx context.Context, now time.Time) ([]domain.Mailbox, error)

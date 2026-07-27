@@ -165,6 +165,78 @@ func TestHandleAdminMetricsRequiresAuthAndReturnsShape(t *testing.T) {
 	}
 }
 
+func TestHandleAdminMetricsIncludesPaymentObservabilityCounters(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registry := metrics.NewRegistry(ctx)
+	registry.Counter("payment_link_created").Add(3)
+	registry.Counter("payment_session_lookup").Add(5)
+	registry.Counter("webhook_verification_failed").Add(1)
+	registry.Counter("discount_rejected").Add(2)
+	registry.Counter("webhook_received").Add(7)
+	registry.Counter("webhook_received_subscription_created").Add(1)
+	registry.Counter("webhook_received_transaction_completed").Add(4)
+	registry.Counter("webhook_received_subscription_canceled").Add(1)
+	registry.Counter("webhook_received_other").Add(1)
+
+	handler := NewHandler(Config{
+		AdminAPIKey: "secret",
+		Metrics:     registry,
+		Logger:      log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/metrics?window=24h", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		PaymentLinkCreated                  int64 `json:"payment_link_created"`
+		PaymentSessionLookup                int64 `json:"payment_session_lookup"`
+		WebhookVerificationFailed           int64 `json:"webhook_verification_failed"`
+		DiscountRejected                    int64 `json:"discount_rejected"`
+		WebhookReceived                     int64 `json:"webhook_received"`
+		WebhookReceivedSubscriptionCreated  int64 `json:"webhook_received_subscription_created"`
+		WebhookReceivedTransactionCompleted int64 `json:"webhook_received_transaction_completed"`
+		WebhookReceivedSubscriptionCanceled int64 `json:"webhook_received_subscription_canceled"`
+		WebhookReceivedOther                int64 `json:"webhook_received_other"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode admin metrics: %v", err)
+	}
+	if payload.PaymentLinkCreated != 3 {
+		t.Fatalf("payment_link_created = %d, want 3", payload.PaymentLinkCreated)
+	}
+	if payload.PaymentSessionLookup != 5 {
+		t.Fatalf("payment_session_lookup = %d, want 5", payload.PaymentSessionLookup)
+	}
+	if payload.WebhookVerificationFailed != 1 {
+		t.Fatalf("webhook_verification_failed = %d, want 1", payload.WebhookVerificationFailed)
+	}
+	if payload.DiscountRejected != 2 {
+		t.Fatalf("discount_rejected = %d, want 2", payload.DiscountRejected)
+	}
+	if payload.WebhookReceived != 7 {
+		t.Fatalf("webhook_received = %d, want 7", payload.WebhookReceived)
+	}
+	if payload.WebhookReceivedSubscriptionCreated != 1 {
+		t.Fatalf("webhook_received_subscription_created = %d, want 1", payload.WebhookReceivedSubscriptionCreated)
+	}
+	if payload.WebhookReceivedTransactionCompleted != 4 {
+		t.Fatalf("webhook_received_transaction_completed = %d, want 4", payload.WebhookReceivedTransactionCompleted)
+	}
+	if payload.WebhookReceivedSubscriptionCanceled != 1 {
+		t.Fatalf("webhook_received_subscription_canceled = %d, want 1", payload.WebhookReceivedSubscriptionCanceled)
+	}
+	if payload.WebhookReceivedOther != 1 {
+		t.Fatalf("webhook_received_other = %d, want 1", payload.WebhookReceivedOther)
+	}
+}
+
 func TestHandleHomeReturns200OnStaleETag(t *testing.T) {
 	handler := NewHandler(Config{
 		BuildNumber: "build-100",
@@ -427,101 +499,11 @@ func TestHandleResolveAccessRejectsUnsupportedProtocol(t *testing.T) {
 	}
 }
 
-func TestHandlePolarSuccessActivatesMailboxAfterVerifiedCheckout(t *testing.T) {
-	repo := &httpMailboxRepo{
-		byPaymentSession: map[string]*domain.Mailbox{
-			"polar_1": {
-				ID:               "mbx-1",
-				KeyFingerprint:   "edproof:key-1",
-				PaymentSessionID: "polar_1",
-				Status:           domain.MailboxStatusPendingPayment,
-				IMAPUsername:     "mbx_abc",
-				IMAPPassword:     "secret",
-			},
-		},
-	}
-	handler := NewHandler(Config{
-		PaymentGateway: httpPaymentGateway{
-			session: &ports.PaymentSession{SessionID: "polar_1", Status: ports.PaymentSessionStatusSucceeded},
-		},
-		MailboxService: service.NewMailboxService(
-			repo,
-			&httpAccountRepo{},
-			&httpPaymentGateway{},
-			&httpNotifier{},
-			httpTokenGenerator{token: "token"},
-			&httpProvisioner{},
-			&httpMailReader{},
-			"mail.test.local",
-			"imap.test.local",
-			1143,
-		),
-		Logger: log.New(io.Discard, "", 0),
-	})
-
-	req := httptest.NewRequest("GET", "/v1/payments/polar/success?checkout_id=polar_1", nil)
-	rec := httptest.NewRecorder()
-
-	handler.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != 200 {
-		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	var resp map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if resp["status"] != "ok" {
-		t.Fatalf("expected ok status, got %#v", resp["status"])
-	}
-	if resp["mailbox_id"] != "mbx-1" {
-		t.Fatalf("expected mailbox_id, got %#v", resp["mailbox_id"])
-	}
-	if _, ok := resp["access_token"]; ok {
-		t.Fatalf("expected no access_token in response")
-	}
-	if _, ok := resp["payment_url"]; ok {
-		t.Fatalf("expected no payment_url in response")
-	}
-	if repo.byPaymentSession["polar_1"].Status != domain.MailboxStatusActive {
-		t.Fatalf("expected mailbox activation")
-	}
-}
-
-func TestHandlePolarSuccessRejectsUnpaidCheckout(t *testing.T) {
-	handler := NewHandler(Config{
-		PaymentGateway: httpPaymentGateway{
-			session: &ports.PaymentSession{SessionID: "polar_2", Status: ports.PaymentSessionStatusOpen},
-		},
-		MailboxService: service.NewMailboxService(
-			&httpMailboxRepo{},
-			&httpAccountRepo{},
-			&httpPaymentGateway{},
-			&httpNotifier{},
-			httpTokenGenerator{token: "token"},
-			&httpProvisioner{},
-			&httpMailReader{},
-			"mail.test.local",
-			"imap.test.local",
-			1143,
-		),
-		Logger: log.New(io.Discard, "", 0),
-	})
-
-	req := httptest.NewRequest("GET", "/v1/payments/polar/success?checkout_id=polar_2", nil)
-	rec := httptest.NewRecorder()
-
-	handler.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != 409 {
-		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
 type httpMailboxRepo struct {
 	byID                          map[string]*domain.Mailbox
 	byPaymentSession              map[string]*domain.Mailbox
 	byKeyFingerprint              map[string]*domain.Mailbox
+	bySubscriptionID              map[string]*domain.Mailbox
 	activeOrPendingByBillingEmail map[string]*domain.Mailbox
 	getByIDCount                  int
 	updateCount                   int
@@ -544,6 +526,12 @@ func (r *httpMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) err
 	if mailbox.PaymentSessionID != "" {
 		r.byPaymentSession[mailbox.PaymentSessionID] = mailbox
 	}
+	if r.bySubscriptionID == nil {
+		r.bySubscriptionID = map[string]*domain.Mailbox{}
+	}
+	if mailbox.SubscriptionID != "" {
+		r.bySubscriptionID[mailbox.SubscriptionID] = mailbox
+	}
 	return nil
 }
 
@@ -564,6 +552,12 @@ func (r *httpMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) err
 	}
 	if mailbox.KeyFingerprint != "" {
 		r.byKeyFingerprint[mailbox.KeyFingerprint] = mailbox
+	}
+	if r.bySubscriptionID == nil {
+		r.bySubscriptionID = map[string]*domain.Mailbox{}
+	}
+	if mailbox.SubscriptionID != "" {
+		r.bySubscriptionID[mailbox.SubscriptionID] = mailbox
 	}
 	return nil
 }
@@ -590,6 +584,13 @@ func (r *httpMailboxRepo) ListPendingPayment(_ context.Context) ([]domain.Mailbo
 
 func (r *httpMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID string) (*domain.Mailbox, error) {
 	if item, ok := r.byPaymentSession[sessionID]; ok {
+		return item, nil
+	}
+	return nil, ports.ErrMailboxNotFound
+}
+
+func (r *httpMailboxRepo) GetBySubscriptionID(_ context.Context, subscriptionID string) (*domain.Mailbox, error) {
+	if item, ok := r.bySubscriptionID[subscriptionID]; ok {
 		return item, nil
 	}
 	return nil, ports.ErrMailboxNotFound
@@ -1137,41 +1138,6 @@ func TestHandleStripeWebhookRejectsWhenSecretNotConfigured(t *testing.T) {
 
 	if rec.Code != 503 {
 		t.Fatalf("expected 503 when stripe secret is empty, got %d body=%s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestHandlePolarWebhookRejectsWhenSecretNotConfigured(t *testing.T) {
-	t.Parallel()
-
-	handler := NewHandler(Config{
-		PolarWebhookSecret: "", // intentionally empty
-		PaymentGateway:     &httpPaymentGateway{},
-		MailboxService: service.NewMailboxService(
-			&httpMailboxRepo{},
-			&httpAccountRepo{},
-			&httpPaymentGateway{},
-			&httpNotifier{},
-			httpTokenGenerator{token: "token"},
-			&httpProvisioner{},
-			&httpMailReader{},
-			"mail.test.local",
-			"imap.test.local",
-			1143,
-		),
-		Logger: log.New(io.Discard, "", 0),
-		Now:    func() time.Time { return time.Unix(1700000000, 0).UTC() },
-	})
-
-	req := httptest.NewRequest("POST", "/v1/webhooks/polar", strings.NewReader(`{"type":"checkout.updated","data":{"id":"polar_1"}}`))
-	req.Header.Set("webhook-id", "msg_1")
-	req.Header.Set("webhook-timestamp", "1700000000")
-	req.Header.Set("webhook-signature", "v1,anything")
-	rec := httptest.NewRecorder()
-
-	handler.Routes().ServeHTTP(rec, req)
-
-	if rec.Code != 401 && rec.Code != 500 && rec.Code != 503 {
-		t.Fatalf("expected rejection when polar secret is empty, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

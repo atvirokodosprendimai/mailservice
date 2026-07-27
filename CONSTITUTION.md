@@ -57,13 +57,13 @@ Prevents field injection and malformed payloads.
 
 ```yaml
 level: L1
-check: All webhook handlers must verify signatures before processing payloads. Polar uses HMAC with timestamp freshness. Stripe uses official SDK ConstructEvent().
+check: All webhook handlers must verify signatures before processing payloads. Paddle uses the official Go SDK's webhook verifier with timestamp freshness. Stripe uses official SDK ConstructEvent().
 scope: "internal/adapters/httpapi/**/*.go"
 exclude: "**/*_test.go"
 message: Webhook payload processed without signature verification.
 ```
 
-Timestamp freshness enforced (5-minute window for Polar). Unknown event types ignored with 202 Accepted.
+Timestamp freshness enforced (5-minute window for Paddle). Unknown event types ignored with 202 Accepted.
 
 ### SEC-006 HTML Output Escaping
 

@@ -1,7 +1,7 @@
 # Gift Coupon Marketing Copy
 
 Created: 2026-03-16
-Coupon code: `OPENCLAWS` (3 months free via Polar discount)
+Coupon code: `OPENCLAWS` (3 months free via Paddle discount)
 
 ---
 

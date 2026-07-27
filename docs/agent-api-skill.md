@@ -161,7 +161,7 @@ Response (existing paid mailbox):
 
 ### Step 4: Pay
 
-The `payment_url` from the claim response is a Stripe/Polar checkout link. Payment cannot be completed programmatically by the agent — it requires a human or a browser session.
+The `payment_url` from the claim response is a Stripe/Paddle checkout link. Payment cannot be completed programmatically by the agent — it requires a human or a browser session.
 
 **What to do:**
 
@@ -334,7 +334,7 @@ Response:
 | 400 | `unsupported key type "..."` | Key is not Ed25519 | Generate an Ed25519 key: `ssh-keygen -t ed25519 -f identity` |
 | 400 | `edproof now requires challenge-response — call POST /v1/auth/challenge first` | Missing `challenge` or `signature` field | Get a challenge first, sign it, include both fields |
 | 400 | `unsupported protocol` | Protocol is not `imap` | Use `"protocol": "imap"` |
-| 500 | `create payment link: polar api...` | Billing email domain doesn't accept email (e.g. `example.com`) | Use a real email address with a valid, deliverable domain |
+| 500 | `paddle create transaction: ...` | Billing email domain doesn't accept email (e.g. `example.com`) | Use a real email address with a valid, deliverable domain |
 | 400 | `uid must be > 0` | UID is 0 or missing | Provide a valid message UID from the list response |
 | 401 | `challenge expired` | More than 30 seconds passed since challenge was issued | Request a new challenge and sign it again |
 | 401 | `challenge tampered or invalid` | Challenge string was modified, or public key doesn't match | Use the exact challenge string from the response; use the same public key for challenge and claim/resolve |

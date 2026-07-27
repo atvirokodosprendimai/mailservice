@@ -128,6 +128,134 @@ func TestMailboxRepositoryAllowsMultipleEmptyPaymentSessionIDs(t *testing.T) {
 }
 
 // No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryGetByPaymentSessionIDFindsRowAfterRename(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+	mailbox := &domain.Mailbox{
+		ID:               "mbx-session",
+		AccountID:        "acc-1",
+		OwnerEmail:       "session@example.com",
+		IMAPHost:         "imap.example.com",
+		IMAPPort:         143,
+		IMAPUsername:     "mbx_session",
+		IMAPPassword:     "secret",
+		AccessToken:      "access-session",
+		PaymentSessionID: "pse_test_session",
+		PaymentURL:       "https://pay.example.com/session/session",
+		Status:           domain.MailboxStatusPendingPayment,
+	}
+
+	if err := repo.Create(context.Background(), mailbox); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	found, err := repo.GetByPaymentSessionID(context.Background(), "pse_test_session")
+	if err != nil {
+		t.Fatalf("GetByPaymentSessionID failed: %v", err)
+	}
+	if found.ID != mailbox.ID {
+		t.Fatalf("expected mailbox id %q, got %q", mailbox.ID, found.ID)
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryNewMailboxDefaultsPaymentProviderToPaddle(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+	mailbox := &domain.Mailbox{
+		ID:               "mbx-paddle",
+		AccountID:        "acc-1",
+		OwnerEmail:       "paddle@example.com",
+		IMAPHost:         "imap.example.com",
+		IMAPPort:         143,
+		IMAPUsername:     "mbx_paddle",
+		IMAPPassword:     "secret",
+		AccessToken:      "access-paddle",
+		PaymentSessionID: "pse_test_paddle",
+		PaymentURL:       "https://pay.example.com/session/paddle",
+		Status:           domain.MailboxStatusPendingPayment,
+	}
+
+	if err := repo.Create(context.Background(), mailbox); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("db.DB failed: %v", err)
+	}
+	var provider string
+	if err := sqlDB.QueryRow(`SELECT payment_provider FROM mailboxes WHERE id = ?`, mailbox.ID).Scan(&provider); err != nil {
+		t.Fatalf("query payment_provider failed: %v", err)
+	}
+	if provider != "paddle" {
+		t.Fatalf("expected new mailbox to default payment_provider to 'paddle', got %q", provider)
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryGetBySubscriptionIDFindsRowAndIgnoresEmpty(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+	withSub := &domain.Mailbox{
+		ID:               "mbx-sub",
+		AccountID:        "acc-1",
+		OwnerEmail:       "sub@example.com",
+		IMAPHost:         "imap.example.com",
+		IMAPPort:         143,
+		IMAPUsername:     "mbx_sub",
+		IMAPPassword:     "secret",
+		AccessToken:      "access-sub",
+		PaymentSessionID: "pse_test_sub",
+		PaymentURL:       "https://pay.example.com/session/sub",
+		Status:           domain.MailboxStatusActive,
+		SubscriptionID:   "sub_test_1",
+	}
+	withoutSub := &domain.Mailbox{
+		ID:           "mbx-nosub",
+		AccountID:    "acc-1",
+		OwnerEmail:   "nosub@example.com",
+		IMAPHost:     "imap.example.com",
+		IMAPPort:     143,
+		IMAPUsername: "mbx_nosub",
+		IMAPPassword: "secret",
+		AccessToken:  "access-nosub",
+		Status:       domain.MailboxStatusPendingPayment,
+	}
+
+	if err := repo.Create(context.Background(), withSub); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if err := repo.Create(context.Background(), withoutSub); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	found, err := repo.GetBySubscriptionID(context.Background(), "sub_test_1")
+	if err != nil {
+		t.Fatalf("GetBySubscriptionID failed: %v", err)
+	}
+	if found.ID != withSub.ID {
+		t.Fatalf("expected mailbox id %q, got %q", withSub.ID, found.ID)
+	}
+
+	if _, err := repo.GetBySubscriptionID(context.Background(), ""); err == nil {
+		t.Fatalf("expected empty subscription_id lookup to not match empty-string rows")
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
 func TestMailboxRepositoryAllowsSameBillingEmailForAccountBoundMailboxes(t *testing.T) {
 	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
 	if err != nil {

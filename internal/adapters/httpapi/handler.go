@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PaddleHQ/paddle-go-sdk/v5/pkg/paddlenotification"
 	"github.com/stripe/stripe-go/v83"
 	"github.com/stripe/stripe-go/v83/webhook"
 
@@ -25,7 +26,9 @@ import (
 type Config struct {
 	AdminAPIKey         string
 	StripeWebhookSecret string
-	PolarWebhookSecret  string
+	PaddleWebhookSecret string
+	PaddleClientToken   string
+	PaddleEnvironment   string
 	MaxConcurrentReqs   int
 	BuildNumber         string
 	CacheBuster         string
@@ -44,7 +47,9 @@ type Config struct {
 type Handler struct {
 	adminAPIKey         string
 	stripeWebhookSecret string
-	polarWebhookSecret  string
+	paddleWebhookSecret string
+	paddleClientToken   string
+	paddleEnvironment   string
 	concurrencySem      chan struct{}
 	keyProofVerifier    ports.KeyProofVerifier
 	paymentGateway      ports.PaymentGateway
@@ -73,7 +78,9 @@ func NewHandler(cfg Config) *Handler {
 	return &Handler{
 		adminAPIKey:         cfg.AdminAPIKey,
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
-		polarWebhookSecret:  cfg.PolarWebhookSecret,
+		paddleWebhookSecret: cfg.PaddleWebhookSecret,
+		paddleClientToken:   cfg.PaddleClientToken,
+		paddleEnvironment:   fallbackString(cfg.PaddleEnvironment, "sandbox"),
 		concurrencySem:      sem,
 		keyProofVerifier:    cfg.KeyProofVerifier,
 		paymentGateway:      cfg.PaymentGateway,
@@ -94,6 +101,10 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", h.handleHome)
 	mux.HandleFunc("GET /healthz", h.handleHealth)
+	mux.HandleFunc("GET /terms", h.handleTerms)
+	mux.HandleFunc("GET /refund-policy", h.handleRefundPolicy)
+	mux.HandleFunc("GET /privacy", h.handlePrivacyNotice)
+	mux.HandleFunc("GET /contact", h.handleContact)
 	mux.HandleFunc("POST /v1/accounts", h.handleCreateAccount)
 	mux.HandleFunc("POST /v1/auth/refresh", h.handleRefreshAuth)
 	mux.HandleFunc("POST /v1/accounts/recovery/start", h.handleStartRecovery)
@@ -105,8 +116,10 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/mailboxes/claim", h.handleClaimMailbox)
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
 	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
-	mux.HandleFunc("GET /v1/payments/polar/success", h.handlePolarSuccess)
-	mux.HandleFunc("POST /v1/webhooks/polar", h.handlePolarWebhook)
+	mux.HandleFunc("GET /v1/payments/paddle/checkout", h.handlePaddleCheckout)
+	mux.HandleFunc("GET /v1/payments/paddle/checkout.js", h.handlePaddleCheckoutJS)
+	mux.HandleFunc("GET /v1/payments/paddle/success", h.handlePaddleSuccess)
+	mux.HandleFunc("POST /v1/webhooks/paddle", h.handlePaddleWebhook)
 	mux.HandleFunc("POST /v1/imap/resolve", h.handleResolveIMAP)
 	mux.HandleFunc("POST /v1/imap/messages", h.handleListIMAPMessages)
 	mux.HandleFunc("POST /v1/imap/messages/get", h.handleGetIMAPMessageByUID)
@@ -435,6 +448,11 @@ curl -v --url "imaps://mail.truevipaccess.com:993/INBOX" \
     &middot; Contact: <a href="mailto:hi@truevipaccess.com" style="color:var(--accent);text-decoration:none">hi@truevipaccess.com</a>
     &middot; Agents: <code>POST /v1/support/messages</code>
     &middot; AGPL v3.0
+    <br><br>
+    <a href="/terms" style="color:var(--accent);text-decoration:none">Terms</a>
+    &middot; <a href="/refund-policy" style="color:var(--accent);text-decoration:none">Refund Policy</a>
+    &middot; <a href="/privacy" style="color:var(--accent);text-decoration:none">Privacy</a>
+    &middot; <a href="/contact" style="color:var(--accent);text-decoration:none">Contact</a>
   </footer>
 </body>
 </html>
@@ -1113,172 +1131,42 @@ func (h *Handler) handleMockPay(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "paid"})
 }
 
-func (h *Handler) handlePolarSuccess(w http.ResponseWriter, r *http.Request) {
-	if h.paymentGateway == nil {
-		writeError(w, http.StatusServiceUnavailable, errors.New("payment gateway not configured"))
-		return
-	}
-
-	checkoutID := strings.TrimSpace(r.URL.Query().Get("checkout_id"))
-	if checkoutID == "" {
-		writeError(w, http.StatusBadRequest, errors.New("missing checkout_id"))
-		return
-	}
-
-	session, err := h.paymentGateway.GetPaymentSession(r.Context(), checkoutID)
+// handlePaddleWebhook verifies and routes a Paddle webhook event to the
+// right mailbox state transition. It resolves the target mailbox before
+// running any dedup/ordering check (those checks compare against the
+// mailbox's own last_payment_event_at/id columns, so the mailbox must be
+// known first), then short-circuits exact-duplicate redelivery by event_id,
+// then stale/out-of-order delivery by occurred_at, before finally routing
+// by event type. Every branch that actually changes mailbox state updates
+// last_payment_event_at/id so the next delivery's dedup/ordering check has
+// something to compare against.
+func (h *Handler) handlePaddleWebhook(w http.ResponseWriter, r *http.Request) {
+	body, err := verifyPaddleWebhook(h.paddleWebhookSecret, r.Header.Get("Paddle-Signature"), r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
-	}
-
-	if !isSuccessfulPayment(session.Status) {
-		writeJSON(w, http.StatusConflict, map[string]string{"status": "waiting_payment"})
-		return
-	}
-
-	mailbox, err := h.mailboxService.MarkMailboxPaid(r.Context(), session.SessionID)
-	if err != nil {
-		if errors.Is(err, ports.ErrMailboxNotFound) {
-			writeError(w, http.StatusNotFound, err)
+		if errors.Is(err, errPaddleWebhookSecretNotConfigured) {
+			writeError(w, http.StatusServiceUnavailable, err)
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	// Render HTML for browser requests, JSON for API clients.
-	if strings.Contains(r.Header.Get("Accept"), "text/html") {
-		email := mailbox.IMAPUsername
-		if email == "" {
-			email = mailbox.OwnerEmail
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, paymentSuccessHTMLTemplate, mailbox.ID, email)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, polarSuccessView{
-		Status:    "ok",
-		MailboxID: mailbox.ID,
-	})
-}
-
-func (h *Handler) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
-	if h.paymentGateway == nil {
-		writeError(w, http.StatusServiceUnavailable, errors.New("payment gateway not configured"))
-		return
-	}
-	if strings.TrimSpace(h.polarWebhookSecret) == "" {
-		writeError(w, http.StatusServiceUnavailable, errors.New("polar webhook secret not configured"))
-		return
-	}
-
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	headers := map[string]string{
-		"webhook-id":        r.Header.Get("webhook-id"),
-		"webhook-timestamp": r.Header.Get("webhook-timestamp"),
-		"webhook-signature": r.Header.Get("webhook-signature"),
-	}
-	if err := verifyPolarWebhook(h.polarWebhookSecret, headers, body, h.now()); err != nil {
+		h.metrics.Counter("webhook_verification_failed").Add(1)
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
 
-	event, err := parsePolarWebhook(body)
+	event, err := parsePaddleWebhookEvent(body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	switch event.Type {
-	case "checkout.updated", "checkout.created":
-		h.handleCheckoutEvent(w, r, event)
-	case "subscription.canceled", "subscription.uncanceled":
-		h.handleSubscriptionCancellation(w, r, event)
-	case "subscription.revoked":
-		h.handleSubscriptionRevocation(w, r, event)
-	case "subscription.updated", "subscription.created", "order.created", "order.paid":
-		h.handleSubscriptionRenewal(w, r, event)
-	default:
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-	}
-}
+	h.metrics.Counter("webhook_received").Add(1)
+	h.metrics.Counter(paddleWebhookReceivedBucket(event.EventType)).Add(1)
 
-func (h *Handler) handleCheckoutEvent(w http.ResponseWriter, r *http.Request, event *polarWebhookEvent) {
-	checkoutID := polarCheckoutID(event)
-	if checkoutID == "" {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-		return
-	}
-
-	session, err := h.paymentGateway.GetPaymentSession(r.Context(), checkoutID)
+	mailbox, err := h.resolvePaddleMailbox(r.Context(), event.SubscriptionID, event.MailboxID)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
-	}
-	if !isSuccessfulPayment(session.Status) {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-		return
-	}
-
-	if _, err := h.mailboxService.MarkMailboxPaid(r.Context(), session.SessionID); err != nil {
-		if errors.Is(err, ports.ErrMailboxNotFound) {
-			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
-}
-
-func (h *Handler) handleSubscriptionCancellation(w http.ResponseWriter, _ *http.Request, event *polarWebhookEvent) {
-	mailboxID := strings.TrimSpace(event.Data.Metadata["mailbox_id"])
-	if h.logger != nil {
-		h.logger.Printf("polar subscription cancellation event ack type=%s mailbox_id=%s", event.Type, mailboxID)
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
-}
-
-func (h *Handler) handleSubscriptionRevocation(w http.ResponseWriter, r *http.Request, event *polarWebhookEvent) {
-	mailboxID, _, ok := polarSubscriptionFields(event.Data)
-	if !ok {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-		return
-	}
-
-	if err := h.mailboxService.ExpireMailboxByID(r.Context(), mailboxID); err != nil {
-		if errors.Is(err, ports.ErrMailboxNotFound) {
-			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
-}
-
-func (h *Handler) handleSubscriptionRenewal(w http.ResponseWriter, r *http.Request, event *polarWebhookEvent) {
-	mailboxID, expiresAt, ok := polarSubscriptionFields(event.Data)
-	if !ok {
-		if h.logger != nil {
-			h.logger.Printf("polar subscription renewal ignored: missing mailbox_id or current_period_end")
-		}
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-		return
-	}
-
-	if err := h.mailboxService.RenewMailbox(r.Context(), mailboxID, time.Now(), expiresAt); err != nil {
 		if errors.Is(err, ports.ErrMailboxNotFound) {
 			if h.logger != nil {
-				h.logger.Printf("polar subscription renewal ignored: mailbox not found mailbox_id=%s", mailboxID)
+				h.logger.Printf("paddle webhook ignored: mailbox not resolved event_type=%s event_id=%s subscription_id=%s mailbox_id=%s",
+					event.EventType, event.EventID, event.SubscriptionID, event.MailboxID)
 			}
 			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
 			return
@@ -1287,7 +1175,163 @@ func (h *Handler) handleSubscriptionRenewal(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if event.EventID != "" && mailbox.LastPaymentEventID == event.EventID {
+		if h.logger != nil {
+			h.logger.Printf("paddle webhook ignored: duplicate event_id=%s mailbox_id=%s", event.EventID, mailbox.ID)
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+	if mailbox.LastPaymentEventAt != nil && !event.OccurredAt.After(*mailbox.LastPaymentEventAt) {
+		if h.logger != nil {
+			h.logger.Printf("paddle webhook ignored: stale/out-of-order event_id=%s mailbox_id=%s occurred_at=%s last=%s",
+				event.EventID, mailbox.ID, event.OccurredAt, *mailbox.LastPaymentEventAt)
+		}
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+
+	applied, err := h.applyPaddleWebhookEvent(r.Context(), mailbox, event)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !applied {
+		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
+		return
+	}
+
+	if err := h.mailboxService.RecordPaymentEvent(r.Context(), mailbox.ID, "paddle", event.SubscriptionID, event.EventID, event.OccurredAt); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
+}
+
+// resolvePaddleMailbox resolves the mailbox a Paddle event concerns: by its
+// stored subscription_id first (the stable join key once a mailbox has been
+// activated at least once), falling back to custom_data.mailbox_id (needed
+// for first-payment events, before subscription_id is recorded).
+func (h *Handler) resolvePaddleMailbox(ctx context.Context, subscriptionID, mailboxID string) (*domain.Mailbox, error) {
+	if subscriptionID := strings.TrimSpace(subscriptionID); subscriptionID != "" {
+		mailbox, err := h.mailboxService.GetMailboxBySubscriptionID(ctx, subscriptionID)
+		if err == nil {
+			return mailbox, nil
+		}
+		if !errors.Is(err, ports.ErrMailboxNotFound) {
+			return nil, err
+		}
+	}
+	mailboxID = strings.TrimSpace(mailboxID)
+	if mailboxID == "" {
+		return nil, ports.ErrMailboxNotFound
+	}
+	return h.mailboxService.GetMailbox(ctx, mailboxID)
+}
+
+// paddleWebhookReceivedBucket maps an event type to one of a fixed, bounded
+// set of webhook_received_* counter names — never an unbounded key per
+// arbitrary Paddle event_type — so metrics cardinality can't grow with
+// events this handler doesn't otherwise route.
+func paddleWebhookReceivedBucket(eventType paddlenotification.EventTypeName) string {
+	switch eventType {
+	case paddlenotification.EventTypeNameSubscriptionCreated:
+		return "webhook_received_subscription_created"
+	case paddlenotification.EventTypeNameTransactionCompleted:
+		return "webhook_received_transaction_completed"
+	case paddlenotification.EventTypeNameSubscriptionCanceled:
+		return "webhook_received_subscription_canceled"
+	default:
+		return "webhook_received_other"
+	}
+}
+
+// applyPaddleWebhookEvent routes an already-resolved, already-deduplicated
+// event to the right mailbox state transition. It reports whether a change
+// was actually applied, so the caller knows whether to stamp
+// last_payment_event_at/id.
+func (h *Handler) applyPaddleWebhookEvent(ctx context.Context, mailbox *domain.Mailbox, event *paddlePaymentEvent) (bool, error) {
+	switch event.EventType {
+	case paddlenotification.EventTypeNameSubscriptionCreated, paddlenotification.EventTypeNameSubscriptionActivated:
+		return h.markPaddleMailboxPaid(ctx, mailbox, event.SubscriptionID)
+	case paddlenotification.EventTypeNameTransactionCompleted:
+		if mailbox.Status == domain.MailboxStatusPendingPayment {
+			return h.markPaddleMailboxPaid(ctx, mailbox, event.SubscriptionID)
+		}
+		if event.SubscriptionID == "" || event.BillingPeriodEndsAt == nil {
+			return false, nil
+		}
+		if err := h.mailboxService.RenewMailbox(ctx, mailbox.ID, h.now(), *event.BillingPeriodEndsAt); err != nil {
+			return false, err
+		}
+		return true, nil
+	case paddlenotification.EventTypeNameSubscriptionCanceled:
+		// Paddle's current_billing_period is documented as null
+		// specifically on canceled subscriptions (SDK:
+		// SubscriptionNotification/SubscriptionCreatedNotification doc
+		// comments), so a real subscription.canceled webhook's
+		// BillingPeriodEndsAt will almost always be nil — defaulting to
+		// immediate expiry in that case would revoke access the customer
+		// already paid for on every real cancellation, inverting R5. Fall
+		// back to the mailbox's own expires_at, the period it
+		// demonstrably paid through, instead.
+		periodEnd := event.BillingPeriodEndsAt
+		if periodEnd == nil {
+			periodEnd = mailbox.ExpiresAt
+		}
+		if periodEnd == nil || !periodEnd.After(h.now()) {
+			if err := h.mailboxService.ExpireMailboxByID(ctx, mailbox.ID); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+		if err := h.mailboxService.ScheduleMailboxExpiry(ctx, mailbox.ID, *periodEnd); err != nil {
+			return false, err
+		}
+		return true, nil
+	default:
+		return false, nil
+	}
+}
+
+// markPaddleMailboxPaid calls MarkMailboxPaid using the mailbox's own
+// stored payment_session_id (see the package doc comment on why: not a
+// per-event transaction ID). It guards against an empty
+// payment_session_id — GetByPaymentSessionID has no empty-string guard,
+// so an empty session ID on a resolved mailbox would otherwise activate
+// an arbitrary unrelated mailbox — and reports whether MarkMailboxPaid
+// actually changed anything, so the caller doesn't advance the event
+// dedup/ordering baseline for a call that no-opped (MarkMailboxPaid
+// short-circuits without mutation when the mailbox is already active).
+//
+// When it no-ops because the mailbox is already active, it still persists
+// subscriptionID/payment_provider via RecordPaymentIdentity: mailboxes
+// are routinely activated outside the webhook path entirely (checkout-
+// success and claim flows call MarkMailboxPaid directly), so a
+// subscription.created/activated redelivery arriving after that is the
+// only chance such a mailbox gets to have subscription_id populated —
+// skipping it would leave R4's join key empty and force every later
+// renewal to depend on custom_data.mailbox_id propagating onto recurring
+// transactions instead.
+func (h *Handler) markPaddleMailboxPaid(ctx context.Context, mailbox *domain.Mailbox, subscriptionID string) (bool, error) {
+	if strings.TrimSpace(mailbox.PaymentSessionID) == "" {
+		if h.logger != nil {
+			h.logger.Printf("paddle webhook ignored: mailbox_id=%s has no payment_session_id, refusing to activate", mailbox.ID)
+		}
+		return false, nil
+	}
+	alreadyActive := mailbox.Status == domain.MailboxStatusActive
+	if _, err := h.mailboxService.MarkMailboxPaid(ctx, mailbox.PaymentSessionID); err != nil {
+		return false, err
+	}
+	if alreadyActive {
+		if err := h.mailboxService.RecordPaymentIdentity(ctx, mailbox.ID, "paddle", subscriptionID); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func (h *Handler) withAccountToken(next http.HandlerFunc) http.HandlerFunc {
@@ -1341,191 +1385,6 @@ type resolveAccessView struct {
 	Email       string `json:"email"`
 	AccessToken string `json:"access_token,omitempty"`
 }
-
-type polarSuccessView struct {
-	Status    string `json:"status"`
-	MailboxID string `json:"mailbox_id"`
-}
-
-var paymentSuccessHTMLTemplate = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Payment Confirmed — TrueVIP Access</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f4efe4;
-      --ink: #17222d;
-      --muted: #566575;
-      --card: #fffaf0;
-      --line: #d8cdb7;
-      --accent: #a23b2a;
-      --accent-ink: #fffaf0;
-      --code: #f0e7d5;
-      --green: #2d7a3a;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      background:
-        radial-gradient(circle at top left, rgba(162,59,42,0.12), transparent 28%%),
-        linear-gradient(180deg, #f7f2e8 0%%, var(--bg) 100%%);
-      color: var(--ink);
-    }
-    main {
-      max-width: 620px;
-      margin: 0 auto;
-      padding: 72px 20px;
-      text-align: center;
-    }
-    .check {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 72px;
-      height: 72px;
-      border-radius: 50%%;
-      background: var(--green);
-      margin-bottom: 24px;
-    }
-    .check svg { width: 36px; height: 36px; }
-    h1 {
-      margin: 0 0 12px;
-      font-size: clamp(1.8rem, 4vw, 2.8rem);
-      line-height: 1.1;
-      letter-spacing: -0.03em;
-    }
-    .lede {
-      max-width: 42rem;
-      margin: 0 auto 32px;
-      font-size: 1.1rem;
-      line-height: 1.6;
-      color: var(--muted);
-    }
-    .card {
-      padding: 24px;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: rgba(255, 250, 240, 0.9);
-      text-align: left;
-      margin-bottom: 24px;
-    }
-    .card h2 {
-      margin: 0 0 14px;
-      font-size: 1.15rem;
-    }
-    .detail {
-      display: flex;
-      justify-content: space-between;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--line);
-      font-size: 0.95rem;
-    }
-    .detail:last-child { border-bottom: none; }
-    .detail .label { color: var(--muted); }
-    .detail .value {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.9rem;
-      word-break: break-all;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      justify-content: center;
-      margin-top: 32px;
-    }
-    .button {
-      display: inline-block;
-      padding: 12px 20px;
-      border-radius: 999px;
-      text-decoration: none;
-      font-weight: 700;
-      border: 1px solid var(--ink);
-    }
-    .button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: var(--accent-ink);
-    }
-    .button.secondary {
-      color: var(--ink);
-      background: transparent;
-    }
-    .next-steps {
-      margin-top: 32px;
-      padding: 22px;
-      border-radius: 22px;
-      border: 1px solid var(--line);
-      background: var(--card);
-      text-align: left;
-    }
-    .next-steps h2 {
-      margin: 0 0 12px;
-      font-size: 1.15rem;
-    }
-    .next-steps ol {
-      margin: 0;
-      padding-left: 20px;
-    }
-    .next-steps li {
-      line-height: 1.6;
-      margin-bottom: 6px;
-    }
-    code {
-      padding: 0.1em 0.35em;
-      border-radius: 6px;
-      background: var(--code);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.9em;
-    }
-  </style>
-</head>
-<body>
-  <main>
-    <div class="check">
-      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="20 6 9 17 4 12"></polyline>
-      </svg>
-    </div>
-    <h1>Payment confirmed</h1>
-    <p class="lede">Your mailbox is active and ready to receive mail.</p>
-
-    <div class="card">
-      <h2>Mailbox details</h2>
-      <div class="detail">
-        <span class="label">Mailbox ID</span>
-        <span class="value">%s</span>
-      </div>
-      <div class="detail">
-        <span class="label">Email</span>
-        <span class="value">%s</span>
-      </div>
-      <div class="detail">
-        <span class="label">Status</span>
-        <span class="value">Active</span>
-      </div>
-    </div>
-
-    <section class="next-steps">
-      <h2>Next steps</h2>
-      <ol>
-        <li>Get a fresh challenge from <code>POST /v1/auth/challenge</code></li>
-        <li>Sign it with your Ed25519 private key</li>
-        <li>Call <code>POST /v1/access/resolve</code> to get IMAP credentials</li>
-        <li>Read mail via the HTTP API or any IMAP client</li>
-      </ol>
-    </section>
-
-    <div class="actions">
-      <a class="button primary" href="/">Back to home</a>
-    </div>
-  </main>
-</body>
-</html>`
 
 func mailboxResponse(mailbox *domain.Mailbox) mailboxView {
 	resp := mailboxView{
@@ -1583,10 +1442,6 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func isSuccessfulPayment(status ports.PaymentSessionStatus) bool {
-	return status == ports.PaymentSessionStatusSucceeded || status == ports.PaymentSessionStatusConfirmed
 }
 
 func coalesceNow(now func() time.Time) func() time.Time {

@@ -114,6 +114,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	couponCode = strings.TrimSpace(strings.ToUpper(couponCode))
 	discountID, grantedMonths, err := s.validateCoupon(couponCode)
 	if err != nil {
+		s.recordDiscountRejection(err)
 		return nil, false, err
 	}
 
@@ -144,6 +145,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 			DiscountID: discountID,
 		})
 		if err != nil {
+			s.recordDiscountRejection(err)
 			return nil, false, fmt.Errorf("create payment link: %w", err)
 		}
 
@@ -184,6 +186,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		DiscountID: discountID,
 	})
 	if err != nil {
+		s.recordDiscountRejection(err)
 		return nil, false, fmt.Errorf("create payment link: %w", err)
 	}
 
@@ -369,18 +372,32 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 	if err != nil {
 		return nil, err
 	}
-	base := now
-	if account.SubscriptionExpiresAt != nil && account.SubscriptionExpiresAt.After(base) {
-		base = *account.SubscriptionExpiresAt
+	// The account-level subscription always advances by exactly one billing
+	// period, regardless of GrantedMonths — a coupon redeemed on one mailbox
+	// must not extend the subscription (and therefore sibling mailboxes) on
+	// the same account.
+	accountBase := now
+	if account.SubscriptionExpiresAt != nil && account.SubscriptionExpiresAt.After(accountBase) {
+		accountBase = *account.SubscriptionExpiresAt
 	}
-	nextExpiry := base.AddDate(0, 1, 0)
-	if err := s.accounts.UpdateSubscriptionExpiresAt(ctx, account.ID, nextExpiry); err != nil {
+	accountNextExpiry := accountBase.AddDate(0, 1, 0)
+	if err := s.accounts.UpdateSubscriptionExpiresAt(ctx, account.ID, accountNextExpiry); err != nil {
 		return nil, err
 	}
 
+	months := mailbox.GrantedMonths
+	if months <= 0 {
+		months = 1
+	}
+	mailboxBase := now
+	if mailbox.ExpiresAt != nil && mailbox.ExpiresAt.After(mailboxBase) {
+		mailboxBase = *mailbox.ExpiresAt
+	}
+	mailboxNextExpiry := mailboxBase.AddDate(0, months, 0)
+
 	mailbox.Status = domain.MailboxStatusActive
 	mailbox.PaidAt = &now
-	mailbox.ExpiresAt = &nextExpiry
+	mailbox.ExpiresAt = &mailboxNextExpiry
 	if err := s.repo.Update(ctx, mailbox); err != nil {
 		return nil, err
 	}
@@ -394,15 +411,25 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 	return mailbox, nil
 }
 
+// RenewMailbox never moves expires_at backward: a renewal webhook's billing
+// period (typically monthly) must not overwrite a longer expiry already
+// granted by a gift coupon's GrantedMonths (see MarkMailboxPaid) — otherwise
+// the first renewal after a multi-month coupon silently discards the extra
+// granted months.
 func (s *MailboxService) RenewMailbox(ctx context.Context, mailboxID string, paidAt time.Time, expiresAt time.Time) error {
 	mailbox, err := s.repo.GetByID(ctx, mailboxID)
 	if err != nil {
 		return err
 	}
 
+	newExpiry := expiresAt
+	if mailbox.ExpiresAt != nil && mailbox.ExpiresAt.After(newExpiry) {
+		newExpiry = *mailbox.ExpiresAt
+	}
+
 	mailbox.Status = domain.MailboxStatusActive
 	mailbox.PaidAt = &paidAt
-	mailbox.ExpiresAt = &expiresAt
+	mailbox.ExpiresAt = &newExpiry
 
 	return s.repo.Update(ctx, mailbox)
 }
@@ -413,6 +440,91 @@ func (s *MailboxService) ExpireMailboxByID(ctx context.Context, mailboxID string
 		return err
 	}
 	mailbox.Status = domain.MailboxStatusExpired
+	return s.repo.Update(ctx, mailbox)
+}
+
+// GetMailboxBySubscriptionID looks up a mailbox by its payment provider
+// subscription ID, used to resolve webhook events that carry a
+// subscription ID but no mailbox ID.
+func (s *MailboxService) GetMailboxBySubscriptionID(ctx context.Context, subscriptionID string) (*domain.Mailbox, error) {
+	return s.repo.GetBySubscriptionID(ctx, subscriptionID)
+}
+
+// GetMailboxByPaymentSessionID is a read-only lookup for rendering
+// fallback content on the checkout page; it never mutates mailbox state.
+func (s *MailboxService) GetMailboxByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error) {
+	return s.repo.GetByPaymentSessionID(ctx, sessionID)
+}
+
+// ScheduleMailboxExpiry sets a mailbox's expires_at without altering its
+// status or paid_at, so an already-active mailbox keeps working until the
+// scheduled time and is then picked up by the normal expiry sweep
+// (ListActiveExpired / ExpireMailboxes).
+func (s *MailboxService) ScheduleMailboxExpiry(ctx context.Context, mailboxID string, expiresAt time.Time) error {
+	mailbox, err := s.repo.GetByID(ctx, mailboxID)
+	if err != nil {
+		return err
+	}
+	mailbox.ExpiresAt = &expiresAt
+	return s.repo.Update(ctx, mailbox)
+}
+
+// RecordPaymentEvent stamps a mailbox with the payment provider event that
+// last drove a state change, so webhook idempotency/ordering checks
+// (dedup by event ID, then by occurred-at) have somewhere to compare
+// against. It also records the provider's subscription ID so future events
+// that don't carry custom_data can still resolve the target mailbox.
+func (s *MailboxService) RecordPaymentEvent(ctx context.Context, mailboxID, provider, subscriptionID, eventID string, occurredAt time.Time) error {
+	mailbox, err := s.repo.GetByID(ctx, mailboxID)
+	if err != nil {
+		return err
+	}
+	if provider != "" {
+		mailbox.PaymentProvider = provider
+	}
+	if subscriptionID != "" {
+		mailbox.SubscriptionID = subscriptionID
+	}
+	mailbox.LastPaymentEventID = eventID
+	occurredAtCopy := occurredAt
+	mailbox.LastPaymentEventAt = &occurredAtCopy
+	return s.repo.Update(ctx, mailbox)
+}
+
+// RecordPaymentIdentity persists a mailbox's payment provider identity
+// (payment_provider, subscription_id) WITHOUT touching the webhook
+// dedup/ordering baseline (last_payment_event_at/id). This is the
+// identity half of RecordPaymentEvent, split out for the case where a
+// webhook event confirms/resolves a mailbox's identity but doesn't itself
+// count as a new applied state change — e.g. a subscription.created/
+// activated redelivery on a mailbox that's already active because it was
+// activated directly via the checkout-success or claim flow (both call
+// MarkMailboxPaid outside the webhook path). RecordPaymentEvent/this
+// method are the only writers of subscription_id anywhere in the
+// codebase, so skipping this on the no-op path would leave R4's primary
+// join key empty for such mailboxes forever, forcing every later renewal
+// to depend on custom_data.mailbox_id propagating onto recurring
+// transactions instead.
+func (s *MailboxService) RecordPaymentIdentity(ctx context.Context, mailboxID, provider, subscriptionID string) error {
+	if provider == "" && subscriptionID == "" {
+		return nil
+	}
+	mailbox, err := s.repo.GetByID(ctx, mailboxID)
+	if err != nil {
+		return err
+	}
+	changed := false
+	if provider != "" && mailbox.PaymentProvider != provider {
+		mailbox.PaymentProvider = provider
+		changed = true
+	}
+	if subscriptionID != "" && mailbox.SubscriptionID != subscriptionID {
+		mailbox.SubscriptionID = subscriptionID
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
 	return s.repo.Update(ctx, mailbox)
 }
 
@@ -772,8 +884,19 @@ func (s *MailboxService) shouldRewriteLegacyIMAPHost(value string) bool {
 	return host == "imap.mailservice.local"
 }
 
-// validateCoupon checks if the coupon code is valid and returns the Polar discount ID
-// and the number of months to grant. Returns ("", 0, nil) when no coupon is provided.
+// recordDiscountRejection increments the discount_rejected counter when err
+// is a coupon-rejection sentinel (either the local coupon-code check in
+// validateCoupon, or the gateway rejecting the discount_id live). Any other
+// error (e.g. a transport failure) is not a discount rejection.
+func (s *MailboxService) recordDiscountRejection(err error) {
+	if errors.Is(err, ports.ErrCouponInvalid) || errors.Is(err, ports.ErrCouponExhausted) {
+		s.metrics.Counter("discount_rejected").Add(1)
+	}
+}
+
+// validateCoupon checks if the coupon code is valid and returns the payment
+// gateway discount ID and the number of months to grant. Returns ("", 0, nil)
+// when no coupon is provided.
 func (s *MailboxService) validateCoupon(couponCode string) (discountID string, grantedMonths int, err error) {
 	if couponCode == "" {
 		return "", 0, nil

@@ -70,7 +70,5 @@ jobs:
           SMOKE_BILLING_EMAIL: ${{ vars.SMOKE_BILLING_EMAIL }}
           SMOKE_IMAP_HOST: ${{ vars.IMAP_HOST }}
           SMOKE_IMAP_PORT: "993"
-          SMOKE_POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
-          SMOKE_POLAR_API: ${{ vars.POLAR_SERVER_URL }}
           SMOKE_ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
-          SMOKE_DISCOUNT_CODE: ${{ vars.POLAR_GIFT_COUPON_CODE }}
+          SMOKE_DISCOUNT_CODE: ${{ vars.PADDLE_GIFT_COUPON_CODE }}

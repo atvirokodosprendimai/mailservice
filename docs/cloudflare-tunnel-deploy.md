@@ -37,9 +37,11 @@ Production API values should still be:
 
 ```env
 PUBLIC_BASE_URL=https://truevipaccess.com
-POLAR_SUCCESS_URL=https://truevipaccess.com/v1/payments/polar/success?checkout_id={CHECKOUT_ID}
-POLAR_RETURN_URL=https://truevipaccess.com
-POLAR_WEBHOOK_SECRET=<secret>
+PADDLE_API_KEY=<secret>
+PADDLE_ENVIRONMENT=live
+PADDLE_CLIENT_TOKEN=<secret>
+PADDLE_WEBHOOK_SECRET=<secret>
+PADDLE_PRICE_ID=<price-id>
 ```
 
 Tunnel-specific runtime value:

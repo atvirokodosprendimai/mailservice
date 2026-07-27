@@ -1,5 +1,10 @@
 # Polar Minimal Payments Spec
 
+> **Superseded (2026-07-27):** Polar has been removed entirely and replaced by Paddle. See
+> `docs/plans/2026-07-27-001-feat-migrate-polar-to-paddle-plan.md` for the migration plan and
+> rationale. This document is kept as a historical record of the original Polar integration and is
+> no longer accurate as a description of the current payment flow.
+
 Ticket: `mai-bpn7`
 
 ## Goal

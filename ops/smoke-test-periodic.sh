@@ -6,7 +6,10 @@
 # Two modes:
 #   1. Persistent key mode (default): reuses a key after first manual payment.
 #   2. Auto-pay mode (--auto-pay): generates a fresh key each run and
-#      auto-confirms via Polar sandbox API. Requires a free sandbox product.
+#      auto-confirms via a headless browser against the Paddle sandbox
+#      checkout overlay. Requires a free (100%-off) sandbox discount code,
+#      since Paddle has no public REST API to confirm a transaction —
+#      checkout completion is always browser/overlay-driven.
 #
 # Exit codes:
 #   0 — all checks passed
@@ -23,8 +26,6 @@ WORK_DIR="${SMOKE_WORK_DIR:-${TMPDIR:-/tmp}/mailservice-smoke-periodic}"
 KEY_PATH="${SMOKE_KEY_PATH:-}"
 VERBOSE="${SMOKE_VERBOSE:-0}"
 AUTO_PAY="${SMOKE_AUTO_PAY:-0}"
-POLAR_TOKEN="${SMOKE_POLAR_TOKEN:-}"
-POLAR_API="${SMOKE_POLAR_API:-https://sandbox-api.polar.sh}"
 ADMIN_API_KEY="${SMOKE_ADMIN_API_KEY:-}"
 DISCOUNT_CODE="${SMOKE_DISCOUNT_CODE:-}"
 
@@ -43,10 +44,9 @@ Options:
   --work-dir DIR          Persistent key storage. Env: SMOKE_WORK_DIR
   --key-path PATH         Ed25519 key path.       Env: SMOKE_KEY_PATH
   --auto-pay              Auto-confirm payment.   Env: SMOKE_AUTO_PAY=1
-  --polar-token TOKEN     Polar API token.        Env: SMOKE_POLAR_TOKEN
-  --polar-api URL         Polar API base URL.     Env: SMOKE_POLAR_API
   --admin-api-key KEY     Admin API key.          Env: SMOKE_ADMIN_API_KEY
-  --discount-code CODE    Polar discount code.    Env: SMOKE_DISCOUNT_CODE
+  --discount-code CODE    Paddle gift coupon code Env: SMOKE_DISCOUNT_CODE
+                          applied at claim time.
   --verbose               Print details.          Env: SMOKE_VERBOSE=1
   --help                  Show this help.
 
@@ -56,14 +56,17 @@ Persistent key mode (default):
   After manual payment, all subsequent runs pass automatically.
 
 Auto-pay mode (--auto-pay):
-  Generates a fresh key each run and auto-confirms the checkout via the
-  Polar API. Requires the smoke server to use a free sandbox product.
+  Generates a fresh key each run and auto-confirms the checkout via a
+  headless browser (Playwright) against the Paddle sandbox checkout overlay
+  (ops/paddle-checkout-confirm.js). Requires --discount-code (or
+  SMOKE_DISCOUNT_CODE) naming a 100%-off Paddle gift coupon provisioned for
+  the smoke environment, so the checkout overlay needs no real card.
   Each run exercises the full claim → pay → activate → resolve → read flow.
 
 Checks performed:
   1. GET  /healthz                — API is up
   2. POST /v1/mailboxes/claim     — claim succeeds
-  3. Auto-pay (if enabled)        — confirm checkout via Polar sandbox
+  3. Auto-pay (if enabled)        — confirm checkout via Paddle sandbox overlay
   4. POST /v1/access/resolve      — returns IMAP credentials
   5. IMAP LOGIN via TLS           — Dovecot authenticates
   6. POST /v1/imap/messages       — HTTP API returns messages
@@ -89,17 +92,6 @@ http_json() {
     args+=(--header 'Content-Type: application/json' --data "$data")
   fi
   curl "${args[@]}" "$url"
-}
-
-http_json_polar() {
-  local method="$1" path="$2" data="${3:-}" body_file="$4"
-  http_json "$method" "${POLAR_API}${path}" "$data" "$body_file" \
-    --location --header "Authorization: Bearer $POLAR_TOKEN"
-}
-
-http_json_polar_client() {
-  local method="$1" path="$2" data="${3:-}" body_file="$4"
-  http_json "$method" "${POLAR_API}${path}" "$data" "$body_file" --location
 }
 
 json_escape() { jq -Rsa .; }
@@ -142,8 +134,6 @@ while [[ $# -gt 0 ]]; do
     --work-dir)       WORK_DIR="$2";       shift 2 ;;
     --key-path)       KEY_PATH="$2";       shift 2 ;;
     --auto-pay)       AUTO_PAY=1;          shift ;;
-    --polar-token)    POLAR_TOKEN="$2";    shift 2 ;;
-    --polar-api)      POLAR_API="$2";      shift 2 ;;
     --admin-api-key)  ADMIN_API_KEY="$2";  shift 2 ;;
     --discount-code)  DISCOUNT_CODE="$2";  shift 2 ;;
     --verbose)        VERBOSE=1;           shift ;;
@@ -152,8 +142,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ "$AUTO_PAY" == "1" && -z "$POLAR_TOKEN" ]]; then
-  echo "auto-pay mode requires --polar-token or SMOKE_POLAR_TOKEN" >&2
+if [[ "$AUTO_PAY" == "1" && -z "$DISCOUNT_CODE" ]]; then
+  echo "auto-pay mode requires --discount-code or SMOKE_DISCOUNT_CODE (a 100%-off Paddle gift coupon — Paddle checkout has no card-free API confirm path)" >&2
   exit 2
 fi
 
@@ -161,6 +151,13 @@ require_cmd curl
 require_cmd jq
 require_cmd ssh-keygen
 require_cmd openssl
+if [[ "$AUTO_PAY" == "1" ]]; then
+  require_cmd node
+  if ! node -e "require('playwright')" 2>/dev/null; then
+    echo "auto-pay mode requires the 'playwright' npm package (Paddle checkout completion is always browser-driven)" >&2
+    exit 2
+  fi
+fi
 
 # Key management
 mkdir -p "$WORK_DIR"
@@ -172,8 +169,7 @@ if [[ "$AUTO_PAY" == "1" ]]; then
   # Fresh key each run — exercises full claim-to-read flow
   rm -f "$KEY_PATH" "$KEY_PATH.pub"
   ssh-keygen -q -t ed25519 -N "" -f "$KEY_PATH" -C "mailservice-smoke-autopay"
-  # Unique billing email per run to avoid Polar "AlreadyActiveSubscriptionError".
-  # Polar deduplicates subscriptions by customer email.
+  # Unique billing email per run for clean reconciliation/support records.
   RUN_ID="$(date +%s)-$$"
   BILLING_EMAIL="${BILLING_EMAIL%%@*}+${RUN_ID}@${BILLING_EMAIL#*@}"
   detail "billing email (unique): $BILLING_EMAIL"
@@ -213,11 +209,21 @@ fi
 next_check
 log "Check $CHECK_NUM/$CHECKS_TOTAL: claim mailbox"
 fetch_and_sign_challenge
-CLAIM_PAYLOAD="$(printf '{"billing_email":%s,"edproof":%s,"challenge":%s,"signature":%s}' \
-  "$(printf '%s' "$BILLING_EMAIL" | json_escape)" \
-  "$(printf '%s' "$EDPROOF" | json_escape)" \
-  "$(printf '%s' "$CHALLENGE" | json_escape)" \
-  "$(printf '%s' "$SIGNATURE" | json_escape)")"
+if [[ "$AUTO_PAY" == "1" && -n "$DISCOUNT_CODE" ]]; then
+  detail "applying discount code: $DISCOUNT_CODE"
+  CLAIM_PAYLOAD="$(printf '{"billing_email":%s,"edproof":%s,"challenge":%s,"signature":%s,"coupon_code":%s}' \
+    "$(printf '%s' "$BILLING_EMAIL" | json_escape)" \
+    "$(printf '%s' "$EDPROOF" | json_escape)" \
+    "$(printf '%s' "$CHALLENGE" | json_escape)" \
+    "$(printf '%s' "$SIGNATURE" | json_escape)" \
+    "$(printf '%s' "$DISCOUNT_CODE" | json_escape)")"
+else
+  CLAIM_PAYLOAD="$(printf '{"billing_email":%s,"edproof":%s,"challenge":%s,"signature":%s}' \
+    "$(printf '%s' "$BILLING_EMAIL" | json_escape)" \
+    "$(printf '%s' "$EDPROOF" | json_escape)" \
+    "$(printf '%s' "$CHALLENGE" | json_escape)" \
+    "$(printf '%s' "$SIGNATURE" | json_escape)")"
+fi
 
 STATUS="$(http_json POST "$BASE_URL/v1/mailboxes/claim" "$CLAIM_PAYLOAD" "$TMPBODY")"
 if [[ "$STATUS" != "200" && "$STATUS" != "201" ]]; then
@@ -231,106 +237,21 @@ CHECKS_PASSED=$((CHECKS_PASSED + 1))
 # --- Auto-pay (if enabled) ---
 if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
   next_check
-  log "Check $CHECK_NUM/$CHECKS_TOTAL: auto-pay via Polar sandbox"
+  log "Check $CHECK_NUM/$CHECKS_TOTAL: auto-pay via Paddle sandbox checkout overlay"
 
   PAYMENT_URL="$(jq -r '.payment_url // empty' "$TMPBODY")"
   if [[ -z "$PAYMENT_URL" ]]; then
     fail "auto-pay: no payment_url in claim response"
   fi
+  detail "checkout page: $PAYMENT_URL"
 
-  # Extract client_secret from payment URL (last path segment)
-  CLIENT_SECRET="${PAYMENT_URL##*/}"
-  if [[ -z "$CLIENT_SECRET" || "$CLIENT_SECRET" != polar_c_* ]]; then
-    fail "auto-pay: cannot extract client_secret from payment_url: $PAYMENT_URL"
-  fi
-  detail "client_secret: ${CLIENT_SECRET:0:20}..."
-
-  # Confirm checkout via Polar API:
-  #   1. PATCH to update billing address (required by Polar/Stripe)
-  #   2. POST to confirm the checkout
-  # For paid checkouts, confirmation requires a Stripe confirmation_token_id.
-  # The smoke sandbox product should be free ($0) or use a 100% discount so
-  # that no payment method is required.
-  # Falls back to Playwright headless browser if API confirm fails.
-
-  # Step 1: Update checkout with billing address and customer details.
-  # If a discount code is configured, apply it to make the checkout free.
-  detail "updating checkout with billing details..."
-  if [[ -n "$DISCOUNT_CODE" ]]; then
-    detail "applying discount code: $DISCOUNT_CODE"
-    UPDATE_PAYLOAD="$(printf '{
-      "customer_name": "Smoke Test",
-      "customer_email": %s,
-      "customer_billing_address": {
-        "line1": "123 Test St",
-        "city": "San Francisco",
-        "state": "CA",
-        "postal_code": "94102",
-        "country": "US"
-      },
-      "discount_code": %s
-    }' "$(printf '%s' "$BILLING_EMAIL" | json_escape)" "$(printf '%s' "$DISCOUNT_CODE" | json_escape)")"
-  else
-    UPDATE_PAYLOAD="$(printf '{
-      "customer_name": "Smoke Test",
-      "customer_email": %s,
-      "customer_billing_address": {
-        "line1": "123 Test St",
-        "city": "San Francisco",
-        "state": "CA",
-        "postal_code": "94102",
-        "country": "US"
-      }
-    }' "$(printf '%s' "$BILLING_EMAIL" | json_escape)")"
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if ! CHECKOUT_EMAIL="$BILLING_EMAIL" CHECKOUT_VERBOSE="$VERBOSE" \
+      node "$SCRIPT_DIR/paddle-checkout-confirm.js" "$PAYMENT_URL"; then
+    fail "auto-pay: headless checkout failed"
   fi
 
-  STATUS="$(http_json PATCH "${POLAR_API}/v1/checkouts/client/$CLIENT_SECRET" "$UPDATE_PAYLOAD" "$TMPBODY" --location)"
-  if [[ "$STATUS" != "200" ]]; then
-    detail "checkout update failed (HTTP $STATUS): $(cat "$TMPBODY")"
-    detail "falling back to headless browser..."
-    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-    if command -v node >/dev/null 2>&1 && node -e "require('playwright')" 2>/dev/null; then
-      CHECKOUT_EMAIL="$BILLING_EMAIL" CHECKOUT_VERBOSE="$VERBOSE" \
-        node "$SCRIPT_DIR/polar-checkout-confirm.js" "$PAYMENT_URL" || \
-        fail "auto-pay: headless checkout failed"
-      CONFIRM_STATUS="confirmed"
-    else
-      fail "auto-pay: checkout update failed and playwright not available"
-    fi
-  else
-    IS_PAYMENT_REQUIRED="$(jq -r '.is_payment_required // true' "$TMPBODY")"
-    detail "checkout updated, payment_required=$IS_PAYMENT_REQUIRED"
-
-    # Step 2: Confirm the checkout
-    detail "confirming checkout via API..."
-    STATUS="$(http_json POST "${POLAR_API}/v1/checkouts/client/$CLIENT_SECRET/confirm" '{}' "$TMPBODY" --location)"
-    if [[ "$STATUS" != "200" ]]; then
-      CONFIRM_ERR="$(cat "$TMPBODY")"
-      detail "API confirm failed (HTTP $STATUS): $CONFIRM_ERR"
-
-      # If payment is required and confirm fails, fall back to Playwright
-      if [[ "$IS_PAYMENT_REQUIRED" == "true" ]]; then
-        detail "payment required — falling back to headless browser..."
-        SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-        if command -v node >/dev/null 2>&1 && node -e "require('playwright')" 2>/dev/null; then
-          CHECKOUT_EMAIL="$BILLING_EMAIL" CHECKOUT_VERBOSE="$VERBOSE" \
-            node "$SCRIPT_DIR/polar-checkout-confirm.js" "$PAYMENT_URL" || \
-            fail "auto-pay: headless checkout failed"
-          CONFIRM_STATUS="confirmed"
-        else
-          fail "auto-pay: confirm returned HTTP $STATUS: $CONFIRM_ERR"
-        fi
-      else
-        fail "auto-pay: confirm returned HTTP $STATUS (free checkout): $CONFIRM_ERR"
-      fi
-    else
-      CONFIRM_STATUS="$(jq -r '.status // empty' "$TMPBODY")"
-    fi
-  fi
-  detail "confirm status: $CONFIRM_STATUS"
-
-  # Poll for mailbox activation (webhook delivery + processing)
-  # Polar sandbox can take several minutes to deliver webhooks.
+  # Poll for mailbox activation (webhook delivery + processing).
   # After initial wait, try reconciliation as fallback for missed webhooks.
   ACTIVATE_TIMEOUT=120
   ACTIVATE_INTERVAL=3
@@ -353,7 +274,8 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
     fi
 
     # After RECONCILE_AFTER seconds, trigger reconciliation periodically.
-    # Polar sandbox can be slow — retry every RECONCILE_INTERVAL seconds.
+    # Paddle sandbox webhook delivery can be slow — retry every
+    # RECONCILE_INTERVAL seconds.
     if [[ "$ELAPSED" -ge "$RECONCILE_AFTER" && -n "$ADMIN_API_KEY" ]]; then
       SINCE_LAST=$((ELAPSED - LAST_RECONCILE))
       if [[ "$LAST_RECONCILE" -eq 0 || "$SINCE_LAST" -ge "$RECONCILE_INTERVAL" ]]; then
@@ -362,7 +284,7 @@ if [[ "$AUTO_PAY" == "1" && "$MAILBOX_STATUS" != "active" ]]; then
           --header "Authorization: Bearer $ADMIN_API_KEY")"
         RECONCILE_ACTIVATED="$(jq -r '.activated // 0' "$TMPBODY")"
         detail "reconcile: HTTP $RECONCILE_STATUS, activated=$RECONCILE_ACTIVATED"
-        # Log per-mailbox results for debugging Polar sandbox delays
+        # Log per-mailbox results for debugging Paddle sandbox delays
         if [[ "$VERBOSE" == "1" ]]; then
           jq -c '.results[]? // empty' "$TMPBODY" 2>/dev/null | while read -r r; do
             detail "  $(echo "$r" | jq -r '"mbx=\(.mailbox_id) session=\(.session_id) status=\(.status) action=\(.action) error=\(.error // "")"')"

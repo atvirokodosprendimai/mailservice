@@ -11,7 +11,7 @@ This page captures request-level behavior that complements the C4 views.
 5. API verifies challenge freshness and signature, then verifies key proof and derives key fingerprint.
 6. Mailbox service reuses existing mailbox by key fingerprint or creates a pending mailbox.
 7. Payment adapter creates checkout session and notifier delivers payment link to `billing_email`.
-8. Payment success is confirmed by webhook (`POST /v1/webhooks/polar` or `POST /v1/webhooks/stripe`) or Polar success callback (`GET /v1/payments/polar/success`).
+8. Payment success is confirmed by webhook (`POST /v1/webhooks/paddle` or `POST /v1/webhooks/stripe`) — the webhook is the sole activation authority; the Paddle checkout/success pages (`GET /v1/payments/paddle/checkout`, `GET /v1/payments/paddle/success`) are UX-only and make no mutating calls.
 9. Mailbox service marks mailbox active and provisions runtime mailbox records.
 10. Agent requests new challenge, signs it, and calls `POST /v1/access/resolve` to receive IMAP access details and `access_token`.
 
