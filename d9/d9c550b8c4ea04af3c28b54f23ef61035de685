@@ -1,0 +1,25 @@
+internal/platform/config/config.go
+  s_93f3b6714540ea::t_77d290ee07efbb 12-55,104-147
+internal/platform/config/config_test.go
+  s_93f3b6714540ea::t_c0745109d9ed55 236-244
+compose.tunnel.yml.example
+  s_93f3b6714540ea::t_825976027154a0 19-20
+compose.yml.example
+  s_93f3b6714540ea::t_2223ba39cae67e 17-18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d9d9c550b8c4ea04af3c28b54f23ef61035de685",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
