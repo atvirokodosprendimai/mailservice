@@ -217,10 +217,9 @@ func selectPaymentGateway(cfg *config.Config, logger *log.Logger) (ports.Payment
 			paddleBaseURL = "https://sandbox-api.paddle.com"
 		}
 		paddleGateway, err := payment.NewPaddleGateway(payment.PaddleConfig{
-			BaseURL:               paddleBaseURL,
-			APIKey:                cfg.PaddleAPIKey,
-			PriceID:               cfg.PaddlePriceID,
-			DefaultPaymentLinkURL: cfg.PaddleDefaultPaymentLinkURL,
+			BaseURL: paddleBaseURL,
+			APIKey:  cfg.PaddleAPIKey,
+			PriceID: cfg.PaddlePriceID,
 		})
 		if err != nil {
 			log.Fatalf("paddle gateway init: %v", err)

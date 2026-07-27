@@ -64,6 +64,9 @@ func TestPaddleGatewayCreatePaymentLink(t *testing.T) {
 		if _, hasDiscount := body["discount_id"]; hasDiscount {
 			t.Fatalf("did not expect discount_id in body: %#v", body)
 		}
+		if _, hasCheckout := body["checkout"]; hasCheckout {
+			t.Fatalf("did not expect checkout in body (checkout.url must come from Paddle's account-level default, not app config): %#v", body)
+		}
 
 		paddleDataResponse(t, w, map[string]any{
 			"id":     "txn_123",
@@ -146,6 +149,56 @@ func TestPaddleGatewayCreatePaymentLinkWithDiscount(t *testing.T) {
 	}
 	if link.SessionID != "txn_disc" {
 		t.Fatalf("unexpected session id: %q", link.SessionID)
+	}
+}
+
+// TestPaddleGatewayCreatePaymentLinkNeverOverridesCheckoutURL guards against
+// re-introducing a config-driven checkout.url override on the create request.
+// checkout.url must always come from Paddle's account-level default payment
+// link (set once, server-side, by U9's provisioning), never from app config —
+// otherwise a stale config value could silently diverge from the account's
+// true default. PaddleConfig intentionally has no field that could produce a
+// "checkout" key here, with or without a discount on the request.
+func TestPaddleGatewayCreatePaymentLinkNeverOverridesCheckoutURL(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if _, hasCheckout := body["checkout"]; hasCheckout {
+			t.Fatalf("expected no checkout key in create-transaction request body, got %#v", body)
+		}
+
+		paddleDataResponse(t, w, map[string]any{
+			"id":     "txn_no_override",
+			"status": "draft",
+			"checkout": map[string]any{
+				"url": "https://checkout.paddle.com/checkout?_ptxn=txn_no_override",
+			},
+			"details": map[string]any{
+				"totals": map[string]any{"discount": "100"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	gateway, err := NewPaddleGateway(PaddleConfig{
+		BaseURL: server.URL,
+		APIKey:  "paddle-key",
+		PriceID: "pri_123",
+	})
+	if err != nil {
+		t.Fatalf("NewPaddleGateway failed: %v", err)
+	}
+
+	if _, err := gateway.CreatePaymentLink(context.Background(), ports.PaymentLinkRequest{
+		MailboxID:  "mbx-1",
+		OwnerEmail: "billing@example.com",
+		DiscountID: "dsc_1",
+	}); err != nil {
+		t.Fatalf("CreatePaymentLink failed: %v", err)
 	}
 }
 

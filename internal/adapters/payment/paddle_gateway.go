@@ -21,17 +21,15 @@ import (
 var errPaddleMissingCheckoutURL = errors.New("paddle: checkout url missing from transaction response")
 
 type PaddleConfig struct {
-	BaseURL               string
-	APIKey                string
-	PriceID               string
-	DefaultPaymentLinkURL string
-	Client                *http.Client
+	BaseURL string
+	APIKey  string
+	PriceID string
+	Client  *http.Client
 }
 
 type PaddleGateway struct {
-	sdk                   *paddle.SDK
-	priceID               string
-	defaultPaymentLinkURL string
+	sdk     *paddle.SDK
+	priceID string
 }
 
 func NewPaddleGateway(cfg PaddleConfig) (*PaddleGateway, error) {
@@ -50,13 +48,15 @@ func NewPaddleGateway(cfg PaddleConfig) (*PaddleGateway, error) {
 	}
 
 	return &PaddleGateway{
-		sdk:                   sdk,
-		priceID:               strings.TrimSpace(cfg.PriceID),
-		defaultPaymentLinkURL: strings.TrimSpace(cfg.DefaultPaymentLinkURL),
+		sdk:     sdk,
+		priceID: strings.TrimSpace(cfg.PriceID),
 	}, nil
 }
 
 func (g *PaddleGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
+	// Checkout is intentionally left unset on the request: checkout.url comes
+	// from Paddle's account-level default payment link (provisioned by U9),
+	// not from app config, so it can't drift from the account's true default.
 	createReq := &paddle.CreateTransactionRequest{
 		Items: []paddle.CreateTransactionItems{
 			*paddle.NewCreateTransactionItemsTransactionItemFromCatalog(&paddle.TransactionItemFromCatalog{
@@ -68,10 +68,6 @@ func (g *PaddleGateway) CreatePaymentLink(ctx context.Context, req ports.Payment
 			"mailbox_id":  req.MailboxID,
 			"owner_email": req.OwnerEmail,
 		},
-	}
-	if g.defaultPaymentLinkURL != "" {
-		checkoutURL := g.defaultPaymentLinkURL
-		createReq.Checkout = &paddle.TransactionCheckout{URL: &checkoutURL}
 	}
 	if req.DiscountID != "" {
 		discountID := req.DiscountID
