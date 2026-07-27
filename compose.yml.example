@@ -14,6 +14,8 @@ services:
       PADDLE_CLIENT_TOKEN: ""
       PADDLE_WEBHOOK_SECRET: ""
       PADDLE_PRICE_ID: ""
+      PADDLE_GIFT_DISCOUNT_ID: ""
+      PADDLE_GIFT_COUPON_CODE: ""
       STRIPE_SECRET_KEY: ""
       STRIPE_WEBHOOK_SECRET: ""
       STRIPE_SUCCESS_URL: http://localhost:8080/payment/success

@@ -233,16 +233,15 @@ func TestLoadPaddleConfig(t *testing.T) {
 		{
 			name: "load with all paddle vars set",
 			env: map[string]string{
-				"DATABASE_MODE":                   "local",
-				"EDPROOF_HMAC_SECRET":             "0123456789abcdef0123456789abcdef",
-				"PADDLE_API_KEY":                  "pdl_sdbx_apikey_test123",
-				"PADDLE_ENVIRONMENT":              "sandbox",
-				"PADDLE_CLIENT_TOKEN":             "test_client123",
-				"PADDLE_WEBHOOK_SECRET":           "whsec_test123",
-				"PADDLE_PRICE_ID":                 "pri_test123",
-				"PADDLE_DEFAULT_PAYMENT_LINK_URL": "https://paddle.example.com",
-				"PADDLE_GIFT_DISCOUNT_ID":         "dis_test123",
-				"PADDLE_GIFT_COUPON_CODE":         "gift_test",
+				"DATABASE_MODE":           "local",
+				"EDPROOF_HMAC_SECRET":     "0123456789abcdef0123456789abcdef",
+				"PADDLE_API_KEY":          "pdl_sdbx_apikey_test123",
+				"PADDLE_ENVIRONMENT":      "sandbox",
+				"PADDLE_CLIENT_TOKEN":     "test_client123",
+				"PADDLE_WEBHOOK_SECRET":   "whsec_test123",
+				"PADDLE_PRICE_ID":         "pri_test123",
+				"PADDLE_GIFT_DISCOUNT_ID": "dis_test123",
+				"PADDLE_GIFT_COUPON_CODE": "gift_test",
 			},
 			wantErr: false,
 			checkFn: func(t *testing.T, cfg *Config) {
@@ -260,9 +259,6 @@ func TestLoadPaddleConfig(t *testing.T) {
 				}
 				if cfg.PaddlePriceID != "pri_test123" {
 					t.Errorf("expected PaddlePriceID, got %q", cfg.PaddlePriceID)
-				}
-				if cfg.PaddleDefaultPaymentLinkURL != "https://paddle.example.com" {
-					t.Errorf("expected PaddleDefaultPaymentLinkURL, got %q", cfg.PaddleDefaultPaymentLinkURL)
 				}
 				if cfg.PaddleGiftDiscountID != "dis_test123" {
 					t.Errorf("expected PaddleGiftDiscountID, got %q", cfg.PaddleGiftDiscountID)
@@ -379,7 +375,6 @@ func TestLoadPaddleConfig(t *testing.T) {
 			os.Unsetenv("PADDLE_CLIENT_TOKEN")
 			os.Unsetenv("PADDLE_WEBHOOK_SECRET")
 			os.Unsetenv("PADDLE_PRICE_ID")
-			os.Unsetenv("PADDLE_DEFAULT_PAYMENT_LINK_URL")
 			os.Unsetenv("PADDLE_GIFT_DISCOUNT_ID")
 			os.Unsetenv("PADDLE_GIFT_COUPON_CODE")
 
