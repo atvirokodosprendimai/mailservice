@@ -369,18 +369,32 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 	if err != nil {
 		return nil, err
 	}
-	base := now
-	if account.SubscriptionExpiresAt != nil && account.SubscriptionExpiresAt.After(base) {
-		base = *account.SubscriptionExpiresAt
+	// The account-level subscription always advances by exactly one billing
+	// period, regardless of GrantedMonths — a coupon redeemed on one mailbox
+	// must not extend the subscription (and therefore sibling mailboxes) on
+	// the same account.
+	accountBase := now
+	if account.SubscriptionExpiresAt != nil && account.SubscriptionExpiresAt.After(accountBase) {
+		accountBase = *account.SubscriptionExpiresAt
 	}
-	nextExpiry := base.AddDate(0, 1, 0)
-	if err := s.accounts.UpdateSubscriptionExpiresAt(ctx, account.ID, nextExpiry); err != nil {
+	accountNextExpiry := accountBase.AddDate(0, 1, 0)
+	if err := s.accounts.UpdateSubscriptionExpiresAt(ctx, account.ID, accountNextExpiry); err != nil {
 		return nil, err
 	}
 
+	months := mailbox.GrantedMonths
+	if months <= 0 {
+		months = 1
+	}
+	mailboxBase := now
+	if mailbox.ExpiresAt != nil && mailbox.ExpiresAt.After(mailboxBase) {
+		mailboxBase = *mailbox.ExpiresAt
+	}
+	mailboxNextExpiry := mailboxBase.AddDate(0, months, 0)
+
 	mailbox.Status = domain.MailboxStatusActive
 	mailbox.PaidAt = &now
-	mailbox.ExpiresAt = &nextExpiry
+	mailbox.ExpiresAt = &mailboxNextExpiry
 	if err := s.repo.Update(ctx, mailbox); err != nil {
 		return nil, err
 	}

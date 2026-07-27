@@ -74,19 +74,7 @@ func main() {
 
 	paymentGateway, mockPaymentMode := selectPaymentGateway(cfg, log.Default())
 
-	// Gift coupons are only supported when Polar is the active payment gateway.
-	var giftOpts []service.GiftCouponConfig
-	if cfg.PolarToken != "" && cfg.PolarProductID != "" &&
-		cfg.PolarGiftDiscountID != "" && cfg.PolarGiftCouponCode != "" {
-		giftOpts = append(giftOpts, service.GiftCouponConfig{
-			DiscountID: cfg.PolarGiftDiscountID,
-			CouponCode: cfg.PolarGiftCouponCode,
-		})
-		log.Printf("gift coupon enabled (code: %s)", cfg.PolarGiftCouponCode)
-	} else if (cfg.PolarGiftDiscountID != "" || cfg.PolarGiftCouponCode != "") &&
-		!(cfg.PolarToken != "" && cfg.PolarProductID != "") {
-		log.Printf("gift coupon config present but Polar not fully configured; gift coupons disabled")
-	}
+	giftOpts := selectGiftCouponConfig(cfg, log.Default())
 	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort, giftOpts...)
 	mailboxService.SetMetrics(metricsRegistry)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
@@ -261,4 +249,42 @@ func selectPaymentGateway(cfg *config.Config, logger *log.Logger) (ports.Payment
 
 	logger.Printf("real payment providers disabled, using mock payment links")
 	return payment.NewMockGateway(cfg.PublicBaseURL), true
+}
+
+// selectGiftCouponConfig picks the gift coupon wired up for whichever payment
+// gateway selectPaymentGateway actually selected (Paddle takes priority over
+// Polar, matching the same precedence check). A discount ID is only valid
+// against the gateway it was provisioned for, so gift coupons follow the
+// active gateway rather than being wired for both simultaneously — Polar and
+// Paddle gift env vars can coexist in config during the migration window
+// (KTD2), but only the active provider's pair is ever used.
+func selectGiftCouponConfig(cfg *config.Config, logger *log.Logger) []service.GiftCouponConfig {
+	if cfg.PaddleAPIKey != "" && cfg.PaddlePriceID != "" {
+		if cfg.PaddleGiftDiscountID != "" && cfg.PaddleGiftCouponCode != "" {
+			logger.Printf("gift coupon enabled via paddle (code: %s)", cfg.PaddleGiftCouponCode)
+			return []service.GiftCouponConfig{{
+				DiscountID: cfg.PaddleGiftDiscountID,
+				CouponCode: cfg.PaddleGiftCouponCode,
+			}}
+		}
+		if cfg.PaddleGiftDiscountID != "" || cfg.PaddleGiftCouponCode != "" {
+			logger.Printf("paddle gift coupon config incomplete; gift coupons disabled")
+		}
+		return nil
+	}
+
+	if cfg.PolarToken != "" && cfg.PolarProductID != "" {
+		if cfg.PolarGiftDiscountID != "" && cfg.PolarGiftCouponCode != "" {
+			logger.Printf("gift coupon enabled via polar (code: %s)", cfg.PolarGiftCouponCode)
+			return []service.GiftCouponConfig{{
+				DiscountID: cfg.PolarGiftDiscountID,
+				CouponCode: cfg.PolarGiftCouponCode,
+			}}
+		}
+		if cfg.PolarGiftDiscountID != "" || cfg.PolarGiftCouponCode != "" {
+			logger.Printf("polar gift coupon config incomplete; gift coupons disabled")
+		}
+	}
+
+	return nil
 }

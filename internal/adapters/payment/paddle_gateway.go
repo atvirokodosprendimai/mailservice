@@ -161,9 +161,31 @@ func discountApplied(txn *paddle.Transaction) bool {
 	return amount > 0
 }
 
+// Substrings of Paddle's error.code that indicate a discount was rejected as
+// exhausted/expired vs. invalid/inapplicable. Named here (rather than inlined
+// in mapPaddleDiscountError) so the exact-code list can be tightened to a
+// precise switch once live sandbox responses confirm Paddle's actual codes —
+// see the KNOWN GAP note below. Sourced from the paddle-go-sdk's documented
+// sentinel codes (transaction_discount_not_found,
+// transaction_discount_not_eligible, discount_expired,
+// discount_usage_limit_exceeded) as of U2/U7; NOT verified against a live
+// Paddle API call.
+const (
+	paddleDiscountCodeSubstringExpired    = "expired"
+	paddleDiscountCodeSubstringUsageLimit = "usage_limit"
+	paddleDiscountCodeSubstringDiscount   = "discount"
+)
+
 // mapPaddleDiscountError inspects Paddle's structured error code and returns
 // the matching ports coupon sentinel, or nil if err isn't a discount-related
 // Paddle API error.
+//
+// KNOWN GAP: the substring matches below are a best-effort reading of
+// Paddle's documented error codes, not a live-verified exact list. Before
+// this handles production traffic, make sandbox calls with an
+// exhausted/expired/invalid discount and a valid-but-inapplicable discount,
+// record the exact error.code/error.type Paddle returns, and replace this
+// with an exact switch over confirmed codes.
 func mapPaddleDiscountError(err error) error {
 	var apiErr *paddleerr.Error
 	if !errors.As(err, &apiErr) {
@@ -171,11 +193,11 @@ func mapPaddleDiscountError(err error) error {
 	}
 	code := apiErr.Code
 	switch {
-	case strings.Contains(code, "expired"):
+	case strings.Contains(code, paddleDiscountCodeSubstringExpired):
 		return ports.ErrCouponExhausted
-	case strings.Contains(code, "usage_limit"):
+	case strings.Contains(code, paddleDiscountCodeSubstringUsageLimit):
 		return ports.ErrCouponExhausted
-	case strings.Contains(code, "discount"):
+	case strings.Contains(code, paddleDiscountCodeSubstringDiscount):
 		return ports.ErrCouponInvalid
 	default:
 		return nil

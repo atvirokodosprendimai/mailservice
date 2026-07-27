@@ -1081,6 +1081,59 @@ func TestMarkMailboxPaidWithGrantedMonths0DefaultsTo1(t *testing.T) {
 	}
 }
 
+// TestMarkMailboxPaidAccountLinkedWithGrantedMonths3ExtendsMailboxOnly is a
+// regression test for the bug fixed by U7: on the account-linked branch,
+// mailbox.ExpiresAt must honor GrantedMonths (a coupon-granted period),
+// while account.SubscriptionExpiresAt (which sibling mailboxes on the same
+// account share) must keep advancing by exactly one billing period
+// regardless — a coupon on one mailbox must not extend sibling mailboxes.
+func TestMarkMailboxPaidAccountLinkedWithGrantedMonths3ExtendsMailboxOnly(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeMailboxRepo{
+		byStripeSession: map[string]*domain.Mailbox{
+			"sess-acct-gift": {
+				ID:               "mbx-acct-gift",
+				AccountID:        "acct-1",
+				PaymentSessionID: "sess-acct-gift",
+				Status:           domain.MailboxStatusPendingPayment,
+				GrantedMonths:    3,
+			},
+		},
+	}
+	accounts := &fakeMailboxAccountRepo{
+		byID: map[string]*domain.Account{
+			"acct-1": {ID: "acct-1"},
+		},
+	}
+	svc := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	mailbox, err := svc.MarkMailboxPaid(context.Background(), "sess-acct-gift")
+	if err != nil {
+		t.Fatalf("MarkMailboxPaid failed: %v", err)
+	}
+	if mailbox.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected active status, got %s", mailbox.Status)
+	}
+
+	expectedMailboxExpiry := now.AddDate(0, 3, 0)
+	if mailbox.ExpiresAt == nil {
+		t.Fatalf("expected ExpiresAt to be set")
+	}
+	if diff := mailbox.ExpiresAt.Sub(expectedMailboxExpiry); diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("expected mailbox.ExpiresAt ~%v, got %v (diff %v)", expectedMailboxExpiry, *mailbox.ExpiresAt, diff)
+	}
+
+	expectedAccountExpiry := now.AddDate(0, 1, 0)
+	if diff := accounts.lastSubscriptionUpdateExpiresAt.Sub(expectedAccountExpiry); diff < -time.Minute || diff > time.Minute {
+		t.Fatalf("expected account.SubscriptionExpiresAt ~%v, got %v (diff %v)", expectedAccountExpiry, accounts.lastSubscriptionUpdateExpiresAt, diff)
+	}
+	if accounts.lastSubscriptionUpdateAccountID != "acct-1" {
+		t.Fatalf("expected subscription update for acct-1, got %q", accounts.lastSubscriptionUpdateAccountID)
+	}
+}
+
 func TestExpireMailboxesSweepsExpiredOnly(t *testing.T) {
 	past := time.Now().UTC().Add(-24 * time.Hour)
 	future := time.Now().UTC().Add(24 * time.Hour)
