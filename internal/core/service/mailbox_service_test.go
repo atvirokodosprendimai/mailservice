@@ -1182,6 +1182,74 @@ func TestMarkMailboxPaidAccountLinkedWithGrantedMonths3ExtendsMailboxOnly(t *tes
 	}
 }
 
+// TestRenewMailboxNeverMovesExpiryBackward is a regression test: a renewal
+// webhook's billing period (typically monthly for Paddle) must not
+// overwrite a longer expiry already granted by a gift coupon's
+// GrantedMonths (see MarkMailboxPaid). Without this fix, the first
+// transaction.completed renewal after a multi-month coupon silently
+// discards the extra granted months.
+func TestRenewMailboxNeverMovesExpiryBackward(t *testing.T) {
+	now := time.Now().UTC()
+	giftExpiry := now.AddDate(0, 3, 0) // GrantedMonths=3 already applied
+	repo := &fakeMailboxRepo{
+		byID: map[string]*domain.Mailbox{
+			"mbx-gift-renew": {
+				ID:            "mbx-gift-renew",
+				Status:        domain.MailboxStatusActive,
+				GrantedMonths: 3,
+				ExpiresAt:     &giftExpiry,
+			},
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	renewalExpiry := now.AddDate(0, 1, 0) // Paddle's monthly billing period
+	if err := svc.RenewMailbox(context.Background(), "mbx-gift-renew", now, renewalExpiry); err != nil {
+		t.Fatalf("RenewMailbox failed: %v", err)
+	}
+
+	if repo.updated == nil || repo.updated.ExpiresAt == nil {
+		t.Fatalf("expected mailbox to be updated with ExpiresAt set")
+	}
+	if !repo.updated.ExpiresAt.Equal(giftExpiry) {
+		t.Fatalf("expected ExpiresAt to stay at gift-coupon expiry %v, got %v", giftExpiry, *repo.updated.ExpiresAt)
+	}
+}
+
+// TestRenewMailboxAdvancesExpiryWhenLater asserts the normal case: a
+// renewal with a later expiry than the mailbox's current one still
+// advances it as expected.
+func TestRenewMailboxAdvancesExpiryWhenLater(t *testing.T) {
+	now := time.Now().UTC()
+	oldExpiry := now.AddDate(0, -1, 0) // already elapsed
+	repo := &fakeMailboxRepo{
+		byID: map[string]*domain.Mailbox{
+			"mbx-normal-renew": {
+				ID:        "mbx-normal-renew",
+				Status:    domain.MailboxStatusActive,
+				ExpiresAt: &oldExpiry,
+			},
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143)
+
+	newExpiry := now.AddDate(0, 1, 0)
+	if err := svc.RenewMailbox(context.Background(), "mbx-normal-renew", now, newExpiry); err != nil {
+		t.Fatalf("RenewMailbox failed: %v", err)
+	}
+
+	if repo.updated == nil || repo.updated.ExpiresAt == nil {
+		t.Fatalf("expected mailbox to be updated with ExpiresAt set")
+	}
+	if !repo.updated.ExpiresAt.Equal(newExpiry) {
+		t.Fatalf("expected ExpiresAt to advance to %v, got %v", newExpiry, *repo.updated.ExpiresAt)
+	}
+}
+
 func TestExpireMailboxesSweepsExpiredOnly(t *testing.T) {
 	past := time.Now().UTC().Add(-24 * time.Hour)
 	future := time.Now().UTC().Add(24 * time.Hour)
@@ -1262,6 +1330,7 @@ func TestExpireMailboxesReturnsZeroWhenNothingExpired(t *testing.T) {
 type fakeMailboxRepo struct {
 	pendingByAccount              map[string]*domain.Mailbox
 	created                       []*domain.Mailbox
+	byID                          map[string]*domain.Mailbox
 	byStripeSession               map[string]*domain.Mailbox
 	byAccessToken                 map[string]*domain.Mailbox
 	byKeyFingerprint              map[string]*domain.Mailbox
@@ -1338,7 +1407,12 @@ func (f *fakeMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) err
 	return nil
 }
 
-func (f *fakeMailboxRepo) GetByID(_ context.Context, _ string) (*domain.Mailbox, error) {
+func (f *fakeMailboxRepo) GetByID(_ context.Context, id string) (*domain.Mailbox, error) {
+	if f.byID != nil {
+		if item, ok := f.byID[id]; ok {
+			return item, nil
+		}
+	}
 	return nil, ports.ErrMailboxNotFound
 }
 

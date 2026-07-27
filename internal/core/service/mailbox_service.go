@@ -411,15 +411,25 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 	return mailbox, nil
 }
 
+// RenewMailbox never moves expires_at backward: a renewal webhook's billing
+// period (typically monthly) must not overwrite a longer expiry already
+// granted by a gift coupon's GrantedMonths (see MarkMailboxPaid) — otherwise
+// the first renewal after a multi-month coupon silently discards the extra
+// granted months.
 func (s *MailboxService) RenewMailbox(ctx context.Context, mailboxID string, paidAt time.Time, expiresAt time.Time) error {
 	mailbox, err := s.repo.GetByID(ctx, mailboxID)
 	if err != nil {
 		return err
 	}
 
+	newExpiry := expiresAt
+	if mailbox.ExpiresAt != nil && mailbox.ExpiresAt.After(newExpiry) {
+		newExpiry = *mailbox.ExpiresAt
+	}
+
 	mailbox.Status = domain.MailboxStatusActive
 	mailbox.PaidAt = &paidAt
-	mailbox.ExpiresAt = &expiresAt
+	mailbox.ExpiresAt = &newExpiry
 
 	return s.repo.Update(ctx, mailbox)
 }
