@@ -1,0 +1,21 @@
+internal/core/service/mailbox_service.go
+  s_93f3b6714540ea::t_0f3d84caca47e0 225-228
+internal/core/service/mailbox_service_test.go
+  s_93f3b6714540ea::t_51a508bf43363a 192,199-202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a5d6f50f088a3a4f06de2463b6cca91a00da049c",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
