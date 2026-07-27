@@ -152,6 +152,14 @@ func TestPaddleConfigValidation(t *testing.T) {
 			wantErr:       true,
 			wantErrSubstr: "PADDLE_CLIENT_TOKEN must not be an API key",
 		},
+		{
+			name:          "client token has invalid shape",
+			apiKey:        "pdl_sdbx_apikey_test123",
+			env:           "sandbox",
+			clientToken:   "invalid_token_123",
+			wantErr:       true,
+			wantErrSubstr: "PADDLE_CLIENT_TOKEN must start with 'live_' or 'test_'",
+		},
 	}
 
 	for _, tt := range tests {
@@ -264,6 +272,18 @@ func TestLoadPaddleConfig(t *testing.T) {
 			},
 			wantErr:       true,
 			wantErrSubstr: "PADDLE_CLIENT_TOKEN must not be an API key",
+		},
+		{
+			name: "client token has invalid shape",
+			env: map[string]string{
+				"DATABASE_MODE":       "local",
+				"EDPROOF_HMAC_SECRET": "0123456789abcdef0123456789abcdef",
+				"PADDLE_API_KEY":      "pdl_sdbx_apikey_test123",
+				"PADDLE_ENVIRONMENT":  "sandbox",
+				"PADDLE_CLIENT_TOKEN": "invalid_token_123",
+			},
+			wantErr:       true,
+			wantErrSubstr: "PADDLE_CLIENT_TOKEN must start with 'live_' or 'test_'",
 		},
 	}
 

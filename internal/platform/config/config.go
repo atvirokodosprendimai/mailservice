@@ -46,14 +46,14 @@ type Config struct {
 	PolarWebhookSecret    string
 	PolarGiftDiscountID   string
 	PolarGiftCouponCode   string
-	PaddleAPIKey          string
-	PaddleWebhookSecret   string
-	PaddlePriceID         string
-	PaddleDefaultPaymentLinkURL string
-	PaddleClientToken     string
-	PaddleEnvironment     string // "sandbox" or "live"
-	PaddleGiftDiscountID  string
-	PaddleGiftCouponCode  string
+	PaddleAPIKey          string // required if Paddle is active provider
+	PaddleWebhookSecret   string // optional
+	PaddlePriceID         string // optional
+	PaddleDefaultPaymentLinkURL string // optional
+	PaddleClientToken     string // required if Paddle is active provider; must start with live_ or test_
+	PaddleEnvironment     string // optional, defaults to "sandbox"; must be "sandbox" or "live"
+	PaddleGiftDiscountID  string // optional
+	PaddleGiftCouponCode  string // optional
 	StripeSecretKey       string
 	StripeWebhookSecret string
 	StripeSuccessURL    string
@@ -265,6 +265,11 @@ func validatePaddleConfig(apiKey, env, clientToken string) error {
 	// Validate client token is not an API key.
 	if clientToken != "" && (hasPrefix(clientToken, "pdl_sdbx_apikey_") || hasPrefix(clientToken, "pdl_live_apikey_")) {
 		return fmt.Errorf("PADDLE_CLIENT_TOKEN must not be an API key (starting with pdl_*_apikey_); got credential shaped like an API key")
+	}
+
+	// Validate client token has correct shape (live_ or test_ prefix).
+	if clientToken != "" && !hasPrefix(clientToken, "live_") && !hasPrefix(clientToken, "test_") {
+		return fmt.Errorf("PADDLE_CLIENT_TOKEN must start with 'live_' or 'test_', got %q", clientToken)
 	}
 
 	return nil
