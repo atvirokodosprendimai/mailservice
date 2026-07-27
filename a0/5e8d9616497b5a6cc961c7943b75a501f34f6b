@@ -1,0 +1,21 @@
+internal/adapters/httpapi/paddle_webhook.go
+  s_93f3b6714540ea::t_491e05bbfa796d 1-56
+internal/adapters/httpapi/paddle_webhook_test.go
+  s_93f3b6714540ea::t_0341112ab3ec25 1-124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "a05e8d9616497b5a6cc961c7943b75a501f34f6b",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
