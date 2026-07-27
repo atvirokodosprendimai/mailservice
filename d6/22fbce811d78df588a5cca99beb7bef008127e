@@ -1,0 +1,25 @@
+internal/adapters/payment/paddle_gateway_test.go
+  s_93f3b6714540ea::t_6d56962701d7f5 310-315,318-335,338-373
+internal/adapters/payment/paddle_gateway.go
+  s_93f3b6714540ea::t_6482afac3345ca 178,218-219
+  s_93f3b6714540ea::t_a79ea35f805c36 174-177,179-189,191-195,198-203,208-212,221-225,228-230
+docs/plans/2026-07-27-001-feat-migrate-polar-to-paddle-plan.md
+  s_93f3b6714540ea::t_63d507ac44ac5e 98
+  s_93f3b6714540ea::t_f0afd9c1023b07 160,580
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "d622fbce811d78df588a5cca99beb7bef008127e",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
