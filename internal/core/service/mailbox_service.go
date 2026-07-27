@@ -222,10 +222,7 @@ func (s *MailboxService) paymentSessionReusable(ctx context.Context, sessionID s
 		}
 		return false, err
 	}
-	if sess.Status == ports.PaymentSessionStatusExpired || sess.Status == ports.PaymentSessionStatusFailed {
-		return false, nil
-	}
-	return true, nil
+	return sess.Status == ports.PaymentSessionStatusOpen, nil
 }
 
 func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxRequest) (*domain.Mailbox, bool, error) {

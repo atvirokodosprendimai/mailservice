@@ -103,7 +103,14 @@ func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
 			},
 		},
 	}
-	payment := &fakePaymentGateway{}
+	payment := &fakePaymentGateway{
+		getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+			return &ports.PaymentSession{
+				SessionID: sessionID,
+				Status:    ports.PaymentSessionStatusOpen,
+			}, nil
+		},
+	}
 	notifier := &fakeMailboxNotifier{}
 	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
 
@@ -159,6 +166,19 @@ func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
 			name: "missing session regenerates",
 			getPaymentSession: func(_ context.Context, _ string) (*ports.PaymentSession, error) {
 				return nil, ports.ErrPaymentSessionNotFound
+			},
+			wantSessionID:     "sess-1",
+			wantPaymentURL:    "http://pay/1",
+			wantCreateCalls:   1,
+			wantNotifierCalls: 1,
+		},
+		{
+			name: "succeeded session regenerates",
+			getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+				return &ports.PaymentSession{
+					SessionID: sessionID,
+					Status:    ports.PaymentSessionStatusSucceeded,
+				}, nil
 			},
 			wantSessionID:     "sess-1",
 			wantPaymentURL:    "http://pay/1",
