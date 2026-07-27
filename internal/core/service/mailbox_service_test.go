@@ -189,16 +189,17 @@ func TestClaimMailboxValidatesExistingPendingPaymentSession(t *testing.T) {
 			wantCreateCalls: 0,
 		},
 		{
-			name: "expired session is reused",
+			name: "expired session regenerates",
 			getPaymentSession: func(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
 				return &ports.PaymentSession{
 					SessionID: sessionID,
 					Status:    ports.PaymentSessionStatusExpired,
 				}, nil
 			},
-			wantSessionID:   "existing-session-123",
-			wantPaymentURL:  "https://checkout.polar.sh/existing",
-			wantCreateCalls: 0,
+			wantSessionID:     "sess-1",
+			wantPaymentURL:    "http://pay/1",
+			wantCreateCalls:   1,
+			wantNotifierCalls: 1,
 		},
 		{
 			name: "failed session regenerates",
