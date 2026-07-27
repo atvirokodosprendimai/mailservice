@@ -1,0 +1,20 @@
+docs/plans/2026-07-27-001-feat-migrate-polar-to-paddle-plan.md
+  s_93f3b6714540ea::t_12d3146296190b 95
+  s_93f3b6714540ea::t_f924319342f2f2 315,317,322-324,326,331-332,335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fac0843c6910b6a041c288757b5ef4e0d8d7f0c8",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
