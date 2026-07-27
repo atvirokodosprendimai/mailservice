@@ -114,6 +114,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	couponCode = strings.TrimSpace(strings.ToUpper(couponCode))
 	discountID, grantedMonths, err := s.validateCoupon(couponCode)
 	if err != nil {
+		s.recordDiscountRejection(err)
 		return nil, false, err
 	}
 
@@ -144,6 +145,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 			DiscountID: discountID,
 		})
 		if err != nil {
+			s.recordDiscountRejection(err)
 			return nil, false, fmt.Errorf("create payment link: %w", err)
 		}
 
@@ -184,6 +186,7 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		DiscountID: discountID,
 	})
 	if err != nil {
+		s.recordDiscountRejection(err)
 		return nil, false, fmt.Errorf("create payment link: %w", err)
 	}
 
@@ -869,6 +872,16 @@ func (s *MailboxService) shouldRewriteLegacyIMAPHost(value string) bool {
 		return true
 	}
 	return host == "imap.mailservice.local"
+}
+
+// recordDiscountRejection increments the discount_rejected counter when err
+// is a coupon-rejection sentinel (either the local coupon-code check in
+// validateCoupon, or the gateway rejecting the discount_id live). Any other
+// error (e.g. a transport failure) is not a discount rejection.
+func (s *MailboxService) recordDiscountRejection(err error) {
+	if errors.Is(err, ports.ErrCouponInvalid) || errors.Is(err, ports.ErrCouponExhausted) {
+		s.metrics.Counter("discount_rejected").Add(1)
+	}
 }
 
 // validateCoupon checks if the coupon code is valid and returns the Polar discount ID

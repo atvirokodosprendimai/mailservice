@@ -1319,6 +1319,7 @@ func (h *Handler) handlePaddleWebhook(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, err)
 			return
 		}
+		h.metrics.Counter("webhook_verification_failed").Add(1)
 		writeError(w, http.StatusUnauthorized, err)
 		return
 	}
@@ -1328,6 +1329,9 @@ func (h *Handler) handlePaddleWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+
+	h.metrics.Counter("webhook_received").Add(1)
+	h.metrics.Counter(paddleWebhookReceivedBucket(event.EventType)).Add(1)
 
 	mailbox, err := h.resolvePaddleMailbox(r.Context(), event.SubscriptionID, event.MailboxID)
 	if err != nil {
@@ -1396,6 +1400,23 @@ func (h *Handler) resolvePaddleMailbox(ctx context.Context, subscriptionID, mail
 		return nil, ports.ErrMailboxNotFound
 	}
 	return h.mailboxService.GetMailbox(ctx, mailboxID)
+}
+
+// paddleWebhookReceivedBucket maps an event type to one of a fixed, bounded
+// set of webhook_received_* counter names — never an unbounded key per
+// arbitrary Paddle event_type — so metrics cardinality can't grow with
+// events this handler doesn't otherwise route.
+func paddleWebhookReceivedBucket(eventType paddlenotification.EventTypeName) string {
+	switch eventType {
+	case paddlenotification.EventTypeNameSubscriptionCreated:
+		return "webhook_received_subscription_created"
+	case paddlenotification.EventTypeNameTransactionCompleted:
+		return "webhook_received_transaction_completed"
+	case paddlenotification.EventTypeNameSubscriptionCanceled:
+		return "webhook_received_subscription_canceled"
+	default:
+		return "webhook_received_other"
+	}
 }
 
 // applyPaddleWebhookEvent routes an already-resolved, already-deduplicated

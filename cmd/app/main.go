@@ -72,7 +72,7 @@ func main() {
 	notifier, notifierProvider := selectNotifier(cfg, log.Default())
 	log.Printf("%s notifier enabled", notifierProvider)
 
-	paymentGateway, mockPaymentMode := selectPaymentGateway(cfg, log.Default())
+	paymentGateway, mockPaymentMode := selectPaymentGateway(cfg, log.Default(), metricsRegistry)
 
 	giftOpts := selectGiftCouponConfig(cfg, log.Default())
 	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort, giftOpts...)
@@ -200,7 +200,7 @@ func selectNotifierCascade(cfg *config.Config, logger *log.Logger) (ports.Notifi
 // selectPaymentGateway picks the active payment provider. Paddle takes
 // priority when fully configured, then Polar, then Stripe, falling back to
 // the mock gateway when none are configured.
-func selectPaymentGateway(cfg *config.Config, logger *log.Logger) (ports.PaymentGateway, bool) {
+func selectPaymentGateway(cfg *config.Config, logger *log.Logger, metricsRegistry *metrics.Registry) (ports.PaymentGateway, bool) {
 	if cfg.PaddleAPIKey != "" && cfg.PaddlePriceID != "" {
 		paddleBaseURL := "https://api.paddle.com"
 		if strings.EqualFold(cfg.PaddleEnvironment, "sandbox") {
@@ -211,6 +211,7 @@ func selectPaymentGateway(cfg *config.Config, logger *log.Logger) (ports.Payment
 			APIKey:          cfg.PaddleAPIKey,
 			PriceID:         cfg.PaddlePriceID,
 			CheckoutBaseURL: cfg.PublicBaseURL,
+			Metrics:         metricsRegistry,
 		})
 		if err != nil {
 			log.Fatalf("paddle gateway init: %v", err)

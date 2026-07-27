@@ -14,6 +14,7 @@ import (
 	"github.com/PaddleHQ/paddle-go-sdk/v5/pkg/paddleerr"
 
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
+	"github.com/atvirokodosprendimai/mailservice/internal/platform/metrics"
 )
 
 // errPaddleMissingCheckoutURL is returned when Paddle accepts a transaction
@@ -37,12 +38,17 @@ type PaddleConfig struct {
 	// empty, it falls back to Paddle's checkout.url directly.
 	CheckoutBaseURL string
 	Client          *http.Client
+	// Metrics is the shared metrics registry counters are recorded on. Nil
+	// is safe (Registry's methods no-op on a nil receiver) so tests that
+	// don't care about metrics can omit it.
+	Metrics *metrics.Registry
 }
 
 type PaddleGateway struct {
 	sdk             *paddle.SDK
 	priceID         string
 	checkoutBaseURL string
+	metrics         *metrics.Registry
 }
 
 func NewPaddleGateway(cfg PaddleConfig) (*PaddleGateway, error) {
@@ -64,6 +70,7 @@ func NewPaddleGateway(cfg PaddleConfig) (*PaddleGateway, error) {
 		sdk:             sdk,
 		priceID:         strings.TrimSpace(cfg.PriceID),
 		checkoutBaseURL: strings.TrimRight(strings.TrimSpace(cfg.CheckoutBaseURL), "/"),
+		metrics:         cfg.Metrics,
 	}, nil
 }
 
@@ -111,6 +118,7 @@ func (g *PaddleGateway) CreatePaymentLink(ctx context.Context, req ports.Payment
 		checkoutURL = g.checkoutBaseURL + paddleCheckoutPagePath + "?_ptxn=" + url.QueryEscape(txn.ID)
 	}
 
+	g.metrics.Counter("payment_link_created").Add(1)
 	return &ports.PaymentLink{
 		SessionID: txn.ID,
 		URL:       checkoutURL,
@@ -118,6 +126,8 @@ func (g *PaddleGateway) CreatePaymentLink(ctx context.Context, req ports.Payment
 }
 
 func (g *PaddleGateway) GetPaymentSession(ctx context.Context, sessionID string) (*ports.PaymentSession, error) {
+	g.metrics.Counter("payment_session_lookup").Add(1)
+
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return nil, fmt.Errorf("paddle get transaction: missing session id")

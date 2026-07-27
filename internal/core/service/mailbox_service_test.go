@@ -8,6 +8,7 @@ import (
 
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
+	"github.com/atvirokodosprendimai/mailservice/internal/platform/metrics"
 )
 
 func TestCreateMailboxReturnsExistingPendingMailbox(t *testing.T) {
@@ -955,6 +956,53 @@ func TestClaimMailboxWithInvalidCouponReturnsError(t *testing.T) {
 	}
 }
 
+func TestClaimMailboxWithInvalidCouponIncrementsDiscountRejected(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143,
+		GiftCouponConfig{DiscountID: "disc-123", CouponCode: "OPENCLAWS"})
+	registry := metrics.NewRegistry(context.Background())
+	svc.SetMetrics(registry)
+
+	_, _, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:bad-key",
+		Algorithm:   "ed25519",
+	}, "WRONGCODE")
+	if !errors.Is(err, ports.ErrCouponInvalid) {
+		t.Fatalf("expected ErrCouponInvalid, got %v", err)
+	}
+	if got := registry.Counter("discount_rejected").Sum24h(); got != 1 {
+		t.Fatalf("discount_rejected = %d, want 1", got)
+	}
+}
+
+func TestClaimMailboxGatewayRejectedDiscountIncrementsDiscountRejected(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	payment := &fakePaymentGateway{
+		createPaymentLink: func(context.Context, ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
+			return nil, ports.ErrCouponExhausted
+		},
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, &fakeMailboxNotifier{},
+		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		"mail.test.local", "imap.test.local", 1143,
+		GiftCouponConfig{DiscountID: "disc-123", CouponCode: "OPENCLAWS"})
+	registry := metrics.NewRegistry(context.Background())
+	svc.SetMetrics(registry)
+
+	_, _, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:gateway-rejected-key",
+		Algorithm:   "ed25519",
+	}, "OPENCLAWS")
+	if !errors.Is(err, ports.ErrCouponExhausted) {
+		t.Fatalf("expected ErrCouponExhausted, got %v", err)
+	}
+	if got := registry.Counter("discount_rejected").Sum24h(); got != 1 {
+		t.Fatalf("discount_rejected = %d, want 1", got)
+	}
+}
+
 func TestClaimMailboxWithCouponButNoConfigReturnsError(t *testing.T) {
 	repo := &fakeMailboxRepo{}
 	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
@@ -1366,11 +1414,15 @@ type fakePaymentGateway struct {
 	getCalls          int
 	lastReq           ports.PaymentLinkRequest
 	getPaymentSession func(context.Context, string) (*ports.PaymentSession, error)
+	createPaymentLink func(context.Context, ports.PaymentLinkRequest) (*ports.PaymentLink, error)
 }
 
-func (f *fakePaymentGateway) CreatePaymentLink(_ context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
+func (f *fakePaymentGateway) CreatePaymentLink(ctx context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
 	f.calls++
 	f.lastReq = req
+	if f.createPaymentLink != nil {
+		return f.createPaymentLink(ctx, req)
+	}
 	return &ports.PaymentLink{SessionID: "sess-1", URL: "http://pay/1"}, nil
 }
 

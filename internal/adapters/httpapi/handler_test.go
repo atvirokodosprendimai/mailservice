@@ -165,6 +165,78 @@ func TestHandleAdminMetricsRequiresAuthAndReturnsShape(t *testing.T) {
 	}
 }
 
+func TestHandleAdminMetricsIncludesPaymentObservabilityCounters(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	registry := metrics.NewRegistry(ctx)
+	registry.Counter("payment_link_created").Add(3)
+	registry.Counter("payment_session_lookup").Add(5)
+	registry.Counter("webhook_verification_failed").Add(1)
+	registry.Counter("discount_rejected").Add(2)
+	registry.Counter("webhook_received").Add(7)
+	registry.Counter("webhook_received_subscription_created").Add(1)
+	registry.Counter("webhook_received_transaction_completed").Add(4)
+	registry.Counter("webhook_received_subscription_canceled").Add(1)
+	registry.Counter("webhook_received_other").Add(1)
+
+	handler := NewHandler(Config{
+		AdminAPIKey: "secret",
+		Metrics:     registry,
+		Logger:      log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/metrics?window=24h", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var payload struct {
+		PaymentLinkCreated                  int64 `json:"payment_link_created"`
+		PaymentSessionLookup                int64 `json:"payment_session_lookup"`
+		WebhookVerificationFailed           int64 `json:"webhook_verification_failed"`
+		DiscountRejected                    int64 `json:"discount_rejected"`
+		WebhookReceived                     int64 `json:"webhook_received"`
+		WebhookReceivedSubscriptionCreated  int64 `json:"webhook_received_subscription_created"`
+		WebhookReceivedTransactionCompleted int64 `json:"webhook_received_transaction_completed"`
+		WebhookReceivedSubscriptionCanceled int64 `json:"webhook_received_subscription_canceled"`
+		WebhookReceivedOther                int64 `json:"webhook_received_other"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode admin metrics: %v", err)
+	}
+	if payload.PaymentLinkCreated != 3 {
+		t.Fatalf("payment_link_created = %d, want 3", payload.PaymentLinkCreated)
+	}
+	if payload.PaymentSessionLookup != 5 {
+		t.Fatalf("payment_session_lookup = %d, want 5", payload.PaymentSessionLookup)
+	}
+	if payload.WebhookVerificationFailed != 1 {
+		t.Fatalf("webhook_verification_failed = %d, want 1", payload.WebhookVerificationFailed)
+	}
+	if payload.DiscountRejected != 2 {
+		t.Fatalf("discount_rejected = %d, want 2", payload.DiscountRejected)
+	}
+	if payload.WebhookReceived != 7 {
+		t.Fatalf("webhook_received = %d, want 7", payload.WebhookReceived)
+	}
+	if payload.WebhookReceivedSubscriptionCreated != 1 {
+		t.Fatalf("webhook_received_subscription_created = %d, want 1", payload.WebhookReceivedSubscriptionCreated)
+	}
+	if payload.WebhookReceivedTransactionCompleted != 4 {
+		t.Fatalf("webhook_received_transaction_completed = %d, want 4", payload.WebhookReceivedTransactionCompleted)
+	}
+	if payload.WebhookReceivedSubscriptionCanceled != 1 {
+		t.Fatalf("webhook_received_subscription_canceled = %d, want 1", payload.WebhookReceivedSubscriptionCanceled)
+	}
+	if payload.WebhookReceivedOther != 1 {
+		t.Fatalf("webhook_received_other = %d, want 1", payload.WebhookReceivedOther)
+	}
+}
+
 func TestHandleHomeReturns200OnStaleETag(t *testing.T) {
 	handler := NewHandler(Config{
 		BuildNumber: "build-100",

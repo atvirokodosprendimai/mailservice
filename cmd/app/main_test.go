@@ -29,7 +29,7 @@ func TestNewKeyProofVerifierUsesLocalVerifier(t *testing.T) {
 func TestSelectPaymentGatewayNoProvidersConfigured(t *testing.T) {
 	t.Parallel()
 
-	gateway, mockMode := selectPaymentGateway(&config.Config{PublicBaseURL: "http://localhost:8080"}, log.Default())
+	gateway, mockMode := selectPaymentGateway(&config.Config{PublicBaseURL: "http://localhost:8080"}, log.Default(), nil)
 	if _, ok := gateway.(*payment.MockGateway); !ok {
 		t.Fatalf("expected MockGateway, got %T", gateway)
 	}
@@ -46,7 +46,7 @@ func TestSelectPaymentGatewayPolarOnly(t *testing.T) {
 		PolarProductID: "prod_123",
 		PolarServerURL: "https://api.polar.sh",
 	}
-	gateway, mockMode := selectPaymentGateway(cfg, log.Default())
+	gateway, mockMode := selectPaymentGateway(cfg, log.Default(), nil)
 	if _, ok := gateway.(*payment.PolarGateway); !ok {
 		t.Fatalf("expected PolarGateway, got %T", gateway)
 	}
@@ -61,7 +61,7 @@ func TestSelectPaymentGatewayStripeOnly(t *testing.T) {
 	cfg := &config.Config{
 		StripeSecretKey: "sk_test_123",
 	}
-	gateway, mockMode := selectPaymentGateway(cfg, log.Default())
+	gateway, mockMode := selectPaymentGateway(cfg, log.Default(), nil)
 	if _, ok := gateway.(*payment.StripeGateway); !ok {
 		t.Fatalf("expected StripeGateway, got %T", gateway)
 	}
@@ -81,7 +81,7 @@ func TestSelectPaymentGatewayPaddlePreferredOverPolarAndStripe(t *testing.T) {
 		PolarProductID:    "prod_123",
 		StripeSecretKey:   "sk_test_123",
 	}
-	gateway, mockMode := selectPaymentGateway(cfg, log.Default())
+	gateway, mockMode := selectPaymentGateway(cfg, log.Default(), nil)
 	if _, ok := gateway.(*payment.PaddleGateway); !ok {
 		t.Fatalf("expected PaddleGateway, got %T", gateway)
 	}
@@ -100,7 +100,7 @@ func TestSelectPaymentGatewayPaddleAbsentLeavesPolarAndStripeUnaffected(t *testi
 		PolarProductID:  "prod_123",
 		StripeSecretKey: "sk_test_123",
 	}
-	gateway, mockMode := selectPaymentGateway(cfg, log.Default())
+	gateway, mockMode := selectPaymentGateway(cfg, log.Default(), nil)
 	if _, ok := gateway.(*payment.PolarGateway); !ok {
 		t.Fatalf("expected PolarGateway when Paddle absent, got %T", gateway)
 	}
