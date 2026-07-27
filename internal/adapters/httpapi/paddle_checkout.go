@@ -275,6 +275,15 @@ const paddleCheckoutHTMLSource = `<!doctype html>
         Paddle.Initialize({
           token: "{{.ClientToken}}",
           eventCallback: function (event) {
+            // Exposed for the ops/paddle-checkout-confirm.js smoke-test
+            // helper, which cannot rely on Paddle's third-party overlay DOM
+            // and instead waits on Paddle.js's own documented event names
+            // (checkout.loaded / checkout.completed / checkout.error /
+            // checkout.closed). Harmless no-op for real users.
+            window.__paddleEvents = window.__paddleEvents || [];
+            if (event && event.name) {
+              window.__paddleEvents.push(event.name);
+            }
             if (event && (event.name === 'checkout.error' || event.name === 'checkout.closed')) {
               showRetry();
             }
