@@ -1,0 +1,19 @@
+ops/activate-pending-mailboxes.sh
+  s_93f3b6714540ea::t_bfc0dd04e8d851 1-210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "cd46babf38990e485f213b72247bead8396ea6ac",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
