@@ -1,0 +1,25 @@
+internal/core/service/mailbox_service.go
+  s_93f3b6714540ea::t_ba4aa35df2e57b 225
+internal/core/service/mailbox_service_test.go
+  s_93f3b6714540ea::t_17640ea99c96b7 106-113
+  s_93f3b6714540ea::t_e01ba9b55c2ad8 176-187
+  s_93f3b6714540ea::t_c0581f365e7a3b 175
+internal/adapters/payment/stripe_gateway_test.go
+  s_93f3b6714540ea::t_dbb4ef05efbb5c 1-94
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "db9ef48be2899507760df0180ba1dbe77f50d2f2",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
