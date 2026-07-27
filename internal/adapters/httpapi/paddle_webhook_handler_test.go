@@ -210,21 +210,26 @@ func TestHandlePaddleWebhookTransactionCompletedUnresolvedMailboxIgnored(t *test
 	}
 }
 
+// TestHandlePaddleWebhookSubscriptionCanceledElapsedExpiresImmediately uses
+// a realistic subscription.canceled payload: Paddle documents
+// current_billing_period as null specifically on canceled subscriptions,
+// so this event carries no billing_period at all. The "has the period
+// elapsed" decision falls back to the mailbox's own expires_at, which here
+// is already in the past relative to fixedPaddleNow (2026-07-27T12:00:00Z).
 func TestHandlePaddleWebhookSubscriptionCanceledElapsedExpiresImmediately(t *testing.T) {
-	expiresAt := time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)
+	expiresAt := time.Date(2026, 7, 20, 9, 0, 0, 0, time.UTC)
 	repo, handler := newPaddleWebhookHandler(&domain.Mailbox{
 		ID:               "mbx-1",
 		KeyFingerprint:   "edproof:key-1",
 		PaymentSessionID: "txn_original",
 		SubscriptionID:   "sub_1",
 		Status:           domain.MailboxStatusActive,
-		PaidAt:           ptrTime(time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)),
+		PaidAt:           ptrTime(time.Date(2026, 6, 20, 9, 0, 0, 0, time.UTC)),
 		ExpiresAt:        &expiresAt,
 		IMAPUsername:     "mbx_abc",
 		IMAPPassword:     "secret",
 	})
 
-	// current_billing_period.ends_at is in the past relative to fixedPaddleNow (2026-07-27T12:00:00Z).
 	body := `{
 		"event_id":"evt_5",
 		"event_type":"subscription.canceled",
@@ -233,7 +238,7 @@ func TestHandlePaddleWebhookSubscriptionCanceledElapsedExpiresImmediately(t *tes
 			"id":"sub_1",
 			"status":"canceled",
 			"custom_data":{"mailbox_id":"mbx-1"},
-			"current_billing_period":{"starts_at":"2026-06-27T09:00:00Z","ends_at":"2026-07-27T09:00:00Z"}
+			"current_billing_period":null
 		}
 	}`
 
@@ -248,8 +253,13 @@ func TestHandlePaddleWebhookSubscriptionCanceledElapsedExpiresImmediately(t *tes
 	}
 }
 
+// TestHandlePaddleWebhookSubscriptionCanceledNotElapsedSchedulesExpiry uses
+// the same realistic null current_billing_period payload, but with the
+// mailbox's own expires_at in the future — the period the customer
+// demonstrably already paid through. Access must not be revoked
+// immediately; expiry is scheduled for that existing expires_at instead.
 func TestHandlePaddleWebhookSubscriptionCanceledNotElapsedSchedulesExpiry(t *testing.T) {
-	originalExpiresAt := time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)
+	expiresAt := time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)
 	repo, handler := newPaddleWebhookHandler(&domain.Mailbox{
 		ID:               "mbx-1",
 		KeyFingerprint:   "edproof:key-1",
@@ -257,21 +267,20 @@ func TestHandlePaddleWebhookSubscriptionCanceledNotElapsedSchedulesExpiry(t *tes
 		SubscriptionID:   "sub_1",
 		Status:           domain.MailboxStatusActive,
 		PaidAt:           ptrTime(time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)),
-		ExpiresAt:        &originalExpiresAt,
+		ExpiresAt:        &expiresAt,
 		IMAPUsername:     "mbx_abc",
 		IMAPPassword:     "secret",
 	})
 
-	periodEnd := time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)
 	body := `{
 		"event_id":"evt_6",
 		"event_type":"subscription.canceled",
 		"occurred_at":"2026-07-27T11:00:00Z",
 		"data":{
 			"id":"sub_1",
-			"status":"active",
+			"status":"canceled",
 			"custom_data":{"mailbox_id":"mbx-1"},
-			"current_billing_period":{"starts_at":"2026-07-27T09:00:00Z","ends_at":"` + periodEnd.Format(time.RFC3339) + `"}
+			"current_billing_period":null
 		}
 	}`
 
@@ -284,8 +293,8 @@ func TestHandlePaddleWebhookSubscriptionCanceledNotElapsedSchedulesExpiry(t *tes
 	if mailbox.Status != domain.MailboxStatusActive {
 		t.Fatalf("expected mailbox not immediately revoked, got status=%s", mailbox.Status)
 	}
-	if mailbox.ExpiresAt == nil || !mailbox.ExpiresAt.Equal(periodEnd) {
-		t.Fatalf("expected expiry scheduled for period end %s, got %v", periodEnd, mailbox.ExpiresAt)
+	if mailbox.ExpiresAt == nil || !mailbox.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expected expiry scheduled for the mailbox's own expires_at %s, got %v", expiresAt, mailbox.ExpiresAt)
 	}
 }
 
@@ -419,7 +428,7 @@ func TestHandlePaddleWebhookUnrecognizedEventTypeIgnored(t *testing.T) {
 func TestHandlePaddleWebhookRejectsInvalidSignature(t *testing.T) {
 	_, handler := newPaddleWebhookHandler()
 
-	body := `{"event_id":"evt_1","event_type":"transaction.completed","data":{"id":"txn_1"}}`
+	body := `{"event_id":"evt_1","event_type":"transaction.completed","occurred_at":"2026-07-27T10:00:00Z","data":{"id":"txn_1"}}`
 	req := httptest.NewRequest("POST", "/v1/webhooks/paddle", strings.NewReader(body))
 	req.Header.Set("Paddle-Signature", "ts="+strconv.FormatInt(time.Now().Unix(), 10)+";h1="+strings.Repeat("0", 64))
 	rec := httptest.NewRecorder()
@@ -428,5 +437,130 @@ func TestHandlePaddleWebhookRejectsInvalidSignature(t *testing.T) {
 
 	if rec.Code != 401 {
 		t.Fatalf("expected status 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlePaddleWebhookRejectsUnparseableOccurredAt(t *testing.T) {
+	repo, handler := newPaddleWebhookHandler(&domain.Mailbox{
+		ID:               "mbx-1",
+		KeyFingerprint:   "edproof:key-1",
+		PaymentSessionID: "txn_original",
+		Status:           domain.MailboxStatusPendingPayment,
+		IMAPUsername:     "mbx_abc",
+		IMAPPassword:     "secret",
+	})
+
+	body := `{
+		"event_id":"evt_bad_ts",
+		"event_type":"subscription.created",
+		"occurred_at":"not-a-timestamp",
+		"data":{
+			"id":"sub_1",
+			"custom_data":{"mailbox_id":"mbx-1"}
+		}
+	}`
+
+	rec := servePaddleWebhook(handler, body)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected status 400 for unparseable occurred_at, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if repo.updateCount != 0 {
+		t.Fatalf("expected no mailbox mutation, got %d updates", repo.updateCount)
+	}
+}
+
+// TestHandlePaddleWebhookEmptyPaymentSessionIDNotActivated guards against
+// GetByPaymentSessionID's lack of an empty-string guard: a resolved
+// mailbox with an empty payment_session_id must never be passed to
+// MarkMailboxPaid, since that could activate an arbitrary unrelated
+// mailbox that also happens to have an empty payment_session_id.
+func TestHandlePaddleWebhookEmptyPaymentSessionIDNotActivated(t *testing.T) {
+	repo, handler := newPaddleWebhookHandler(&domain.Mailbox{
+		ID:             "mbx-1",
+		KeyFingerprint: "edproof:key-1",
+		// PaymentSessionID intentionally empty.
+		Status:       domain.MailboxStatusPendingPayment,
+		IMAPUsername: "mbx_abc",
+		IMAPPassword: "secret",
+	})
+
+	body := `{
+		"event_id":"evt_nosession",
+		"event_type":"subscription.created",
+		"occurred_at":"2026-07-27T10:00:00Z",
+		"data":{
+			"id":"sub_1",
+			"custom_data":{"mailbox_id":"mbx-1"}
+		}
+	}`
+
+	rec := servePaddleWebhook(handler, body)
+
+	if rec.Code != 202 {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"ignored"`) {
+		t.Fatalf("expected ignored status, got %s", rec.Body.String())
+	}
+	mailbox := repo.byID["mbx-1"]
+	if mailbox.Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected mailbox NOT activated, got status=%s", mailbox.Status)
+	}
+	if repo.updateCount != 0 {
+		t.Fatalf("expected no mailbox mutation, got %d updates", repo.updateCount)
+	}
+}
+
+// TestHandlePaddleWebhookAlreadyActiveDoesNotAdvanceDedupBaseline covers
+// Important #3: a subscription.created/activated redelivery on an already
+// active mailbox makes MarkMailboxPaid no-op. That must not advance
+// last_payment_event_at/id — otherwise a later, correctly-ordered event
+// with an earlier occurred_at than this no-op's could be wrongly dropped
+// by the ordering guard.
+func TestHandlePaddleWebhookAlreadyActiveDoesNotAdvanceDedupBaseline(t *testing.T) {
+	priorEventAt := time.Date(2026, 7, 27, 9, 0, 0, 0, time.UTC)
+	expiresAt := time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)
+	repo, handler := newPaddleWebhookHandler(&domain.Mailbox{
+		ID:                 "mbx-1",
+		KeyFingerprint:     "edproof:key-1",
+		PaymentSessionID:   "txn_original",
+		SubscriptionID:     "sub_1",
+		Status:             domain.MailboxStatusActive,
+		PaidAt:             ptrTime(time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)),
+		ExpiresAt:          &expiresAt,
+		LastPaymentEventID: "evt_prior",
+		LastPaymentEventAt: &priorEventAt,
+		IMAPUsername:       "mbx_abc",
+		IMAPPassword:       "secret",
+	})
+
+	// A later, distinct event_id with a later occurred_at than the prior
+	// baseline — passes dedup and ordering, but MarkMailboxPaid no-ops
+	// since the mailbox is already active.
+	body := `{
+		"event_id":"evt_late_activation",
+		"event_type":"subscription.activated",
+		"occurred_at":"2026-07-27T10:00:00Z",
+		"data":{
+			"id":"sub_1",
+			"custom_data":{"mailbox_id":"mbx-1"}
+		}
+	}`
+
+	rec := servePaddleWebhook(handler, body)
+
+	if rec.Code != 202 {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"ignored"`) {
+		t.Fatalf("expected ignored status, got %s", rec.Body.String())
+	}
+	mailbox := repo.byID["mbx-1"]
+	if mailbox.LastPaymentEventID != "evt_prior" {
+		t.Fatalf("expected dedup baseline unchanged at evt_prior, got %q", mailbox.LastPaymentEventID)
+	}
+	if mailbox.LastPaymentEventAt == nil || !mailbox.LastPaymentEventAt.Equal(priorEventAt) {
+		t.Fatalf("expected last_payment_event_at unchanged at %s, got %v", priorEventAt, mailbox.LastPaymentEventAt)
 	}
 }

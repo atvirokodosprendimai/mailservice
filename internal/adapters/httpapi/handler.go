@@ -1397,23 +1397,10 @@ func (h *Handler) resolvePaddleMailbox(ctx context.Context, subscriptionID, mail
 func (h *Handler) applyPaddleWebhookEvent(ctx context.Context, mailbox *domain.Mailbox, event *paddlePaymentEvent) (bool, error) {
 	switch event.EventType {
 	case paddlenotification.EventTypeNameSubscriptionCreated, paddlenotification.EventTypeNameSubscriptionActivated:
-		// First-payment activation. MarkMailboxPaid is keyed by the
-		// mailbox's own stored payment_session_id rather than any
-		// per-event transaction ID: subscription.activated carries no
-		// transaction_id at all, and using the mailbox's already-resolved
-		// session ID works uniformly across both event types while staying
-		// safe for already-active mailboxes (MarkMailboxPaid no-ops rather
-		// than double-granting a period when status is already active).
-		if _, err := h.mailboxService.MarkMailboxPaid(ctx, mailbox.PaymentSessionID); err != nil {
-			return false, err
-		}
-		return true, nil
+		return h.markPaddleMailboxPaid(ctx, mailbox)
 	case paddlenotification.EventTypeNameTransactionCompleted:
 		if mailbox.Status == domain.MailboxStatusPendingPayment {
-			if _, err := h.mailboxService.MarkMailboxPaid(ctx, mailbox.PaymentSessionID); err != nil {
-				return false, err
-			}
-			return true, nil
+			return h.markPaddleMailboxPaid(ctx, mailbox)
 		}
 		if event.SubscriptionID == "" || event.BillingPeriodEndsAt == nil {
 			return false, nil
@@ -1423,19 +1410,55 @@ func (h *Handler) applyPaddleWebhookEvent(ctx context.Context, mailbox *domain.M
 		}
 		return true, nil
 	case paddlenotification.EventTypeNameSubscriptionCanceled:
-		if event.BillingPeriodEndsAt == nil || !event.BillingPeriodEndsAt.After(h.now()) {
+		// Paddle's current_billing_period is documented as null
+		// specifically on canceled subscriptions (SDK:
+		// SubscriptionNotification/SubscriptionCreatedNotification doc
+		// comments), so a real subscription.canceled webhook's
+		// BillingPeriodEndsAt will almost always be nil — defaulting to
+		// immediate expiry in that case would revoke access the customer
+		// already paid for on every real cancellation, inverting R5. Fall
+		// back to the mailbox's own expires_at, the period it
+		// demonstrably paid through, instead.
+		periodEnd := event.BillingPeriodEndsAt
+		if periodEnd == nil {
+			periodEnd = mailbox.ExpiresAt
+		}
+		if periodEnd == nil || !periodEnd.After(h.now()) {
 			if err := h.mailboxService.ExpireMailboxByID(ctx, mailbox.ID); err != nil {
 				return false, err
 			}
 			return true, nil
 		}
-		if err := h.mailboxService.ScheduleMailboxExpiry(ctx, mailbox.ID, *event.BillingPeriodEndsAt); err != nil {
+		if err := h.mailboxService.ScheduleMailboxExpiry(ctx, mailbox.ID, *periodEnd); err != nil {
 			return false, err
 		}
 		return true, nil
 	default:
 		return false, nil
 	}
+}
+
+// markPaddleMailboxPaid calls MarkMailboxPaid using the mailbox's own
+// stored payment_session_id (see the package doc comment on why: not a
+// per-event transaction ID). It guards against an empty
+// payment_session_id — GetByPaymentSessionID has no empty-string guard,
+// so an empty session ID on a resolved mailbox would otherwise activate
+// an arbitrary unrelated mailbox — and reports whether MarkMailboxPaid
+// actually changed anything, so the caller doesn't advance the event
+// dedup/ordering baseline for a call that no-opped (MarkMailboxPaid
+// short-circuits without mutation when the mailbox is already active).
+func (h *Handler) markPaddleMailboxPaid(ctx context.Context, mailbox *domain.Mailbox) (bool, error) {
+	if strings.TrimSpace(mailbox.PaymentSessionID) == "" {
+		if h.logger != nil {
+			h.logger.Printf("paddle webhook ignored: mailbox_id=%s has no payment_session_id, refusing to activate", mailbox.ID)
+		}
+		return false, nil
+	}
+	alreadyActive := mailbox.Status == domain.MailboxStatusActive
+	if _, err := h.mailboxService.MarkMailboxPaid(ctx, mailbox.PaymentSessionID); err != nil {
+		return false, err
+	}
+	return !alreadyActive, nil
 }
 
 func (h *Handler) withAccountToken(next http.HandlerFunc) http.HandlerFunc {

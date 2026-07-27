@@ -119,13 +119,20 @@ func parsePaddleWebhookEvent(body []byte) (*paddlePaymentEvent, error) {
 		return nil, errInvalidPaddleWebhookPayload
 	}
 
-	event := &paddlePaymentEvent{
-		EventID:   strings.TrimSpace(envelope.EventID),
-		EventType: envelope.EventType,
-		MailboxID: paddleCustomDataMailboxID(envelope.Data.CustomData),
+	// occurred_at drives the ordering/dedup guard, so a missing or
+	// malformed value must fail loud (reject the webhook) rather than
+	// silently default to the zero time — Paddle guarantees this field on
+	// every real event.
+	occurredAt, err := time.Parse(time.RFC3339, envelope.OccurredAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse paddle webhook occurred_at %q: %w", envelope.OccurredAt, err)
 	}
-	if occurredAt, err := time.Parse(time.RFC3339, envelope.OccurredAt); err == nil {
-		event.OccurredAt = occurredAt.UTC()
+
+	event := &paddlePaymentEvent{
+		EventID:    strings.TrimSpace(envelope.EventID),
+		EventType:  envelope.EventType,
+		OccurredAt: occurredAt.UTC(),
+		MailboxID:  paddleCustomDataMailboxID(envelope.Data.CustomData),
 	}
 
 	isSubscriptionEvent := strings.HasPrefix(string(envelope.EventType), "subscription.")
