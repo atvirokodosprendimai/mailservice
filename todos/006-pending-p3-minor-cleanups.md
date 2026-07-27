@@ -22,7 +22,7 @@ tags: [code-review, quality, edproof]
 `handler.go:1218` — `token != h.adminAPIKey` uses `!=` which is not constant-time. Use `subtle.ConstantTimeCompare`. This is pre-existing, not from the edproof work.
 
 ### 5. Startup log for edproof mode
-`main.go` — no log indicating whether challenge-response or passthrough mode is active. Other optional features (Polar, Stripe) log their configuration status.
+`main.go` — no log indicating whether challenge-response or passthrough mode is active. Other optional features (Paddle, Stripe) log their configuration status.
 
 ## Effort
 

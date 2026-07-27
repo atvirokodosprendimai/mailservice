@@ -12,7 +12,7 @@ Diagram source: `docs/architecture/diagrams/container_view.py`
 | Core services | Go packages in `internal/core/service` | Enforces mailbox, payment, account, and access rules. |
 | Domain and ports | Go packages in `internal/domain` and `internal/core/ports` | Defines business entities and adapter seams. |
 | Repository adapters | GORM + SQLite/Turso | Persist mailboxes, accounts, recovery state, and refresh tokens in the app database mode. |
-| Payment adapters | Polar, Stripe, mock | Create payment sessions and validate completion state. |
+| Payment adapters | Paddle, Stripe, mock | Create payment sessions and validate completion state. |
 | Notification adapters | Unsend, Resend, SendGrid, Mailgun, log | Deliver payment and recovery notifications. |
 | Identity adapter | `edproof` verifier adapter | Verifies key proof and derives a stable key fingerprint. |
 | Mail runtime provisioner | GORM-backed adapter | Writes mailbox runtime records used by the receive-only mail stack. |

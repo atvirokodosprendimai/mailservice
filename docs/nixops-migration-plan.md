@@ -29,12 +29,11 @@ MAIL_DOMAIN=truevipaccess.com
 IMAP_HOST=truevipaccess.com
 IMAP_PORT=143
 MAX_CONCURRENT_REQUESTS=100
-POLAR_TOKEN=...
-POLAR_PRODUCT_ID=01f68f36-4b6f-402a-b670-c7ebde03a836
-POLAR_SERVER_URL=https://api.polar.sh
-POLAR_SUCCESS_URL=https://truevipaccess.com/v1/payments/polar/success?checkout_id={CHECKOUT_ID}
-POLAR_RETURN_URL=https://truevipaccess.com
-POLAR_WEBHOOK_SECRET=...
+PADDLE_API_KEY=...
+PADDLE_ENVIRONMENT=live
+PADDLE_CLIENT_TOKEN=...
+PADDLE_WEBHOOK_SECRET=...
+PADDLE_PRICE_ID=...
 ```
 
 `cloudflared.env` must include:
@@ -96,7 +95,7 @@ Validate on the host after deploy:
    - `https://truevipaccess.com/`
    - `https://truevipaccess.com/healthz`
    - mailbox claim flow
-   - Polar payment completion
+   - Paddle payment completion
    - IMAP resolve flow
 
 Keep the Ubuntu host intact until these checks pass.

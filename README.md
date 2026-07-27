@@ -57,7 +57,7 @@ Deployment runtime template:
 - SQLite (pure Go, no CGO) via `github.com/glebarez/sqlite`
 - GORM ORM
 - Goose SQL migrations
-- Polar checkout for the preferred key-bound flow
+- Paddle checkout for the preferred key-bound flow
 - Stripe Checkout + webhooks kept as legacy fallback
 - mock payment links for local development
 
@@ -156,12 +156,13 @@ On the NixOS production host:
 - `IMAP_HOST` (default `MAIL_DOMAIN`)
 - `IMAP_PORT` (default `143`)
 - `MAILBOX_PRICE_CENTS` (default `299`)
-- `POLAR_TOKEN` (optional; enable Polar for the preferred key-bound flow)
-- `POLAR_PRODUCT_ID` (required when Polar is enabled)
-- `POLAR_SERVER_URL` (default `https://api.polar.sh`)
-- `POLAR_SUCCESS_URL` (default `PUBLIC_BASE_URL/v1/payments/polar/success?checkout_id={CHECKOUT_ID}`)
-- `POLAR_RETURN_URL` (default `PUBLIC_BASE_URL`)
-- `POLAR_WEBHOOK_SECRET` (recommended for production; enables signed `POST /v1/webhooks/polar`)
+- `PADDLE_API_KEY` (optional; enable Paddle for the preferred key-bound flow; must start with `pdl_sdbx_apikey_` or `pdl_live_apikey_`, matching `PADDLE_ENVIRONMENT`)
+- `PADDLE_ENVIRONMENT` (default `sandbox`; must be `sandbox` or `live`)
+- `PADDLE_CLIENT_TOKEN` (required when Paddle is enabled; must start with `test_` or `live_`, used client-side by Paddle.js)
+- `PADDLE_PRICE_ID` (required when Paddle is enabled)
+- `PADDLE_WEBHOOK_SECRET` (recommended for production; enables signed `POST /v1/webhooks/paddle`)
+- `PADDLE_DEFAULT_PAYMENT_LINK_URL` (optional; account-level default payment link, provisioned out of band)
+- `PADDLE_GIFT_DISCOUNT_ID` / `PADDLE_GIFT_COUPON_CODE` (optional; gift coupon pair, must both be set together)
 - `STRIPE_CURRENCY` (default `usd`)
 - `STRIPE_SUCCESS_URL` (default `http://localhost:8080/payment/success`)
 - `STRIPE_CANCEL_URL` (default `http://localhost:8080/payment/cancel`)
@@ -194,20 +195,18 @@ curl -X POST http://localhost:8080/v1/mailboxes/claim \
   -d '{"billing_email":"billing@example.com","edproof":"<proof>"}'
 ```
 
-Confirm Polar payment after redirect fallback:
+The claim response's `payment_url` points at this app's own Paddle checkout page, which loads Paddle.js and opens the checkout overlay for the transaction:
 
 ```bash
-curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
+curl "http://localhost:8080/v1/payments/paddle/checkout?_ptxn=<txn-id>"
 ```
 
-Preferred production payment completion path:
+Preferred production payment completion path — Paddle delivers a signed webhook, which is the sole activation authority (the success page is UX-only):
 
 ```bash
-curl -X POST http://localhost:8080/v1/webhooks/polar \
-  -H 'webhook-id: <message-id>' \
-  -H 'webhook-timestamp: <unix-seconds>' \
-  -H 'webhook-signature: v1,<signature>' \
-  -d '<signed-payload-from-polar>'
+curl -X POST http://localhost:8080/v1/webhooks/paddle \
+  -H 'Paddle-Signature: ts=<unix-seconds>;h1=<signature>' \
+  -d '<signed-payload-from-paddle>'
 ```
 
 Resolve IMAP credentials by key proof:

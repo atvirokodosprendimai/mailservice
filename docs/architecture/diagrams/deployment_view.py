@@ -30,7 +30,7 @@ with Diagram(
 ):
     github = GithubActions("GitHub Actions")
     cloudflare = Firewall("Cloudflare Edge/Tunnel")
-    polar = Rack("Polar")
+    paddle = Rack("Paddle")
     turso = Storage("Turso (optional app DB mode)")
 
     with Cluster("Hetzner Cloud VM"):
@@ -48,7 +48,7 @@ with Diagram(
     github >> Edge(label="deploy app revision") >> repo_sync >> rebuild >> health
 
     cloudflare >> Edge(label="public ingress") >> cloudflared >> api
-    api >> Edge(label="payment session lookup") >> polar
+    api >> Edge(label="payment session lookup") >> paddle
     api >> Edge(label="app data when DB_MODE=turso") >> turso
 
     api >> Edge(label="provision mailbox") >> postfix

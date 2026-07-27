@@ -32,7 +32,7 @@ Adapters implement ports and are selected at startup from config.
 | Mailbox service | `internal/core/service/mailbox_service.go` | Claim mailbox, create payment links, activate after payment, resolve access, list/read messages. |
 | Account service | `internal/core/service/account_service.go` | Legacy account flow, refresh tokens, recovery flow, account-token auth. |
 | Identity adapter | `internal/adapters/identity/edproof` | Verifies Ed25519 public keys, challenge freshness, and signatures. |
-| Payment adapters | `internal/adapters/payment` | Polar (preferred), Stripe (legacy fallback), mock provider for local/dev. |
+| Payment adapters | `internal/adapters/payment` | Paddle (preferred), Stripe (legacy fallback), mock provider for local/dev. |
 | Repository adapters | `internal/adapters/repository` | GORM persistence for accounts, mailboxes, refresh tokens, recovery, mail runtime provisioning tables. |
 | Notifier adapters | `internal/adapters/notify` | Unsend, Resend, SendGrid, Mailgun, log fallback. |
 | Mail reader adapter | `internal/adapters/imap` | Reads mailbox messages over IMAP for HTTP endpoints. |
@@ -44,7 +44,7 @@ Adapters implement ports and are selected at startup from config.
 
 - primary DB mode can be local SQLite or Turso (config-selected)
 - local SQLite is always kept for mail runtime tables used by Postfix/Dovecot
-- payment provider precedence is Polar -> Stripe -> mock
+- payment provider precedence is Paddle -> Stripe -> mock
 - notifier can be explicit (`NOTIFIER_PROVIDER`) or fallback cascade
 - challenge-response auth is enabled via EdProof authenticator
 - global request semaphore is enabled when `MAX_CONCURRENT_REQUESTS > 0`
@@ -58,7 +58,7 @@ Adapters implement ports and are selected at startup from config.
 ## Key security boundaries
 
 - challenge-response verification gates key-bound claim and key-bound access resolve
-- webhook endpoints require signature verification (Stripe/Polar)
+- webhook endpoints require signature verification (Stripe/Paddle)
 - request bodies are size-limited and unknown JSON fields are rejected
 - account and admin APIs use separate token paths (`X-API-Token`/Bearer vs admin bearer key)
 

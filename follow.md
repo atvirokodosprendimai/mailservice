@@ -16,12 +16,10 @@ curl -X POST http://localhost:8080/v1/mailboxes/claim \
 
 2. Complete payment and then resolve IMAP details with the same key:
 
-If using Polar checkout, confirm the redirected checkout before resolving access:
+The claim response's `payment_url` opens the Paddle checkout overlay page. Activation is webhook-driven (`POST /v1/webhooks/paddle`, verified with `PADDLE_WEBHOOK_SECRET`); the success page below is UX-only confirmation, not the activation trigger:
 
 ```bash
-curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
-
-# production should use signed POST /v1/webhooks/polar with POLAR_WEBHOOK_SECRET
+curl "http://localhost:8080/v1/payments/paddle/success?txn_id=<paddle-txn-id>"
 ```
 
 ```bash

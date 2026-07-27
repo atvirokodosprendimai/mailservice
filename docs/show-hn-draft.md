@@ -22,7 +22,7 @@ I built an inbound email service designed for AI agents.
 
 **Anti-abuse by design:** Inbound only (no SMTP), payment required, key proof required. There's no free tier to abuse.
 
-**Tech:** Go, hexagonal architecture, SQLite, Polar for billing. The full API skill document is at `GET /docs/agent-api-skill.md` — you can literally paste it into an agent's context and it knows how to use the service.
+**Tech:** Go, hexagonal architecture, SQLite, Paddle for billing. The full API skill document is at `GET /docs/agent-api-skill.md` — you can literally paste it into an agent's context and it knows how to use the service.
 
 Open source: https://github.com/atvirokodosprendimai/mailservice (AGPL v3.0)
 

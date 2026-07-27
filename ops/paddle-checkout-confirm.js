@@ -5,8 +5,8 @@
  * Usage:
  *   node ops/paddle-checkout-confirm.js <checkout-page-url>
  *
- * Unlike Polar (Stripe Elements embedded directly in Polar's own checkout
- * page), Paddle Checkout renders as an overlay iframe injected by Paddle.js
+ * Unlike a checkout that embeds card fields directly in its own page,
+ * Paddle Checkout renders as an overlay iframe injected by Paddle.js
  * (see internal/adapters/httpapi/paddle_checkout.go), hosted on a Paddle
  * origin cross-domain from this app. Paddle does not publish the overlay's
  * internal DOM/field selectors for automation, so this script:

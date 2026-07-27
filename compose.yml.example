@@ -9,11 +9,11 @@ services:
       IMAP_HOST: mail.local
       IMAP_PORT: "143"
       MAX_CONCURRENT_REQUESTS: "100"
-      POLAR_TOKEN: ""
-      POLAR_PRODUCT_ID: ""
-      POLAR_SERVER_URL: https://api.polar.sh
-      POLAR_SUCCESS_URL: http://localhost:8080/v1/payments/polar/success?checkout_id={CHECKOUT_ID}
-      POLAR_RETURN_URL: http://localhost:8080
+      PADDLE_API_KEY: ""
+      PADDLE_ENVIRONMENT: sandbox
+      PADDLE_CLIENT_TOKEN: ""
+      PADDLE_WEBHOOK_SECRET: ""
+      PADDLE_PRICE_ID: ""
       STRIPE_SECRET_KEY: ""
       STRIPE_WEBHOOK_SECRET: ""
       STRIPE_SUCCESS_URL: http://localhost:8080/payment/success

@@ -37,17 +37,17 @@ with Diagram(
 
     with Cluster("External systems"):
         cloudflare = Firewall("Cloudflare Tunnel")
-        polar = Rack("Polar")
+        paddle = Rack("Paddle")
         stripe = Rack("Stripe (legacy fallback)")
         notifier = Rack("Unsend / Resend /\nSendGrid / Mailgun")
         mail_runtime = Datacenter("Mail runtime\nPostfix + Dovecot")
 
     agent >> Edge(label="claim + resolve API calls") >> cloudflare >> api
     api >> Edge(label="payment link") >> billing_inbox
-    polar >> Edge(label="hosted checkout") >> agent
+    paddle >> Edge(label="hosted checkout") >> agent
     operator >> Edge(label="deploy + configure") >> api
 
-    api >> Edge(label="checkout") >> polar
+    api >> Edge(label="checkout") >> paddle
     api >> Edge(label="legacy fallback") >> stripe
     api >> Edge(label="send notifications") >> notifier
     api >> Edge(label="provision + IMAP read") >> mail_runtime

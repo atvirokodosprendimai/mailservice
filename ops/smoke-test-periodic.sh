@@ -9,7 +9,7 @@
 #      auto-confirms via a headless browser against the Paddle sandbox
 #      checkout overlay. Requires a free (100%-off) sandbox discount code,
 #      since Paddle has no public REST API to confirm a transaction —
-#      unlike Polar, checkout completion is always browser/overlay-driven.
+#      checkout completion is always browser/overlay-driven.
 #
 # Exit codes:
 #   0 — all checks passed
