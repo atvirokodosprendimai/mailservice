@@ -95,7 +95,9 @@ func Load() (*Config, error) {
 	paddleAPIKey := os.Getenv("PADDLE_API_KEY")
 	paddleEnv := getEnv("PADDLE_ENVIRONMENT", "sandbox")
 	paddleClientToken := os.Getenv("PADDLE_CLIENT_TOKEN")
-	if err := validatePaddleConfig(paddleAPIKey, paddleEnv, paddleClientToken); err != nil {
+	paddleWebhookSecret := os.Getenv("PADDLE_WEBHOOK_SECRET")
+	paddlePriceID := os.Getenv("PADDLE_PRICE_ID")
+	if err := validatePaddleConfig(paddleAPIKey, paddleEnv, paddleClientToken, paddlePriceID, paddleWebhookSecret); err != nil {
 		return nil, err
 	}
 
@@ -130,8 +132,8 @@ func Load() (*Config, error) {
 		MailgunFromEmail:            getEnv("MAILGUN_FROM_EMAIL", ""),
 		MailgunFromName:             getEnv("MAILGUN_FROM_NAME", "MailService"),
 		PaddleAPIKey:                paddleAPIKey,
-		PaddleWebhookSecret:         os.Getenv("PADDLE_WEBHOOK_SECRET"),
-		PaddlePriceID:               os.Getenv("PADDLE_PRICE_ID"),
+		PaddleWebhookSecret:         paddleWebhookSecret,
+		PaddlePriceID:               paddlePriceID,
 		PaddleDefaultPaymentLinkURL: getEnv("PADDLE_DEFAULT_PAYMENT_LINK_URL", ""),
 		PaddleClientToken:           paddleClientToken,
 		PaddleEnvironment:           paddleEnv,
@@ -225,7 +227,7 @@ func validateNotifierProvider(provider string) error {
 	return nil
 }
 
-func validatePaddleConfig(apiKey, env, clientToken string) error {
+func validatePaddleConfig(apiKey, env, clientToken, priceID, webhookSecret string) error {
 	// Only validate if PADDLE_API_KEY is set (indicating Paddle is configured).
 	if apiKey == "" {
 		return nil
@@ -244,14 +246,32 @@ func validatePaddleConfig(apiKey, env, clientToken string) error {
 		return fmt.Errorf("PADDLE_API_KEY does not match PADDLE_ENVIRONMENT=%s: key must start with %q", env, expectedPrefix)
 	}
 
+	// PADDLE_CLIENT_TOKEN, PADDLE_PRICE_ID, and PADDLE_WEBHOOK_SECRET are
+	// hard-required once Paddle is the active provider (PADDLE_API_KEY
+	// set) — silently starting up without them defers the failure to the
+	// first real checkout/webhook instead of catching it at startup, the
+	// exact soft-fallthrough failure mode this migration was meant to
+	// eliminate (see plan KTD-* / Important #1 of the final review).
+	if clientToken == "" {
+		return fmt.Errorf("PADDLE_CLIENT_TOKEN is required when PADDLE_API_KEY is set")
+	}
+
 	// Validate client token is not an API key.
-	if clientToken != "" && (hasPrefix(clientToken, "pdl_sdbx_apikey_") || hasPrefix(clientToken, "pdl_live_apikey_")) {
+	if hasPrefix(clientToken, "pdl_sdbx_apikey_") || hasPrefix(clientToken, "pdl_live_apikey_") {
 		return fmt.Errorf("PADDLE_CLIENT_TOKEN must not be an API key (starting with pdl_*_apikey_); got credential shaped like an API key")
 	}
 
 	// Validate client token has correct shape (live_ or test_ prefix).
-	if clientToken != "" && !hasPrefix(clientToken, "live_") && !hasPrefix(clientToken, "test_") {
+	if !hasPrefix(clientToken, "live_") && !hasPrefix(clientToken, "test_") {
 		return fmt.Errorf("PADDLE_CLIENT_TOKEN must start with 'live_' or 'test_', got %q", clientToken)
+	}
+
+	if priceID == "" {
+		return fmt.Errorf("PADDLE_PRICE_ID is required when PADDLE_API_KEY is set")
+	}
+
+	if webhookSecret == "" {
+		return fmt.Errorf("PADDLE_WEBHOOK_SECRET is required when PADDLE_API_KEY is set")
 	}
 
 	return nil

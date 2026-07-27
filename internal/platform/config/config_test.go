@@ -88,35 +88,42 @@ func TestPaddleConfigValidation(t *testing.T) {
 		apiKey        string
 		env           string
 		clientToken   string
+		priceID       string
+		webhookSecret string
 		wantErr       bool
 		wantErrSubstr string
 	}{
 		{
-			name:        "happy path sandbox",
-			apiKey:      "pdl_sdbx_apikey_test123",
-			env:         "sandbox",
-			clientToken: "test_client123",
-			wantErr:     false,
+			name:          "happy path sandbox",
+			apiKey:        "pdl_sdbx_apikey_test123",
+			env:           "sandbox",
+			clientToken:   "test_client123",
+			priceID:       "pri_test123",
+			webhookSecret: "whsec_test123",
+			wantErr:       false,
 		},
 		{
-			name:        "happy path live",
-			apiKey:      "pdl_live_apikey_test123",
-			env:         "live",
-			clientToken: "live_client123",
-			wantErr:     false,
+			name:          "happy path live",
+			apiKey:        "pdl_live_apikey_test123",
+			env:           "live",
+			clientToken:   "live_client123",
+			priceID:       "pri_test123",
+			webhookSecret: "whsec_test123",
+			wantErr:       false,
 		},
 		{
-			name:        "no api key set (paddle not configured)",
-			apiKey:      "",
-			env:         "sandbox",
-			clientToken: "",
-			wantErr:     false,
+			name:    "no api key set (paddle not configured)",
+			apiKey:  "",
+			env:     "sandbox",
+			wantErr: false,
 		},
 		{
 			name:          "invalid environment",
 			apiKey:        "pdl_sdbx_apikey_test123",
 			env:           "invalid",
-			clientToken:   "",
+			clientToken:   "test_client123",
+			priceID:       "pri_test123",
+			webhookSecret: "whsec_test123",
 			wantErr:       true,
 			wantErrSubstr: "PADDLE_ENVIRONMENT must be 'sandbox' or 'live'",
 		},
@@ -124,7 +131,9 @@ func TestPaddleConfigValidation(t *testing.T) {
 			name:          "sandbox key with live environment",
 			apiKey:        "pdl_sdbx_apikey_test123",
 			env:           "live",
-			clientToken:   "",
+			clientToken:   "test_client123",
+			priceID:       "pri_test123",
+			webhookSecret: "whsec_test123",
 			wantErr:       true,
 			wantErrSubstr: "does not match PADDLE_ENVIRONMENT",
 		},
@@ -132,15 +141,29 @@ func TestPaddleConfigValidation(t *testing.T) {
 			name:          "live key with sandbox environment",
 			apiKey:        "pdl_live_apikey_test123",
 			env:           "sandbox",
-			clientToken:   "",
+			clientToken:   "test_client123",
+			priceID:       "pri_test123",
+			webhookSecret: "whsec_test123",
 			wantErr:       true,
 			wantErrSubstr: "does not match PADDLE_ENVIRONMENT",
+		},
+		{
+			name:          "client token missing",
+			apiKey:        "pdl_sdbx_apikey_test123",
+			env:           "sandbox",
+			clientToken:   "",
+			priceID:       "pri_test123",
+			webhookSecret: "whsec_test123",
+			wantErr:       true,
+			wantErrSubstr: "PADDLE_CLIENT_TOKEN is required",
 		},
 		{
 			name:          "client token is api key",
 			apiKey:        "pdl_sdbx_apikey_test123",
 			env:           "sandbox",
 			clientToken:   "pdl_sdbx_apikey_wrong",
+			priceID:       "pri_test123",
+			webhookSecret: "whsec_test123",
 			wantErr:       true,
 			wantErrSubstr: "PADDLE_CLIENT_TOKEN must not be an API key",
 		},
@@ -149,6 +172,8 @@ func TestPaddleConfigValidation(t *testing.T) {
 			apiKey:        "pdl_live_apikey_test123",
 			env:           "live",
 			clientToken:   "pdl_live_apikey_wrong",
+			priceID:       "pri_test123",
+			webhookSecret: "whsec_test123",
 			wantErr:       true,
 			wantErrSubstr: "PADDLE_CLIENT_TOKEN must not be an API key",
 		},
@@ -157,14 +182,36 @@ func TestPaddleConfigValidation(t *testing.T) {
 			apiKey:        "pdl_sdbx_apikey_test123",
 			env:           "sandbox",
 			clientToken:   "invalid_token_123",
+			priceID:       "pri_test123",
+			webhookSecret: "whsec_test123",
 			wantErr:       true,
 			wantErrSubstr: "PADDLE_CLIENT_TOKEN must start with 'live_' or 'test_'",
+		},
+		{
+			name:          "price id missing",
+			apiKey:        "pdl_sdbx_apikey_test123",
+			env:           "sandbox",
+			clientToken:   "test_client123",
+			priceID:       "",
+			webhookSecret: "whsec_test123",
+			wantErr:       true,
+			wantErrSubstr: "PADDLE_PRICE_ID is required",
+		},
+		{
+			name:          "webhook secret missing",
+			apiKey:        "pdl_sdbx_apikey_test123",
+			env:           "sandbox",
+			clientToken:   "test_client123",
+			priceID:       "pri_test123",
+			webhookSecret: "",
+			wantErr:       true,
+			wantErrSubstr: "PADDLE_WEBHOOK_SECRET is required",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePaddleConfig(tt.apiKey, tt.env, tt.clientToken)
+			err := validatePaddleConfig(tt.apiKey, tt.env, tt.clientToken, tt.priceID, tt.webhookSecret)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validatePaddleConfig() error = %v, wantErr = %v", err, tt.wantErr)
 			}
@@ -228,9 +275,12 @@ func TestLoadPaddleConfig(t *testing.T) {
 		{
 			name: "load with sandbox defaults",
 			env: map[string]string{
-				"DATABASE_MODE":       "local",
-				"EDPROOF_HMAC_SECRET": "0123456789abcdef0123456789abcdef",
-				"PADDLE_API_KEY":      "pdl_sdbx_apikey_test123",
+				"DATABASE_MODE":         "local",
+				"EDPROOF_HMAC_SECRET":   "0123456789abcdef0123456789abcdef",
+				"PADDLE_API_KEY":        "pdl_sdbx_apikey_test123",
+				"PADDLE_CLIENT_TOKEN":   "test_client123",
+				"PADDLE_PRICE_ID":       "pri_test123",
+				"PADDLE_WEBHOOK_SECRET": "whsec_test123",
 			},
 			wantErr: false,
 			checkFn: func(t *testing.T, cfg *Config) {
@@ -238,6 +288,40 @@ func TestLoadPaddleConfig(t *testing.T) {
 					t.Errorf("expected default PaddleEnvironment=sandbox, got %q", cfg.PaddleEnvironment)
 				}
 			},
+		},
+		{
+			name: "paddle active but client token missing",
+			env: map[string]string{
+				"DATABASE_MODE":       "local",
+				"EDPROOF_HMAC_SECRET": "0123456789abcdef0123456789abcdef",
+				"PADDLE_API_KEY":      "pdl_sdbx_apikey_test123",
+			},
+			wantErr:       true,
+			wantErrSubstr: "PADDLE_CLIENT_TOKEN is required",
+		},
+		{
+			name: "paddle active but price id missing",
+			env: map[string]string{
+				"DATABASE_MODE":         "local",
+				"EDPROOF_HMAC_SECRET":   "0123456789abcdef0123456789abcdef",
+				"PADDLE_API_KEY":        "pdl_sdbx_apikey_test123",
+				"PADDLE_CLIENT_TOKEN":   "test_client123",
+				"PADDLE_WEBHOOK_SECRET": "whsec_test123",
+			},
+			wantErr:       true,
+			wantErrSubstr: "PADDLE_PRICE_ID is required",
+		},
+		{
+			name: "paddle active but webhook secret missing",
+			env: map[string]string{
+				"DATABASE_MODE":       "local",
+				"EDPROOF_HMAC_SECRET": "0123456789abcdef0123456789abcdef",
+				"PADDLE_API_KEY":      "pdl_sdbx_apikey_test123",
+				"PADDLE_CLIENT_TOKEN": "test_client123",
+				"PADDLE_PRICE_ID":     "pri_test123",
+			},
+			wantErr:       true,
+			wantErrSubstr: "PADDLE_WEBHOOK_SECRET is required",
 		},
 		{
 			name: "api key mismatch sandbox key with live env",
