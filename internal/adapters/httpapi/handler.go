@@ -94,6 +94,10 @@ func (h *Handler) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", h.handleHome)
 	mux.HandleFunc("GET /healthz", h.handleHealth)
+	mux.HandleFunc("GET /terms", h.handleTerms)
+	mux.HandleFunc("GET /refund-policy", h.handleRefundPolicy)
+	mux.HandleFunc("GET /privacy", h.handlePrivacyNotice)
+	mux.HandleFunc("GET /contact", h.handleContact)
 	mux.HandleFunc("POST /v1/accounts", h.handleCreateAccount)
 	mux.HandleFunc("POST /v1/auth/refresh", h.handleRefreshAuth)
 	mux.HandleFunc("POST /v1/accounts/recovery/start", h.handleStartRecovery)
@@ -435,6 +439,11 @@ curl -v --url "imaps://mail.truevipaccess.com:993/INBOX" \
     &middot; Contact: <a href="mailto:hi@truevipaccess.com" style="color:var(--accent);text-decoration:none">hi@truevipaccess.com</a>
     &middot; Agents: <code>POST /v1/support/messages</code>
     &middot; AGPL v3.0
+    <br><br>
+    <a href="/terms" style="color:var(--accent);text-decoration:none">Terms</a>
+    &middot; <a href="/refund-policy" style="color:var(--accent);text-decoration:none">Refund Policy</a>
+    &middot; <a href="/privacy" style="color:var(--accent);text-decoration:none">Privacy</a>
+    &middot; <a href="/contact" style="color:var(--accent);text-decoration:none">Contact</a>
   </footer>
 </body>
 </html>
