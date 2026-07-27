@@ -1,0 +1,28 @@
+cmd/app/main_test.go
+  s_93f3b6714540ea::t_c5b3a01afe8273 111-183
+cmd/app/main.go
+  s_93f3b6714540ea::t_b35e39ec66f09d 77
+  s_93f3b6714540ea::t_560590cafc446d 253-290
+internal/core/service/mailbox_service.go
+  s_93f3b6714540ea::t_783665ec7a0fbc 372-381,385-394,397
+internal/core/service/mailbox_service_test.go
+  s_93f3b6714540ea::t_f3f3cc99e0e6fd 1084-1136
+internal/adapters/payment/paddle_gateway.go
+  s_93f3b6714540ea::t_009e2608d744db 164-178,182-188,196,198,200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "302ca95ea9711ba9f14a2e1cb9c5d6b3c657e427",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
