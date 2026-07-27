@@ -1,0 +1,83 @@
+docs/show-hn-draft.md
+  s_93f3b6714540ea::t_52ba370a5d160c 25
+follow.md
+  s_93f3b6714540ea::t_0f2f1f41ec9dd1 19,22
+docs/hetzner-cicd.md
+  s_93f3b6714540ea::t_ec3e2b5fc0b1c4 58-59
+compose.yml.example
+  s_93f3b6714540ea::t_15c2bb33839c44 12-16
+docs/agent-api-skill.md
+  s_93f3b6714540ea::t_ac82884f904d79 164
+  s_93f3b6714540ea::t_741bcc46b7c41b 337
+ops/smoke-test-periodic.sh
+  s_93f3b6714540ea::t_c203a3413c0b15 12
+docs/architecture/runtime-sequences.md
+  s_93f3b6714540ea::t_5a9a37f0e61f3b 14
+compose.tunnel.yml.example
+  s_93f3b6714540ea::t_1b48b877f08a07 14-18
+docs/marketing-gift-coupon-copy.md
+  s_93f3b6714540ea::t_6bac77ce7b833d 4
+ops/paddle-checkout-confirm.js
+  s_93f3b6714540ea::t_9f58b671a3d49e 8-9
+docs/architecture/overview.md
+  s_93f3b6714540ea::t_05ce11018f5be7 35
+  s_93f3b6714540ea::t_19f330b6234555 47
+  s_93f3b6714540ea::t_3b9ba93d308a73 61
+docs/architecture/system-context.md
+  s_93f3b6714540ea::t_659c4c290d0f84 27
+.env.example
+  s_93f3b6714540ea::t_0c55798a5ef403 21-31
+docs/architecture/diagrams/system_context.py
+  s_93f3b6714540ea::t_be569267b551da 40
+  s_93f3b6714540ea::t_f989e12dbf60c8 47,50
+docs/architecture/diagrams/deployment_view.py
+  s_93f3b6714540ea::t_091c9c287b5d3c 33
+  s_93f3b6714540ea::t_bfded8823e1b5b 51
+todos/006-pending-p3-minor-cleanups.md
+  s_93f3b6714540ea::t_8db7336138c48c 25
+docs/truevipaccess-deploy.md
+  s_93f3b6714540ea::t_9ced395d8e0666 42-46
+docs/polar-minimal-payments-spec.md
+  s_93f3b6714540ea::t_3c53b2eae0bb5b 3-7
+docs/nixops-migration-plan.md
+  s_93f3b6714540ea::t_c7cdda47a30cbb 32-36
+  s_93f3b6714540ea::t_0da649474b316e 98
+CONSTITUTION.md
+  s_93f3b6714540ea::t_84811f4bdf111a 60,66
+README.md
+  s_93f3b6714540ea::t_5ffa329efcd1af 159-165
+  s_93f3b6714540ea::t_550bb87db8bf72 198,201,204,207-209
+  s_93f3b6714540ea::t_69dbf0c659f1ea 60
+deploy/production.env.example
+  s_93f3b6714540ea::t_b5ae1ed56f6aab 10-17
+docs/architecture/container-view.md
+  s_93f3b6714540ea::t_bc1f8a2f2a6a76 15
+docs/nixos-gitops.md
+  s_93f3b6714540ea::t_3a195636ad5b26 74-75
+  s_93f3b6714540ea::t_bf0dad1006387e 91-93
+  s_93f3b6714540ea::t_b6e9ebd0b43a2b 45-46
+docs/cloudflare-tunnel-deploy.md
+  s_93f3b6714540ea::t_63449278828e29 40-44
+docs/architecture/deployment-view.md
+  s_93f3b6714540ea::t_0a000926d483db 18
+docs/architecture/images/deployment-view.svg
+  s_93f3b6714540ea::t_177cce0c8bd360 4,23,25,29,31,35,37,42,44,48,50,54,56,61,63,65,67,69,73,75,80,82,87,89,94,96,101,103,108,110,115,117,122,124,128,130,135,137,141,143,147,149,153,155,159,161,165,167,171,173
+docs/architecture/images/system-context.svg
+  s_93f3b6714540ea::t_62d5fa71a96b53 4,23,25,29,31,35,37,42,44,48,50,54,56,60,62,67,69,74,76,78,80,82,87,89,93,95,100,102,107,109,114,116,121,123,128,130,134,136,141,143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "456afa7839bc5e1954db6d01d532c08c750f2df5",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
