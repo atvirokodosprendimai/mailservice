@@ -1,0 +1,23 @@
+internal/platform/config/config.go
+  s_93f3b6714540ea::t_e793e2c3acf33b 49-56
+  s_93f3b6714540ea::t_28d3839b32a213 270-274
+internal/platform/config/config_test.go
+  s_93f3b6714540ea::t_1afed11f4db559 155-162
+  s_93f3b6714540ea::t_a6677afcd646ea 276-287
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "831053eaeb6e0e38c33e48d998a15a2f6c2d856e",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
