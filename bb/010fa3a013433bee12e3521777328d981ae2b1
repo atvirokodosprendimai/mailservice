@@ -1,0 +1,39 @@
+internal/adapters/httpapi/paddle_webhook_handler_test.go
+  s_93f3b6714540ea::t_0e83807a907a51 579
+internal/adapters/payment/stripe_gateway.go
+  s_93f3b6714540ea::t_a6bbfd03bbee3a 114
+cmd/app/main_test.go
+  s_93f3b6714540ea::t_ffb38b599155dd 56,74,96
+internal/platform/config/config.go
+  s_93f3b6714540ea::t_a63f183d2eee02 12-43,45-56,103-134,136-147
+cmd/pulse/main_test.go
+  s_93f3b6714540ea::t_bea2a0580ac037 204-207,212
+  s_93f3b6714540ea::t_359a60111fa88a 341-343
+cmd/pulse/main.go
+  s_93f3b6714540ea::t_d682d45fd3c6f9 320-321
+cmd/app/main.go
+  s_93f3b6714540ea::t_2d67b930b74e2e 240-243
+  s_93f3b6714540ea::t_e5352cfe2fe502 200-201
+internal/core/service/mailbox_service.go
+  s_93f3b6714540ea::t_63608f1058fb8f 887-889
+internal/core/service/mailbox_service_test.go
+  s_93f3b6714540ea::t_7ef43440a141ae 103,131,143,163,189,237
+internal/platform/config/config_test.go
+  s_93f3b6714540ea::t_a63f183d2eee02 95-97,99,102-104,106,109-111,113,180-182,184,189-195,197-198,231-233
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "bb010fa3a013433bee12e3521777328d981ae2b1",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
