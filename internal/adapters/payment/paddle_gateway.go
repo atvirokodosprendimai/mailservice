@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -20,16 +21,28 @@ import (
 // silently produce a PaymentLink with an empty URL.
 var errPaddleMissingCheckoutURL = errors.New("paddle: checkout url missing from transaction response")
 
+// paddleCheckoutPagePath is U6's own checkout page, which Paddle.js opens
+// client-side via the transaction ID passed as _ptxn — Paddle's documented
+// convention for auto-resuming an existing transaction's overlay.
+const paddleCheckoutPagePath = "/v1/payments/paddle/checkout"
+
 type PaddleConfig struct {
 	BaseURL string
 	APIKey  string
 	PriceID string
-	Client  *http.Client
+	// CheckoutBaseURL is this app's own public base URL (e.g.
+	// https://truevipaccess.com). When set, CreatePaymentLink returns a link
+	// to U6's own checkout page (which server-side validates the session and
+	// renders Paddle.js) instead of Paddle's raw hosted checkout.url. Left
+	// empty, it falls back to Paddle's checkout.url directly.
+	CheckoutBaseURL string
+	Client          *http.Client
 }
 
 type PaddleGateway struct {
-	sdk     *paddle.SDK
-	priceID string
+	sdk             *paddle.SDK
+	priceID         string
+	checkoutBaseURL string
 }
 
 func NewPaddleGateway(cfg PaddleConfig) (*PaddleGateway, error) {
@@ -48,8 +61,9 @@ func NewPaddleGateway(cfg PaddleConfig) (*PaddleGateway, error) {
 	}
 
 	return &PaddleGateway{
-		sdk:     sdk,
-		priceID: strings.TrimSpace(cfg.PriceID),
+		sdk:             sdk,
+		priceID:         strings.TrimSpace(cfg.PriceID),
+		checkoutBaseURL: strings.TrimRight(strings.TrimSpace(cfg.CheckoutBaseURL), "/"),
 	}, nil
 }
 
@@ -92,9 +106,14 @@ func (g *PaddleGateway) CreatePaymentLink(ctx context.Context, req ports.Payment
 		return nil, fmt.Errorf("%w: transaction %s", errPaddleMissingCheckoutURL, txn.ID)
 	}
 
+	checkoutURL := *txn.Checkout.URL
+	if g.checkoutBaseURL != "" {
+		checkoutURL = g.checkoutBaseURL + paddleCheckoutPagePath + "?_ptxn=" + url.QueryEscape(txn.ID)
+	}
+
 	return &ports.PaymentLink{
 		SessionID: txn.ID,
-		URL:       *txn.Checkout.URL,
+		URL:       checkoutURL,
 	}, nil
 }
 

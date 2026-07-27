@@ -423,6 +423,12 @@ func (s *MailboxService) GetMailboxBySubscriptionID(ctx context.Context, subscri
 	return s.repo.GetBySubscriptionID(ctx, subscriptionID)
 }
 
+// GetMailboxByPaymentSessionID is a read-only lookup for rendering
+// fallback content on the checkout page; it never mutates mailbox state.
+func (s *MailboxService) GetMailboxByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error) {
+	return s.repo.GetByPaymentSessionID(ctx, sessionID)
+}
+
 // ScheduleMailboxExpiry sets a mailbox's expires_at without altering its
 // status or paid_at, so an already-active mailbox keeps working until the
 // scheduled time and is then picked up by the normal expiry sweep

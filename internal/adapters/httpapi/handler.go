@@ -28,6 +28,8 @@ type Config struct {
 	StripeWebhookSecret string
 	PolarWebhookSecret  string
 	PaddleWebhookSecret string
+	PaddleClientToken   string
+	PaddleEnvironment   string
 	MaxConcurrentReqs   int
 	BuildNumber         string
 	CacheBuster         string
@@ -48,6 +50,8 @@ type Handler struct {
 	stripeWebhookSecret string
 	polarWebhookSecret  string
 	paddleWebhookSecret string
+	paddleClientToken   string
+	paddleEnvironment   string
 	concurrencySem      chan struct{}
 	keyProofVerifier    ports.KeyProofVerifier
 	paymentGateway      ports.PaymentGateway
@@ -78,6 +82,8 @@ func NewHandler(cfg Config) *Handler {
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
 		polarWebhookSecret:  cfg.PolarWebhookSecret,
 		paddleWebhookSecret: cfg.PaddleWebhookSecret,
+		paddleClientToken:   cfg.PaddleClientToken,
+		paddleEnvironment:   fallbackString(cfg.PaddleEnvironment, "sandbox"),
 		concurrencySem:      sem,
 		keyProofVerifier:    cfg.KeyProofVerifier,
 		paymentGateway:      cfg.PaymentGateway,
@@ -110,6 +116,8 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
 	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
 	mux.HandleFunc("GET /v1/payments/polar/success", h.handlePolarSuccess)
+	mux.HandleFunc("GET /v1/payments/paddle/checkout", h.handlePaddleCheckout)
+	mux.HandleFunc("GET /v1/payments/paddle/success", h.handlePaddleSuccess)
 	mux.HandleFunc("POST /v1/webhooks/polar", h.handlePolarWebhook)
 	mux.HandleFunc("POST /v1/webhooks/paddle", h.handlePaddleWebhook)
 	mux.HandleFunc("POST /v1/imap/resolve", h.handleResolveIMAP)

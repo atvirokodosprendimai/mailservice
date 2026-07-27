@@ -104,6 +104,8 @@ func main() {
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
 		PolarWebhookSecret:  cfg.PolarWebhookSecret,
 		PaddleWebhookSecret: cfg.PaddleWebhookSecret,
+		PaddleClientToken:   cfg.PaddleClientToken,
+		PaddleEnvironment:   cfg.PaddleEnvironment,
 		MaxConcurrentReqs:   cfg.MaxConcurrentReqs,
 		BuildNumber:         cfg.BuildNumber,
 		CacheBuster:         cfg.CacheBuster,
@@ -217,9 +219,10 @@ func selectPaymentGateway(cfg *config.Config, logger *log.Logger) (ports.Payment
 			paddleBaseURL = "https://sandbox-api.paddle.com"
 		}
 		paddleGateway, err := payment.NewPaddleGateway(payment.PaddleConfig{
-			BaseURL: paddleBaseURL,
-			APIKey:  cfg.PaddleAPIKey,
-			PriceID: cfg.PaddlePriceID,
+			BaseURL:         paddleBaseURL,
+			APIKey:          cfg.PaddleAPIKey,
+			PriceID:         cfg.PaddlePriceID,
+			CheckoutBaseURL: cfg.PublicBaseURL,
 		})
 		if err != nil {
 			log.Fatalf("paddle gateway init: %v", err)

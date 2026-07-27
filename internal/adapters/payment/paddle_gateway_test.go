@@ -202,6 +202,52 @@ func TestPaddleGatewayCreatePaymentLinkNeverOverridesCheckoutURL(t *testing.T) {
 	}
 }
 
+// TestPaddleGatewayCreatePaymentLinkUsesOwnCheckoutPageWhenConfigured asserts
+// U6's link-building contract: when CheckoutBaseURL is set, the returned
+// PaymentLink points at this app's own checkout page with _ptxn=<txn id>,
+// not at Paddle's raw hosted checkout.url — the email must send customers to
+// a page this app controls and can degrade gracefully on, not directly to
+// Paddle.
+func TestPaddleGatewayCreatePaymentLinkUsesOwnCheckoutPageWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paddleDataResponse(t, w, map[string]any{
+			"id":     "txn_own_page",
+			"status": "draft",
+			"checkout": map[string]any{
+				"url": "https://checkout.paddle.com/checkout?_ptxn=txn_own_page",
+			},
+			"details": map[string]any{
+				"totals": map[string]any{"discount": "0"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	gateway, err := NewPaddleGateway(PaddleConfig{
+		BaseURL:         server.URL,
+		APIKey:          "paddle-key",
+		PriceID:         "pri_123",
+		CheckoutBaseURL: "https://truevipaccess.com/",
+	})
+	if err != nil {
+		t.Fatalf("NewPaddleGateway failed: %v", err)
+	}
+
+	link, err := gateway.CreatePaymentLink(context.Background(), ports.PaymentLinkRequest{
+		MailboxID:  "mbx-1",
+		OwnerEmail: "billing@example.com",
+	})
+	if err != nil {
+		t.Fatalf("CreatePaymentLink failed: %v", err)
+	}
+	want := "https://truevipaccess.com/v1/payments/paddle/checkout?_ptxn=txn_own_page"
+	if link.URL != want {
+		t.Fatalf("expected own checkout page url %q, got %q", want, link.URL)
+	}
+}
+
 func TestPaddleGatewayCreatePaymentLinkMissingCheckoutURL(t *testing.T) {
 	t.Parallel()
 
