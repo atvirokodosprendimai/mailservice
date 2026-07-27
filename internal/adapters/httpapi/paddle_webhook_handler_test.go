@@ -296,6 +296,14 @@ func TestHandlePaddleWebhookSubscriptionCanceledNotElapsedSchedulesExpiry(t *tes
 	if mailbox.ExpiresAt == nil || !mailbox.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("expected expiry scheduled for the mailbox's own expires_at %s, got %v", expiresAt, mailbox.ExpiresAt)
 	}
+	// ScheduleMailboxExpiry writes back the same expires_at the mailbox
+	// already held, so the assertion above alone can't distinguish
+	// "scheduled" from "did nothing" — assert last_payment_event_id
+	// advanced to this event's id too, proving applied == true and
+	// RecordPaymentEvent actually ran.
+	if mailbox.LastPaymentEventID != "evt_6" {
+		t.Fatalf("expected last_payment_event_id evt_6 (proving the schedule path actually ran), got %q", mailbox.LastPaymentEventID)
+	}
 }
 
 func TestHandlePaddleWebhookStaleOccurredAtIgnored(t *testing.T) {
@@ -562,5 +570,66 @@ func TestHandlePaddleWebhookAlreadyActiveDoesNotAdvanceDedupBaseline(t *testing.
 	}
 	if mailbox.LastPaymentEventAt == nil || !mailbox.LastPaymentEventAt.Equal(priorEventAt) {
 		t.Fatalf("expected last_payment_event_at unchanged at %s, got %v", priorEventAt, mailbox.LastPaymentEventAt)
+	}
+}
+
+// TestHandlePaddleWebhookAlreadyActiveNoOpStillPersistsSubscriptionIdentity
+// covers the round-2 regression: a mailbox activated OUTSIDE the webhook
+// path entirely (checkout-success/claim flows call MarkMailboxPaid
+// directly, e.g. handler.go's handlePolarSuccess-equivalent for Paddle)
+// has no subscription_id yet, so it can only be resolved by
+// custom_data.mailbox_id. When the subscription.created/activated webhook
+// for that same activation arrives afterward, MarkMailboxPaid no-ops
+// (already active) — but subscription_id/payment_provider must still get
+// persisted, since RecordPaymentIdentity/RecordPaymentEvent are the ONLY
+// writers of subscription_id anywhere in the codebase. Without this, R4's
+// join key stays empty forever for such a mailbox.
+func TestHandlePaddleWebhookAlreadyActiveNoOpStillPersistsSubscriptionIdentity(t *testing.T) {
+	expiresAt := time.Date(2026, 8, 27, 9, 0, 0, 0, time.UTC)
+	repo, handler := newPaddleWebhookHandler(&domain.Mailbox{
+		ID:               "mbx-1",
+		KeyFingerprint:   "edproof:key-1",
+		PaymentSessionID: "txn_original",
+		// SubscriptionID intentionally empty: this mailbox was activated
+		// via checkout-success/claim, never via a webhook.
+		Status:       domain.MailboxStatusActive,
+		PaidAt:       ptrTime(time.Date(2026, 6, 27, 9, 0, 0, 0, time.UTC)),
+		ExpiresAt:    &expiresAt,
+		IMAPUsername: "mbx_abc",
+		IMAPPassword: "secret",
+	})
+
+	body := `{
+		"event_id":"evt_late_activation",
+		"event_type":"subscription.activated",
+		"occurred_at":"2026-07-27T10:00:00Z",
+		"data":{
+			"id":"sub_new",
+			"custom_data":{"mailbox_id":"mbx-1"}
+		}
+	}`
+
+	rec := servePaddleWebhook(handler, body)
+
+	if rec.Code != 202 {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"ignored"`) {
+		t.Fatalf("expected ignored status (no-op activation), got %s", rec.Body.String())
+	}
+	mailbox := repo.byID["mbx-1"]
+	if mailbox.SubscriptionID != "sub_new" {
+		t.Fatalf("expected subscription_id persisted as sub_new despite the no-op, got %q", mailbox.SubscriptionID)
+	}
+	if mailbox.PaymentProvider != "paddle" {
+		t.Fatalf("expected payment_provider persisted as paddle, got %q", mailbox.PaymentProvider)
+	}
+	// The dedup/ordering baseline must still NOT advance — only identity
+	// was stamped, not the event baseline (round-1 Important #3).
+	if mailbox.LastPaymentEventID != "" {
+		t.Fatalf("expected dedup baseline to remain unset, got %q", mailbox.LastPaymentEventID)
+	}
+	if mailbox.LastPaymentEventAt != nil {
+		t.Fatalf("expected last_payment_event_at to remain unset, got %v", mailbox.LastPaymentEventAt)
 	}
 }

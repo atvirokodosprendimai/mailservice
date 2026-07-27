@@ -458,6 +458,43 @@ func (s *MailboxService) RecordPaymentEvent(ctx context.Context, mailboxID, prov
 	return s.repo.Update(ctx, mailbox)
 }
 
+// RecordPaymentIdentity persists a mailbox's payment provider identity
+// (payment_provider, subscription_id) WITHOUT touching the webhook
+// dedup/ordering baseline (last_payment_event_at/id). This is the
+// identity half of RecordPaymentEvent, split out for the case where a
+// webhook event confirms/resolves a mailbox's identity but doesn't itself
+// count as a new applied state change — e.g. a subscription.created/
+// activated redelivery on a mailbox that's already active because it was
+// activated directly via the checkout-success or claim flow (both call
+// MarkMailboxPaid outside the webhook path). RecordPaymentEvent/this
+// method are the only writers of subscription_id anywhere in the
+// codebase, so skipping this on the no-op path would leave R4's primary
+// join key empty for such mailboxes forever, forcing every later renewal
+// to depend on custom_data.mailbox_id propagating onto recurring
+// transactions instead.
+func (s *MailboxService) RecordPaymentIdentity(ctx context.Context, mailboxID, provider, subscriptionID string) error {
+	if provider == "" && subscriptionID == "" {
+		return nil
+	}
+	mailbox, err := s.repo.GetByID(ctx, mailboxID)
+	if err != nil {
+		return err
+	}
+	changed := false
+	if provider != "" && mailbox.PaymentProvider != provider {
+		mailbox.PaymentProvider = provider
+		changed = true
+	}
+	if subscriptionID != "" && mailbox.SubscriptionID != subscriptionID {
+		mailbox.SubscriptionID = subscriptionID
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return s.repo.Update(ctx, mailbox)
+}
+
 // ReconcileResult holds the outcome of a single mailbox reconciliation attempt.
 type ReconcileResult struct {
 	MailboxID string `json:"mailbox_id"`

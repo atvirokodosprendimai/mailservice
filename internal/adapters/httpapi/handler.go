@@ -1397,10 +1397,10 @@ func (h *Handler) resolvePaddleMailbox(ctx context.Context, subscriptionID, mail
 func (h *Handler) applyPaddleWebhookEvent(ctx context.Context, mailbox *domain.Mailbox, event *paddlePaymentEvent) (bool, error) {
 	switch event.EventType {
 	case paddlenotification.EventTypeNameSubscriptionCreated, paddlenotification.EventTypeNameSubscriptionActivated:
-		return h.markPaddleMailboxPaid(ctx, mailbox)
+		return h.markPaddleMailboxPaid(ctx, mailbox, event.SubscriptionID)
 	case paddlenotification.EventTypeNameTransactionCompleted:
 		if mailbox.Status == domain.MailboxStatusPendingPayment {
-			return h.markPaddleMailboxPaid(ctx, mailbox)
+			return h.markPaddleMailboxPaid(ctx, mailbox, event.SubscriptionID)
 		}
 		if event.SubscriptionID == "" || event.BillingPeriodEndsAt == nil {
 			return false, nil
@@ -1447,7 +1447,17 @@ func (h *Handler) applyPaddleWebhookEvent(ctx context.Context, mailbox *domain.M
 // actually changed anything, so the caller doesn't advance the event
 // dedup/ordering baseline for a call that no-opped (MarkMailboxPaid
 // short-circuits without mutation when the mailbox is already active).
-func (h *Handler) markPaddleMailboxPaid(ctx context.Context, mailbox *domain.Mailbox) (bool, error) {
+//
+// When it no-ops because the mailbox is already active, it still persists
+// subscriptionID/payment_provider via RecordPaymentIdentity: mailboxes
+// are routinely activated outside the webhook path entirely (checkout-
+// success and claim flows call MarkMailboxPaid directly), so a
+// subscription.created/activated redelivery arriving after that is the
+// only chance such a mailbox gets to have subscription_id populated —
+// skipping it would leave R4's join key empty and force every later
+// renewal to depend on custom_data.mailbox_id propagating onto recurring
+// transactions instead.
+func (h *Handler) markPaddleMailboxPaid(ctx context.Context, mailbox *domain.Mailbox, subscriptionID string) (bool, error) {
 	if strings.TrimSpace(mailbox.PaymentSessionID) == "" {
 		if h.logger != nil {
 			h.logger.Printf("paddle webhook ignored: mailbox_id=%s has no payment_session_id, refusing to activate", mailbox.ID)
@@ -1458,7 +1468,13 @@ func (h *Handler) markPaddleMailboxPaid(ctx context.Context, mailbox *domain.Mai
 	if _, err := h.mailboxService.MarkMailboxPaid(ctx, mailbox.PaymentSessionID); err != nil {
 		return false, err
 	}
-	return !alreadyActive, nil
+	if alreadyActive {
+		if err := h.mailboxService.RecordPaymentIdentity(ctx, mailbox.ID, "paddle", subscriptionID); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func (h *Handler) withAccountToken(next http.HandlerFunc) http.HandlerFunc {
