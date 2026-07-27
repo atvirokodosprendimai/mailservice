@@ -46,6 +46,14 @@ type Config struct {
 	PolarWebhookSecret    string
 	PolarGiftDiscountID   string
 	PolarGiftCouponCode   string
+	PaddleAPIKey          string
+	PaddleWebhookSecret   string
+	PaddlePriceID         string
+	PaddleDefaultPaymentLinkURL string
+	PaddleClientToken     string
+	PaddleEnvironment     string // "sandbox" or "live"
+	PaddleGiftDiscountID  string
+	PaddleGiftCouponCode  string
 	StripeSecretKey       string
 	StripeWebhookSecret string
 	StripeSuccessURL    string
@@ -94,6 +102,13 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("EDPROOF_HMAC_SECRET must be at least 32 bytes, got %d", len(edproofSecret))
 	}
 
+	paddleAPIKey := os.Getenv("PADDLE_API_KEY")
+	paddleEnv := getEnv("PADDLE_ENVIRONMENT", "sandbox")
+	paddleClientToken := os.Getenv("PADDLE_CLIENT_TOKEN")
+	if err := validatePaddleConfig(paddleAPIKey, paddleEnv, paddleClientToken); err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		HTTPAddr:            getEnv("HTTP_ADDR", ":8080"),
 		DatabaseMode:        dbMode,
@@ -132,6 +147,14 @@ func Load() (*Config, error) {
 		PolarWebhookSecret:    os.Getenv("POLAR_WEBHOOK_SECRET"),
 		PolarGiftDiscountID:   os.Getenv("POLAR_GIFT_DISCOUNT_ID"),
 		PolarGiftCouponCode:   os.Getenv("POLAR_GIFT_COUPON_CODE"),
+		PaddleAPIKey:          paddleAPIKey,
+		PaddleWebhookSecret:   os.Getenv("PADDLE_WEBHOOK_SECRET"),
+		PaddlePriceID:         os.Getenv("PADDLE_PRICE_ID"),
+		PaddleDefaultPaymentLinkURL: getEnv("PADDLE_DEFAULT_PAYMENT_LINK_URL", ""),
+		PaddleClientToken:     paddleClientToken,
+		PaddleEnvironment:     paddleEnv,
+		PaddleGiftDiscountID:  os.Getenv("PADDLE_GIFT_DISCOUNT_ID"),
+		PaddleGiftCouponCode:  os.Getenv("PADDLE_GIFT_COUPON_CODE"),
 		StripeSecretKey:       os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		StripeSuccessURL:    getEnv("STRIPE_SUCCESS_URL", "http://localhost:8080/payment/success"),
@@ -218,6 +241,37 @@ func validateNotifierProvider(provider string) error {
 		}
 	}
 	return nil
+}
+
+func validatePaddleConfig(apiKey, env, clientToken string) error {
+	// Only validate if PADDLE_API_KEY is set (indicating Paddle is configured).
+	if apiKey == "" {
+		return nil
+	}
+
+	if env != "sandbox" && env != "live" {
+		return fmt.Errorf("PADDLE_ENVIRONMENT must be 'sandbox' or 'live', got %q", env)
+	}
+
+	// Validate API key prefix matches environment.
+	expectedPrefix := "pdl_sdbx_apikey_"
+	if env == "live" {
+		expectedPrefix = "pdl_live_apikey_"
+	}
+	if !hasPrefix(apiKey, expectedPrefix) {
+		return fmt.Errorf("PADDLE_API_KEY does not match PADDLE_ENVIRONMENT=%s: key must start with %q", env, expectedPrefix)
+	}
+
+	// Validate client token is not an API key.
+	if clientToken != "" && (hasPrefix(clientToken, "pdl_sdbx_apikey_") || hasPrefix(clientToken, "pdl_live_apikey_")) {
+		return fmt.Errorf("PADDLE_CLIENT_TOKEN must not be an API key (starting with pdl_*_apikey_); got credential shaped like an API key")
+	}
+
+	return nil
+}
+
+func hasPrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
 
 func getEnvInt(key string, fallback int) int {
