@@ -1,0 +1,51 @@
+internal/adapters/repository/mailbox_gorm_test.go
+  s_93f3b6714540ea::t_d39eab8b1c4f65 205-258
+internal/adapters/repository/mailbox_gorm.go
+  s_93f3b6714540ea::t_6256d79313ce18 186-197
+  s_93f3b6714540ea::t_dde6884ea8bc1d 35-38
+  s_93f3b6714540ea::t_9b0887c3a3500c 66-69
+  s_93f3b6714540ea::t_5b382e87956d3a 16-34,47-65,79-95
+  s_93f3b6714540ea::t_776e9b4df1e99f 96-99
+internal/core/service/mailbox_service.go
+  s_93f3b6714540ea::t_ceb274e7d7eac4 419-460
+internal/adapters/httpapi/handler_test.go
+  s_93f3b6714540ea::t_4002b4a0028308 525,548-553,575-579
+  s_93f3b6714540ea::t_0c15c7e91f355b 580,611-617
+internal/core/service/mailbox_service_test.go
+  s_93f3b6714540ea::t_4571ffa938e2cf 1251-1254
+internal/adapters/httpapi/handler.go
+  s_93f3b6714540ea::t_b417e466482267 114
+  s_93f3b6714540ea::t_747d9e172e29bc 1298-1440
+  s_93f3b6714540ea::t_e28a103be7c3f2 16
+internal/domain/mailbox.go
+  s_93f3b6714540ea::t_3e51237c1362b3 33-36
+  s_93f3b6714540ea::t_5b382e87956d3a 14-32
+internal/core/ports/ports.go
+  s_93f3b6714540ea::t_5e057fec9f1a65 51
+internal/adapters/httpapi/paddle_webhook.go
+  s_93f3b6714540ea::t_b48172ab83c94a 63-64,80,82,87-96,102-103,112,116,125,131-141,143
+  s_93f3b6714540ea::t_80a3f3c2967e13 97-101,105,107-108
+  s_93f3b6714540ea::t_c93054bb3cd546 59-62,65-79,81,83-86,104,106,109-111,113-115,117-124,126-130,142,144-174
+  s_93f3b6714540ea::t_4814445ab441f6 5,14
+internal/adapters/httpapi/paddle_webhook_handler_test.go
+  s_93f3b6714540ea::t_7a188ea869f7ba 1-4,6-135,141-423,425-432
+  s_93f3b6714540ea::t_452449d1b46157 424
+  s_93f3b6714540ea::t_94ee660e9df4ab 136-140
+  s_93f3b6714540ea::t_7b1af33597461a 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "fcdf1f07bd8c4abf9d7850d2929a632f1cdc0bfb",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
