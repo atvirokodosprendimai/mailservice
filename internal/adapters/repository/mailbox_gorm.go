@@ -23,7 +23,7 @@ type mailboxModel struct {
 	IMAPUsername     string `gorm:"not null;uniqueIndex"`
 	IMAPPassword     string `gorm:"not null"`
 	AccessToken      string `gorm:"not null;uniqueIndex"`
-	PaymentSessionID string `gorm:"column:stripe_session_id;not null"`
+	PaymentSessionID string `gorm:"column:payment_session_id;not null"`
 	PaymentURL       string `gorm:"not null"`
 	Status           string `gorm:"not null;index"`
 	GrantedMonths    int    `gorm:"not null;default:0"`
@@ -161,7 +161,7 @@ func (r *MailboxRepository) ListPendingPayment(ctx context.Context) ([]domain.Ma
 
 func (r *MailboxRepository) GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error) {
 	var model mailboxModel
-	err := r.db.WithContext(ctx).First(&model, "stripe_session_id = ?", sessionID).Error
+	err := r.db.WithContext(ctx).First(&model, "payment_session_id = ?", sessionID).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ports.ErrMailboxNotFound
