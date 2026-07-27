@@ -1,0 +1,49 @@
+internal/adapters/httpapi/handler.go
+  s_93f3b6714540ea::t_b1655780063877 1405-1421
+  s_93f3b6714540ea::t_9f12f00c1c7176 1322,1333-1334
+  s_93f3b6714540ea::t_81969771c7a9c2 1335
+internal/adapters/payment/paddle_gateway_metrics_test.go
+  s_93f3b6714540ea::t_b733169ef17d48 1-113
+internal/core/service/mailbox_service_test.go
+  s_93f3b6714540ea::t_0adfcf9c1a6208 959-1005
+  s_93f3b6714540ea::t_8b45751031544d 11
+  s_93f3b6714540ea::t_5cf1d8da2d6364 1417,1420,1423-1425
+cmd/app/main_test.go
+  s_93f3b6714540ea::t_408bcf10bd8729 32
+  s_93f3b6714540ea::t_4778e8c0293e7b 49,64,84,103
+internal/adapters/httpapi/handler_test.go
+  s_93f3b6714540ea::t_3709ee5190b3e3 168-239
+cmd/app/main.go
+  s_93f3b6714540ea::t_4454d3f1cb6c51 75
+  s_93f3b6714540ea::t_3383d7e17b8ece 203,214
+internal/adapters/httpapi/paddle_webhook_metrics_test.go
+  s_93f3b6714540ea::t_c9ec530ad4a0c7 1-150
+internal/core/service/mailbox_service.go
+  s_93f3b6714540ea::t_5946c95c3f69ba 148
+  s_93f3b6714540ea::t_da1c7d9d078843 117
+  s_93f3b6714540ea::t_0d0595d47dc91d 877-886
+  s_93f3b6714540ea::t_0d2f081ac95592 189
+internal/platform/metrics/metrics.go
+  s_93f3b6714540ea::t_bc8d8e8a65f621 365-383,389-407
+internal/adapters/payment/paddle_gateway.go
+  s_93f3b6714540ea::t_d732bbacd9d112 73
+  s_93f3b6714540ea::t_b56f51cdaa3675 121,129-130
+  s_93f3b6714540ea::t_6ab5520fadeb32 17
+  s_93f3b6714540ea::t_f59bbbc51b1d27 41-44,51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8eb51d7a47b16c62374ea90e6148a9acd12f3bc1",
+  "prompts": {},
+  "sessions": {
+    "s_93f3b6714540ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f16908ec-c76c-4e23-83d9-e4fea51c52e8",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
