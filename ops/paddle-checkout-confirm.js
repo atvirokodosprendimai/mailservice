@@ -13,9 +13,13 @@
  *   1. Opens our own checkout page (same-origin, stable selectors) and
  *      clicks "Open payment window" to trigger Paddle.Checkout.open().
  *   2. Waits on Paddle.js's own documented eventCallback events
- *      (checkout.completed / checkout.error / checkout.closed), which the
- *      checkout page pushes onto window.__paddleEvents specifically for
- *      this script — NOT on guessed third-party DOM state.
+ *      (checkout.loaded, then later checkout.completed / checkout.error /
+ *      checkout.closed), which the checkout page pushes onto
+ *      window.__paddleEvents specifically for this script — NOT on guessed
+ *      third-party DOM state or a fixed sleep. checkout.loaded in particular
+ *      gates every field/submit probe below: the overlay iframe mounts
+ *      asynchronously, so probing before it fires finds nothing regardless
+ *      of whether the selectors are correct.
  *   3. Best-effort fills common card/contact fields inside the overlay
  *      iframe using Paddle's documented sandbox test card. This step is
  *      UNVERIFIED against a live Paddle sandbox checkout (Paddle does not
@@ -57,6 +61,17 @@ async function paddleEvents(page) {
   return page.evaluate(() => window.__paddleEvents || []);
 }
 
+// Locator.isVisible({ timeout }) does NOT wait — Playwright ignores that
+// option and returns the current DOM state immediately. waitForVisible does
+// an actual bounded wait via Locator.waitFor(), which is what every probe
+// into the (asynchronously-injected, cross-origin) overlay iframe needs.
+async function waitForVisible(locator, timeout) {
+  return locator
+    .waitFor({ state: "visible", timeout })
+    .then(() => true)
+    .catch(() => false);
+}
+
 // Best-effort fill: tries each candidate locator in order, fills the first
 // one found visible, and silently continues if none match. Paddle does not
 // publish overlay field selectors, so this list is a defensive guess, not a
@@ -64,7 +79,7 @@ async function paddleEvents(page) {
 async function tryFill(frame, candidates, value, label) {
   for (const selector of candidates) {
     const field = frame.locator(selector).first();
-    if (await field.isVisible({ timeout: 1500 }).catch(() => false)) {
+    if (await waitForVisible(field, 1500)) {
       await field.fill(value).catch(() => {});
       console.log(`  filled ${label} via ${selector}`);
       return true;
@@ -96,6 +111,21 @@ async function main() {
     await openBtn.click();
     console.log("  clicked 'Open payment window'");
 
+    // The overlay iframe mounts asynchronously (cross-origin script load +
+    // render) — wait on Paddle.js's own "checkout.loaded" event before
+    // probing for fields, otherwise every probe below races the iframe and
+    // finds nothing, regardless of whether the selectors are correct.
+    try {
+      await page.waitForFunction(
+        () => (window.__paddleEvents || []).includes("checkout.loaded"),
+        null,
+        { timeout: TIMEOUT }
+      );
+      console.log("  overlay loaded (checkout.loaded observed)");
+    } catch {
+      fail("Paddle checkout overlay never fired checkout.loaded — it did not load");
+    }
+
     // Paddle.js injects the overlay as an iframe. Its exact origin/selector
     // is not published; match any iframe Paddle.js adds to the page.
     const overlayFrame = page.frameLocator('iframe[name^="paddle"], iframe[src*="paddle.com"]').first();
@@ -123,7 +153,7 @@ async function main() {
     let submitted = false;
     for (const selector of submitCandidates) {
       const btn = overlayFrame.locator(selector).first();
-      if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await waitForVisible(btn, 2000)) {
         await btn.click();
         console.log(`  clicked submit via ${selector}`);
         submitted = true;
