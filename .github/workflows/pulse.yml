@@ -18,8 +18,8 @@ jobs:
       CGO_ENABLED: "0"
       TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
       TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
-      POLAR_PULSE_TOKEN: ${{ secrets.POLAR_PULSE_TOKEN }}
-      POLAR_ORGANIZATION_ID: ${{ vars.POLAR_ORGANIZATION_ID }}
+      PADDLE_PULSE_TOKEN: ${{ secrets.PADDLE_PULSE_TOKEN }}
+      PADDLE_PULSE_BASE_URL: ${{ vars.PADDLE_PULSE_BASE_URL }}
       ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
       PUBLIC_BASE_URL: https://truevipaccess.com
     steps:
