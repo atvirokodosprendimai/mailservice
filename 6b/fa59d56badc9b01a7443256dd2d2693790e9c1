@@ -1,0 +1,20 @@
+.github/workflows/deploy-smoke.yml
+  s_dd5677ae5d615d::t_bb01c1dd799752 297-313
+  s_dd5677ae5d615d::t_8f2d64c0e80933 334-349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "6bfa59d56badc9b01a7443256dd2d2693790e9c1",
+  "prompts": {},
+  "sessions": {
+    "s_dd5677ae5d615d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e3daad70-69c6-496c-a9a7-5695b7d14c6c",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
