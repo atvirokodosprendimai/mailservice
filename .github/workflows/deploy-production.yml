@@ -230,6 +230,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
       - name: Detect S3 cache configuration
         id: s3cache
         env:
@@ -308,20 +311,6 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
         env:
           DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
-
-      - name: Upload repo to host
-        run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" 'install -d -m 700 /root/mailservice'
-          rsync -az --delete \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude 'result' \
-            --exclude '.direnv' \
-            -e 'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15' \
-            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:/root/mailservice/"
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
       - name: Write environment file on host
         run: |
@@ -479,22 +468,28 @@ jobs:
 
       - name: Apply NixOS configuration
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" "
-            set -eu
-            cd /root/mailservice
-            if [ -n \"${NIX_CACHE_S3_BUCKET}\" ] && [ -n \"${NIX_CACHE_S3_ENDPOINT}\" ] && [ -n \"${NIX_CACHE_S3_REGION}\" ]; then
-              nixos-rebuild switch --flake .#truevipaccess --print-build-logs \
-                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\"
-            else
-              nixos-rebuild switch --flake .#truevipaccess --print-build-logs
-            fi
-          "
+          export NIX_SSHOPTS="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15"
+          if [ -n "${NIX_CACHE_S3_BUCKET}" ] && [ -n "${NIX_CACHE_S3_ENDPOINT}" ] && [ -n "${NIX_CACHE_S3_REGION}" ]; then
+            nix run nixpkgs#nixos-rebuild -- switch \
+              --flake .#truevipaccess \
+              --target-host "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              --print-build-logs \
+              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+          else
+            nix run nixpkgs#nixos-rebuild -- switch \
+              --flake .#truevipaccess \
+              --target-host "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              --print-build-logs
+          fi
+          echo 'nixos-rebuild completed (service verified by health check)'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
           NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
           NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
 
       - name: Fix env file ownership after NixOS apply
         run: |
