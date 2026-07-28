@@ -294,6 +294,23 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
+      - name: Host resource preflight
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
+            set -eu
+            echo "=== uptime / load ==="; uptime
+            echo "=== cpu ==="; nproc
+            echo "=== memory (MiB) ==="; free -m
+            echo "=== swap ==="; swapon --show || echo "(no swap)"
+            echo "=== disk ==="; df -h / /nix 2>/dev/null || df -h /
+            echo "=== top rss ==="; ps -eo rss,comm --sort=-rss | head -12
+            echo "=== recent oom kills ==="
+            journalctl -k --no-pager --since '-30 days' | grep -iE 'out of memory|oom-kill|killed process' | tail -20 || echo "(none)"
+          EOF
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+
       - name: Apply NixOS configuration
         run: |
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" "
@@ -313,6 +330,22 @@ jobs:
           NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
           NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
           NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+
+      - name: Host post-mortem after failed apply
+        if: failure()
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
+            set +e
+            echo "=== kernel oom kills in the last hour ==="
+            journalctl -k --no-pager --since '-1 hour' | grep -iE 'out of memory|oom-kill|killed process' | tail -30
+            echo "=== memory now (MiB) ==="; free -m
+            echo "=== disk now ==="; df -h / /nix 2>/dev/null || df -h /
+            echo "=== nix-daemon journal tail ==="
+            journalctl -u nix-daemon --no-pager -n 40
+          EOF
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
       - name: Fix env file ownership after NixOS apply
         run: |
