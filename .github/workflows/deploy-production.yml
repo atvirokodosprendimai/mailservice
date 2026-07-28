@@ -22,13 +22,8 @@ jobs:
 
   build:
     needs: smoke-test
-    outputs:
-      s3_cache_enabled: ${{ steps.s3cache.outputs.enabled }}
-      s3_cache_upload_enabled: ${{ steps.s3cache.outputs.upload_enabled }}
-      s3_cache_bucket: ${{ steps.s3cache.outputs.bucket }}
-      s3_cache_endpoint: ${{ steps.s3cache.outputs.endpoint }}
-      s3_cache_region: ${{ steps.s3cache.outputs.region }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment:
       name: production
     permissions:
@@ -217,6 +212,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment:
       name: production
     permissions:
@@ -233,6 +229,69 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Detect S3 cache configuration
+        id: s3cache
+        env:
+          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
+          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
+          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
+          NIX_CACHE_S3_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          NIX_CACHE_S3_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
+          TOFU_STATE_BUCKET: ${{ secrets.TOFU_STATE_BUCKET }}
+          TOFU_STATE_ENDPOINT: ${{ secrets.TOFU_STATE_ENDPOINT }}
+          TOFU_STATE_REGION: ${{ secrets.TOFU_STATE_REGION }}
+          TOFU_STATE_ACCESS_KEY: ${{ secrets.TOFU_STATE_ACCESS_KEY }}
+          TOFU_STATE_SECRET_KEY: ${{ secrets.TOFU_STATE_SECRET_KEY }}
+        run: |
+          set -eu
+
+          bucket="${NIX_CACHE_S3_BUCKET:-}"
+          endpoint="${NIX_CACHE_S3_ENDPOINT:-}"
+          region="${NIX_CACHE_S3_REGION:-}"
+
+          if [ -z "$bucket" ] && [ -n "${TOFU_STATE_BUCKET:-}" ]; then
+            bucket="${TOFU_STATE_BUCKET}-nix-cache"
+          fi
+
+          if [ -z "$endpoint" ] && [ -n "${TOFU_STATE_ENDPOINT:-}" ]; then
+            endpoint="$TOFU_STATE_ENDPOINT"
+          fi
+
+          if [ -z "$region" ] && [ -n "${TOFU_STATE_REGION:-}" ]; then
+            region="$TOFU_STATE_REGION"
+          fi
+
+          endpoint="${endpoint#http://}"
+          endpoint="${endpoint#https://}"
+
+          if [ -z "$region" ] && [ -n "$endpoint" ]; then
+            region="${endpoint%%.*}"
+          fi
+          if [ "$region" = "eu-central-1" ] || [ "$region" = "eu-central" ]; then
+            region="${endpoint%%.*}"
+          fi
+
+          if [ -n "$bucket" ] && [ -n "$endpoint" ] && [ -n "$region" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          access_key="${NIX_CACHE_S3_ACCESS_KEY_ID:-}"
+          secret_key="${NIX_CACHE_S3_SECRET_ACCESS_KEY:-}"
+          if [ -n "$bucket" ] && [ -n "$endpoint" ] && [ -n "$region" ] && [ -n "$access_key" ] && [ -n "$secret_key" ]; then
+            echo "upload_enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "upload_enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+          echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
+          echo "region=$region" >> "$GITHUB_OUTPUT"
 
       - name: Compute build metadata
         run: |
@@ -252,20 +311,6 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
         env:
           DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
-
-      - name: Upload repo to host
-        run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'install -d -m 700 /root/mailservice'
-          rsync -az --delete \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude 'result' \
-            --exclude '.direnv' \
-            -e 'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts' \
-            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:/root/mailservice/"
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
       - name: Write environment file on host
         run: |
@@ -304,9 +349,9 @@ jobs:
           CACHE_BUSTER=${CACHE_BUSTER}
           ENVCONTENT
           sed -i 's/^[[:space:]]*//' "$tmp_file"
-          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/mailservice-env-stage"
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/mailservice-env-stage"
           rm -f "$tmp_file"
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             install -d -m 750 /var/lib/secrets
             if getent group mailservice >/dev/null 2>&1; then
@@ -352,7 +397,7 @@ jobs:
 
       - name: Write cloudflared environment file on host
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" "
             set -eu
             install -d -m 750 /var/lib/secrets
             printf 'TUNNEL_TOKEN=%s\n' '${CLOUDFLARE_TUNNEL_TOKEN}' > /tmp/cloudflared-env-stage
@@ -380,9 +425,9 @@ jobs:
           AWS_SECRET_ACCESS_KEY=${BACKUP_S3_SECRET_KEY}
           ENVCONTENT
           sed -i 's/^[[:space:]]*//' "$tmp_file"
-          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/backup-env-stage"
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/tmp/backup-env-stage"
           rm -f "$tmp_file"
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             install -d -m 750 /var/lib/secrets
             if getent group mailservice >/dev/null 2>&1; then
@@ -403,7 +448,7 @@ jobs:
 
       - name: Validate required env vars on host
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
             set -eu
             env_file="/var/lib/secrets/mailservice.env"
             missing=()
@@ -423,26 +468,32 @@ jobs:
 
       - name: Apply NixOS configuration
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
-            set -eu
-            cd /root/mailservice
-            if [ -n \"${NIX_CACHE_S3_BUCKET}\" ] && [ -n \"${NIX_CACHE_S3_ENDPOINT}\" ] && [ -n \"${NIX_CACHE_S3_REGION}\" ]; then
-              nixos-rebuild switch --flake .#truevipaccess \
-                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\"
-            else
-              nixos-rebuild switch --flake .#truevipaccess
-            fi
-          "
+          export NIX_SSHOPTS="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15"
+          if [ -n "${NIX_CACHE_S3_BUCKET}" ] && [ -n "${NIX_CACHE_S3_ENDPOINT}" ] && [ -n "${NIX_CACHE_S3_REGION}" ]; then
+            nix run nixpkgs#nixos-rebuild -- switch \
+              --flake .#truevipaccess \
+              --target-host "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              --print-build-logs \
+              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+          else
+            nix run nixpkgs#nixos-rebuild -- switch \
+              --flake .#truevipaccess \
+              --target-host "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              --print-build-logs
+          fi
+          echo 'nixos-rebuild completed (service verified by health check)'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          NIX_CACHE_S3_BUCKET: ${{ needs.build.outputs.s3_cache_bucket }}
-          NIX_CACHE_S3_ENDPOINT: ${{ needs.build.outputs.s3_cache_endpoint }}
-          NIX_CACHE_S3_REGION: ${{ needs.build.outputs.s3_cache_region }}
+          NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
+          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
 
       - name: Fix env file ownership after NixOS apply
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             if getent group mailservice >/dev/null 2>&1; then
               chown root:mailservice /var/lib/secrets/mailservice.env
@@ -455,7 +506,7 @@ jobs:
 
       - name: Restart API to pick new env file
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             sudo systemctl restart mailservice-api.service
           '
         env:
@@ -464,7 +515,7 @@ jobs:
 
       - name: Health check
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             curl --fail --silent --show-error \
               --retry 10 --retry-delay 3 --retry-connrefused \
               http://127.0.0.1:8080/healthz
@@ -475,7 +526,7 @@ jobs:
 
       - name: Ensure ACME certificates are current
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             cert_dir="/var/lib/acme/mail.'"${MAIL_DOMAIN}"'"
             needs_renewal=false

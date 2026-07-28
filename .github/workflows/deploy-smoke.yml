@@ -13,12 +13,8 @@ permissions:
 
 jobs:
   build:
-    outputs:
-      s3_cache_enabled: ${{ steps.s3cache.outputs.enabled }}
-      s3_cache_bucket: ${{ steps.s3cache.outputs.bucket }}
-      s3_cache_endpoint: ${{ steps.s3cache.outputs.endpoint }}
-      s3_cache_region: ${{ steps.s3cache.outputs.region }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment:
       name: smoke
     permissions:
@@ -101,6 +97,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment:
       name: smoke
     permissions:
@@ -117,6 +114,54 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Detect S3 cache configuration
+        id: s3cache
+        env:
+          NIX_CACHE_S3_BUCKET: ${{ vars.NIX_CACHE_S3_BUCKET }}
+          NIX_CACHE_S3_ENDPOINT: ${{ vars.NIX_CACHE_S3_ENDPOINT }}
+          NIX_CACHE_S3_REGION: ${{ vars.NIX_CACHE_S3_REGION }}
+          NIX_CACHE_S3_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          NIX_CACHE_S3_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
+          TOFU_STATE_BUCKET: ${{ secrets.TOFU_STATE_BUCKET }}
+          TOFU_STATE_ENDPOINT: ${{ secrets.TOFU_STATE_ENDPOINT }}
+          TOFU_STATE_REGION: ${{ secrets.TOFU_STATE_REGION }}
+        run: |
+          set -eu
+
+          bucket="${NIX_CACHE_S3_BUCKET:-}"
+          endpoint="${NIX_CACHE_S3_ENDPOINT:-}"
+          region="${NIX_CACHE_S3_REGION:-}"
+
+          if [ -z "$bucket" ] && [ -n "${TOFU_STATE_BUCKET:-}" ]; then
+            bucket="${TOFU_STATE_BUCKET}-nix-cache"
+          fi
+          if [ -z "$endpoint" ] && [ -n "${TOFU_STATE_ENDPOINT:-}" ]; then
+            endpoint="$TOFU_STATE_ENDPOINT"
+          fi
+          if [ -z "$region" ] && [ -n "${TOFU_STATE_REGION:-}" ]; then
+            region="$TOFU_STATE_REGION"
+          fi
+
+          endpoint="${endpoint#http://}"
+          endpoint="${endpoint#https://}"
+
+          if [ -z "$region" ] && [ -n "$endpoint" ]; then
+            region="${endpoint%%.*}"
+          fi
+
+          if [ -n "$bucket" ] && [ -n "$endpoint" ] && [ -n "$region" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+          echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
+          echo "region=$region" >> "$GITHUB_OUTPUT"
 
       - name: Compute build metadata
         run: |
@@ -136,20 +181,6 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
         env:
           DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
-
-      - name: Upload repo to host
-        run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'install -d -m 700 /root/mailservice'
-          rsync -az --delete \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude 'result' \
-            --exclude '.direnv' \
-            -e 'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts' \
-            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:/root/mailservice/"
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
       - name: Write environment file on host
         run: |
@@ -181,10 +212,10 @@ jobs:
             printf 'ADMIN_API_KEY=%s\n' "$ADMIN_API_KEY"
           } > "$tmp_file"
           # Stage env file into a private directory on the remote host (not /tmp).
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'install -d -m 700 /root/.mailservice-staging'
-          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/root/.mailservice-staging/env-stage"
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" 'install -d -m 700 /root/.mailservice-staging'
+          scp -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "$tmp_file" "${DEPLOY_USER}@${DEPLOY_HOST}:/root/.mailservice-staging/env-stage"
           rm -f "$tmp_file"
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             install -d -m 750 /var/lib/secrets
             chmod 600 /root/.mailservice-staging/env-stage
@@ -221,7 +252,7 @@ jobs:
 
       - name: Write Coroot agent env file on host
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" "
             set -eu
             install -d -m 750 /var/lib/secrets
             printf 'API_KEY=%s\n' '${COROOT_API_KEY}' > /var/lib/secrets/coroot.env
@@ -234,7 +265,7 @@ jobs:
 
       - name: Validate required env vars on host
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
             set -eu
             env_file="/var/lib/secrets/mailservice.env"
             missing=()
@@ -252,29 +283,87 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
-      - name: Apply NixOS configuration
+      - name: Host resource preflight
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" "
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
             set -eu
-            cd /root/mailservice
-            if [ -n \"${NIX_CACHE_S3_BUCKET}\" ] && [ -n \"${NIX_CACHE_S3_ENDPOINT}\" ] && [ -n \"${NIX_CACHE_S3_REGION}\" ]; then
-              nixos-rebuild switch --flake .#smoke \
-                --option extra-substituters \"s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}\" || true
-            else
-              nixos-rebuild switch --flake .#smoke || true
-            fi
-            echo 'nixos-rebuild completed (service verified by health check)'
-          "
+            echo "=== uptime / load ==="; uptime
+            echo "=== cpu ==="; nproc
+            echo "=== memory (MiB) ==="; free -m
+            echo "=== swap ==="; swapon --show || echo "(no swap)"
+            echo "=== disk ==="; df -h / /nix 2>/dev/null || df -h /
+            echo "=== top rss ==="; ps -eo rss,comm --sort=-rss | head -12
+            echo "=== recent oom kills ==="
+            journalctl -k --no-pager --since '-30 days' | grep -iE 'out of memory|oom-kill|killed process' | tail -20 || echo "(none)"
+            echo "=== meminfo (where the unaccounted ~2G lives) ==="
+            grep -E 'MemTotal|MemFree|MemAvailable|Buffers|Cached|SwapTotal|Shmem|Slab|SReclaimable|SUnreclaim|KernelStack|PageTables|VmallocUsed|Percpu|AnonPages|Mapped' /proc/meminfo
+            echo "=== top slab caches ==="
+            slabtop -o -s c 2>/dev/null | head -20 || sort -k3 -rn /proc/slabinfo 2>/dev/null | head -20 || echo "(slab info unavailable)"
+            echo "=== tmpfs usage ==="
+            df -h -t tmpfs 2>/dev/null || echo "(no tmpfs)"
+            echo "=== memory by cgroup slice ==="
+            for c in /sys/fs/cgroup/*.slice /sys/fs/cgroup/*.scope; do
+              [ -r "$c/memory.current" ] || continue
+              printf '%12s  %s\n' "$(( $(cat "$c/memory.current") / 1048576 ))MiB" "$c"
+            done | sort -rn | head -10
+            echo "=== sum of process RSS (MiB) ==="
+            ps -eo rss --no-headers | awk '{s+=$1} END {print s/1024}'
+            echo "=== system-wide open files (allocated / free / max) ==="
+            cat /proc/sys/fs/file-nr
+            echo "=== top fd holders ==="
+            for p in /proc/[0-9]*; do
+              n=$(ls "$p/fd" 2>/dev/null | wc -l) || continue
+              [ "$n" -gt 0 ] && printf '%8s  %s  %s\n' "$n" "${p#/proc/}" "$(cat "$p/comm" 2>/dev/null)"
+            done | sort -rn | head -10
+          EOF
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          NIX_CACHE_S3_BUCKET: ${{ needs.build.outputs.s3_cache_bucket }}
-          NIX_CACHE_S3_ENDPOINT: ${{ needs.build.outputs.s3_cache_endpoint }}
-          NIX_CACHE_S3_REGION: ${{ needs.build.outputs.s3_cache_region }}
+
+      - name: Apply NixOS configuration
+        run: |
+          export NIX_SSHOPTS="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15"
+          if [ -n "${NIX_CACHE_S3_BUCKET}" ] && [ -n "${NIX_CACHE_S3_ENDPOINT}" ] && [ -n "${NIX_CACHE_S3_REGION}" ]; then
+            nix run nixpkgs#nixos-rebuild -- switch \
+              --flake .#smoke \
+              --target-host "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              --print-build-logs \
+              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+          else
+            nix run nixpkgs#nixos-rebuild -- switch \
+              --flake .#smoke \
+              --target-host "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              --print-build-logs
+          fi
+          echo 'nixos-rebuild completed (service verified by health check)'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          NIX_CACHE_S3_BUCKET: ${{ steps.s3cache.outputs.bucket }}
+          NIX_CACHE_S3_ENDPOINT: ${{ steps.s3cache.outputs.endpoint }}
+          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
+
+      - name: Host post-mortem after failed apply
+        if: failure()
+        run: |
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" 'bash -se' <<'EOF'
+            set +e
+            echo "=== kernel oom kills in the last hour ==="
+            journalctl -k --no-pager --since '-1 hour' | grep -iE 'out of memory|oom-kill|killed process' | tail -30
+            echo "=== memory now (MiB) ==="; free -m
+            echo "=== disk now ==="; df -h / /nix 2>/dev/null || df -h /
+            echo "=== nix-daemon journal tail ==="
+            journalctl -u nix-daemon --no-pager -n 40
+          EOF
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
 
       - name: Fix env file ownership after NixOS apply
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             if getent group mailservice >/dev/null 2>&1; then
               chown root:mailservice /var/lib/secrets/mailservice.env
@@ -286,7 +375,7 @@ jobs:
 
       - name: Restart API to pick new env file
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             sudo systemctl restart mailservice-api.service
             sleep 5
             if ! systemctl is-active --quiet mailservice-api.service; then
@@ -300,7 +389,7 @@ jobs:
 
       - name: Health check
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             curl --fail --silent --show-error \
               --retry 15 --retry-delay 5 --retry-connrefused \
               http://127.0.0.1:8080/healthz
@@ -311,7 +400,7 @@ jobs:
 
       - name: Ensure ACME certificates are current
         run: |
-          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts "${DEPLOY_USER}@${DEPLOY_HOST}" '
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o ServerAliveInterval=30 -o ServerAliveCountMax=20 -o TCPKeepAlive=yes -o ConnectTimeout=15 "${DEPLOY_USER}@${DEPLOY_HOST}" '
             set -eu
             for domain in mail.'"${MAIL_DOMAIN}"' '"${MAIL_DOMAIN}"'; do
               cert_dir="/var/lib/acme/${domain}"
