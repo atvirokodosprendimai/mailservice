@@ -1,0 +1,19 @@
+.github/workflows/deploy-smoke.yml
+  s_0c202e1148d539::t_91e4330e8956a0 118-120,318-331,338-339
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "177e3f06625ce6f486c6204aee2d8895bd0aed6c",
+  "prompts": {},
+  "sessions": {
+    "s_0c202e1148d539": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa7a8-ae11-79e2-8162-ca5725921b35",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
