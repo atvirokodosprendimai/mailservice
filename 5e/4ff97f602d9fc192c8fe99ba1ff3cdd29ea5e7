@@ -1,0 +1,19 @@
+.github/workflows/deploy-production.yml
+  s_acc7e1d9fb5f1b::t_b900a06e374b54 233-235,471-484,491-492
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5e4ff97f602d9fc192c8fe99ba1ff3cdd29ea5e7",
+  "prompts": {},
+  "sessions": {
+    "s_acc7e1d9fb5f1b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa9a2-59f6-7830-ad2e-145aeac2c804",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
