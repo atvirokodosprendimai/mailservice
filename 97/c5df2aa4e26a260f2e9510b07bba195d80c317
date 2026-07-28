@@ -1,0 +1,23 @@
+.github/workflows/deploy-smoke.yml
+  s_3bc364eab59d79::t_42118d521ba911 184,190,226-227,229,266,279,299,319,331,345,356
+  s_3bc364eab59d79::t_6de2a15086ae34 17,100,118-162,303-304,306,313-315
+.github/workflows/deploy-production.yml
+  s_3bc364eab59d79::t_6de2a15086ae34 26,215,233-292,486,489,495-497
+  s_3bc364eab59d79::t_42118d521ba911 314,320,363,365,411,439,441,462,482,501,514,523,534
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "97c5df2aa4e26a260f2e9510b07bba195d80c317",
+  "prompts": {},
+  "sessions": {
+    "s_3bc364eab59d79": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fa781-3e67-7ad1-b34f-0c49f9fdc265",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
