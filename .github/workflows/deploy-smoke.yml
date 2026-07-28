@@ -308,6 +308,13 @@ jobs:
             done | sort -rn | head -10
             echo "=== sum of process RSS (MiB) ==="
             ps -eo rss --no-headers | awk '{s+=$1} END {print s/1024}'
+            echo "=== system-wide open files (allocated / free / max) ==="
+            cat /proc/sys/fs/file-nr
+            echo "=== top fd holders ==="
+            for p in /proc/[0-9]*; do
+              n=$(ls "$p/fd" 2>/dev/null | wc -l) || continue
+              [ "$n" -gt 0 ] && printf '%8s  %s  %s\n' "$n" "${p#/proc/}" "$(cat "$p/comm" 2>/dev/null)"
+            done | sort -rn | head -10
           EOF
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
