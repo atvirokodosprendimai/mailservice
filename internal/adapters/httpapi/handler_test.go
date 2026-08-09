@@ -522,6 +522,7 @@ type httpMailboxRepo struct {
 	byID                          map[string]*domain.Mailbox
 	byPaymentSession              map[string]*domain.Mailbox
 	byKeyFingerprint              map[string]*domain.Mailbox
+	byActivationTokenHash         map[string]*domain.Mailbox
 	activeOrPendingByBillingEmail map[string]*domain.Mailbox
 	getByIDCount                  int
 	updateCount                   int
@@ -544,6 +545,12 @@ func (r *httpMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) err
 	if mailbox.PaymentSessionID != "" {
 		r.byPaymentSession[mailbox.PaymentSessionID] = mailbox
 	}
+	if r.byActivationTokenHash == nil {
+		r.byActivationTokenHash = map[string]*domain.Mailbox{}
+	}
+	if mailbox.ActivationTokenHash != "" {
+		r.byActivationTokenHash[mailbox.ActivationTokenHash] = mailbox
+	}
 	return nil
 }
 
@@ -558,6 +565,12 @@ func (r *httpMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) err
 	}
 	if mailbox.PaymentSessionID != "" {
 		r.byPaymentSession[mailbox.PaymentSessionID] = mailbox
+	}
+	if r.byActivationTokenHash == nil {
+		r.byActivationTokenHash = map[string]*domain.Mailbox{}
+	}
+	if mailbox.ActivationTokenHash != "" {
+		r.byActivationTokenHash[mailbox.ActivationTokenHash] = mailbox
 	}
 	if r.byKeyFingerprint == nil {
 		r.byKeyFingerprint = map[string]*domain.Mailbox{}
@@ -590,6 +603,13 @@ func (r *httpMailboxRepo) ListPendingPayment(_ context.Context) ([]domain.Mailbo
 
 func (r *httpMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID string) (*domain.Mailbox, error) {
 	if item, ok := r.byPaymentSession[sessionID]; ok {
+		return item, nil
+	}
+	return nil, ports.ErrMailboxNotFound
+}
+
+func (r *httpMailboxRepo) GetByActivationTokenHash(_ context.Context, tokenHash string) (*domain.Mailbox, error) {
+	if item, ok := r.byActivationTokenHash[tokenHash]; ok {
 		return item, nil
 	}
 	return nil, ports.ErrMailboxNotFound
@@ -645,6 +665,9 @@ func (g httpPaymentGateway) GetPaymentSession(_ context.Context, sessionID strin
 type httpNotifier struct{}
 
 func (httpNotifier) SendPaymentLink(_ context.Context, _ string, _ string, _ string) error {
+	return nil
+}
+func (httpNotifier) SendActivationLink(_ context.Context, _ string, _ string, _ string) error {
 	return nil
 }
 func (httpNotifier) SendRecoveryLink(_ context.Context, _ string, _ string) error { return nil }

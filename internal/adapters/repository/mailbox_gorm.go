@@ -13,25 +13,27 @@ import (
 )
 
 type mailboxModel struct {
-	ID               string `gorm:"primaryKey;type:text"`
-	AccountID        string `gorm:"not null;index"`
-	OwnerEmail       string `gorm:"not null"`
-	BillingEmail     string `gorm:"not null"`
-	KeyFingerprint   string
-	IMAPHost         string `gorm:"not null"`
-	IMAPPort         int    `gorm:"not null"`
-	IMAPUsername     string `gorm:"not null;uniqueIndex"`
-	IMAPPassword     string `gorm:"not null"`
-	AccessToken      string `gorm:"not null;uniqueIndex"`
-	PaymentSessionID string `gorm:"column:stripe_session_id;not null"`
-	PaymentURL       string `gorm:"not null"`
-	Status           string `gorm:"not null;index"`
-	GrantedMonths    int    `gorm:"not null;default:0"`
-	CouponUsed       bool   `gorm:"not null;default:false"`
-	PaidAt           *time.Time
-	ExpiresAt        *time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID                  string `gorm:"primaryKey;type:text"`
+	AccountID           string `gorm:"not null;index"`
+	OwnerEmail          string `gorm:"not null"`
+	BillingEmail        string `gorm:"not null"`
+	KeyFingerprint      string
+	IMAPHost            string     `gorm:"not null"`
+	IMAPPort            int        `gorm:"not null"`
+	IMAPUsername        string     `gorm:"not null;uniqueIndex"`
+	IMAPPassword        string     `gorm:"not null"`
+	AccessToken         string     `gorm:"not null;uniqueIndex"`
+	PaymentSessionID    string     `gorm:"column:stripe_session_id;not null"`
+	PaymentURL          string     `gorm:"not null"`
+	ActivationTokenHash string     `gorm:"column:activation_token_hash"`
+	ActivationExpiresAt *time.Time `gorm:"column:activation_expires_at"`
+	Status              string     `gorm:"not null;index"`
+	GrantedMonths       int        `gorm:"not null;default:0"`
+	CouponUsed          bool       `gorm:"not null;default:false"`
+	PaidAt              *time.Time
+	ExpiresAt           *time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 func (mailboxModel) TableName() string {
@@ -40,25 +42,27 @@ func (mailboxModel) TableName() string {
 
 func toDomain(model *mailboxModel) *domain.Mailbox {
 	return &domain.Mailbox{
-		ID:               model.ID,
-		AccountID:        model.AccountID,
-		OwnerEmail:       model.OwnerEmail,
-		BillingEmail:     firstNonEmpty(model.BillingEmail, model.OwnerEmail),
-		KeyFingerprint:   strings.TrimSpace(strings.ToLower(model.KeyFingerprint)),
-		IMAPHost:         model.IMAPHost,
-		IMAPPort:         model.IMAPPort,
-		IMAPUsername:     model.IMAPUsername,
-		IMAPPassword:     model.IMAPPassword,
-		AccessToken:      model.AccessToken,
-		PaymentSessionID: model.PaymentSessionID,
-		PaymentURL:       model.PaymentURL,
-		Status:           domain.MailboxStatus(model.Status),
-		GrantedMonths:    model.GrantedMonths,
-		CouponUsed:       model.CouponUsed,
-		PaidAt:           model.PaidAt,
-		ExpiresAt:        model.ExpiresAt,
-		CreatedAt:        model.CreatedAt,
-		UpdatedAt:        model.UpdatedAt,
+		ID:                  model.ID,
+		AccountID:           model.AccountID,
+		OwnerEmail:          model.OwnerEmail,
+		BillingEmail:        firstNonEmpty(model.BillingEmail, model.OwnerEmail),
+		KeyFingerprint:      strings.TrimSpace(strings.ToLower(model.KeyFingerprint)),
+		IMAPHost:            model.IMAPHost,
+		IMAPPort:            model.IMAPPort,
+		IMAPUsername:        model.IMAPUsername,
+		IMAPPassword:        model.IMAPPassword,
+		AccessToken:         model.AccessToken,
+		PaymentSessionID:    model.PaymentSessionID,
+		PaymentURL:          model.PaymentURL,
+		ActivationTokenHash: model.ActivationTokenHash,
+		ActivationExpiresAt: model.ActivationExpiresAt,
+		Status:              domain.MailboxStatus(model.Status),
+		GrantedMonths:       model.GrantedMonths,
+		CouponUsed:          model.CouponUsed,
+		PaidAt:              model.PaidAt,
+		ExpiresAt:           model.ExpiresAt,
+		CreatedAt:           model.CreatedAt,
+		UpdatedAt:           model.UpdatedAt,
 	}
 }
 
@@ -68,23 +72,25 @@ func toModel(mailbox *domain.Mailbox) *mailboxModel {
 		strings.TrimSpace(strings.ToLower(mailbox.OwnerEmail)),
 	)
 	return &mailboxModel{
-		ID:               mailbox.ID,
-		AccountID:        mailbox.AccountID,
-		OwnerEmail:       mailbox.OwnerEmail,
-		BillingEmail:     billingEmail,
-		KeyFingerprint:   strings.TrimSpace(strings.ToLower(mailbox.KeyFingerprint)),
-		IMAPHost:         mailbox.IMAPHost,
-		IMAPPort:         mailbox.IMAPPort,
-		IMAPUsername:     mailbox.IMAPUsername,
-		IMAPPassword:     mailbox.IMAPPassword,
-		AccessToken:      mailbox.AccessToken,
-		PaymentSessionID: mailbox.PaymentSessionID,
-		PaymentURL:       mailbox.PaymentURL,
-		Status:           string(mailbox.Status),
-		GrantedMonths:    mailbox.GrantedMonths,
-		CouponUsed:       mailbox.CouponUsed,
-		PaidAt:           mailbox.PaidAt,
-		ExpiresAt:        mailbox.ExpiresAt,
+		ID:                  mailbox.ID,
+		AccountID:           mailbox.AccountID,
+		OwnerEmail:          mailbox.OwnerEmail,
+		BillingEmail:        billingEmail,
+		KeyFingerprint:      strings.TrimSpace(strings.ToLower(mailbox.KeyFingerprint)),
+		IMAPHost:            mailbox.IMAPHost,
+		IMAPPort:            mailbox.IMAPPort,
+		IMAPUsername:        mailbox.IMAPUsername,
+		IMAPPassword:        mailbox.IMAPPassword,
+		AccessToken:         mailbox.AccessToken,
+		PaymentSessionID:    mailbox.PaymentSessionID,
+		PaymentURL:          mailbox.PaymentURL,
+		ActivationTokenHash: mailbox.ActivationTokenHash,
+		ActivationExpiresAt: mailbox.ActivationExpiresAt,
+		Status:              string(mailbox.Status),
+		GrantedMonths:       mailbox.GrantedMonths,
+		CouponUsed:          mailbox.CouponUsed,
+		PaidAt:              mailbox.PaidAt,
+		ExpiresAt:           mailbox.ExpiresAt,
 	}
 }
 
@@ -162,6 +168,18 @@ func (r *MailboxRepository) ListPendingPayment(ctx context.Context) ([]domain.Ma
 func (r *MailboxRepository) GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error) {
 	var model mailboxModel
 	err := r.db.WithContext(ctx).First(&model, "stripe_session_id = ?", sessionID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ports.ErrMailboxNotFound
+		}
+		return nil, err
+	}
+	return toDomain(&model), nil
+}
+
+func (r *MailboxRepository) GetByActivationTokenHash(ctx context.Context, tokenHash string) (*domain.Mailbox, error) {
+	var model mailboxModel
+	err := r.db.WithContext(ctx).First(&model, "activation_token_hash = ?", tokenHash).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ports.ErrMailboxNotFound

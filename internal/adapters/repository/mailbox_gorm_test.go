@@ -2,10 +2,13 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
 	"github.com/atvirokodosprendimai/mailservice/internal/platform/database"
 )
@@ -153,5 +156,55 @@ func TestMailboxRepositoryAllowsSameBillingEmailForAccountBoundMailboxes(t *test
 		if err := repo.Create(context.Background(), mailbox); err != nil {
 			t.Fatalf("Create account-bound mailbox %s failed: %v", id, err)
 		}
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryActivationToken(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+	expiresAt := time.Now().Add(24 * time.Hour).UTC()
+	mailbox := &domain.Mailbox{
+		ID:                  "mbx-act-1",
+		AccountID:           "acc-1",
+		OwnerEmail:          "owner@example.com",
+		BillingEmail:        "billing@example.com",
+		KeyFingerprint:      "edproof:act1",
+		IMAPHost:            "imap.example.com",
+		IMAPPort:            143,
+		IMAPUsername:        "mbx_act_1",
+		IMAPPassword:        "secret",
+		AccessToken:         "access-act-1",
+		PaymentSessionID:    "",
+		PaymentURL:          "",
+		ActivationTokenHash: "hash-act-1",
+		ActivationExpiresAt: &expiresAt,
+		Status:              domain.MailboxStatusPendingPayment,
+	}
+
+	if err := repo.Create(context.Background(), mailbox); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	byHash, err := repo.GetByActivationTokenHash(context.Background(), "hash-act-1")
+	if err != nil {
+		t.Fatalf("GetByActivationTokenHash failed: %v", err)
+	}
+	if byHash.ID != mailbox.ID {
+		t.Fatalf("expected mailbox id %q, got %q", mailbox.ID, byHash.ID)
+	}
+	if byHash.ActivationTokenHash != "hash-act-1" {
+		t.Fatalf("expected activation token hash, got %q", byHash.ActivationTokenHash)
+	}
+	if byHash.ActivationExpiresAt == nil || !byHash.ActivationExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expected activation expiry %v, got %v", expiresAt, byHash.ActivationExpiresAt)
+	}
+
+	if _, err := repo.GetByActivationTokenHash(context.Background(), "hash-unknown"); !errors.Is(err, ports.ErrMailboxNotFound) {
+		t.Fatalf("expected ErrMailboxNotFound for unknown hash, got %v", err)
 	}
 }

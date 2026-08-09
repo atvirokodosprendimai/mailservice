@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"time"
 
@@ -42,6 +43,21 @@ func (n *ResendNotifier) SendPaymentLink(ctx context.Context, ownerEmail string,
 		paymentURL,
 	)
 	return n.send(ctx, ownerEmail, subject, plainText, html)
+}
+
+func (n *ResendNotifier) SendActivationLink(ctx context.Context, ownerEmail string, activationURL string, mailboxID string) error {
+	subject := "Action needed: activate your mailbox"
+	plainText := fmt.Sprintf(
+		"Mailbox %s is waiting for activation.\n\nOpen this one-time link to activate it (expires in 24 hours):\n%s\n",
+		mailboxID,
+		activationURL,
+	)
+	htmlBody := fmt.Sprintf(
+		"<p>Mailbox <strong>%s</strong> is waiting for activation.</p><p><a href=\"%s\">Activate mailbox</a></p><p>This link is one-time and expires in 24 hours.</p>",
+		html.EscapeString(mailboxID),
+		html.EscapeString(activationURL),
+	)
+	return n.send(ctx, ownerEmail, subject, plainText, htmlBody)
 }
 
 func (n *ResendNotifier) SendRecoveryLink(ctx context.Context, ownerEmail string, recoveryURL string) error {

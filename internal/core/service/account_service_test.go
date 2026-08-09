@@ -337,6 +337,10 @@ func (f *fakeAccountNotifier) SendPaymentLink(_ context.Context, _ string, _ str
 	return nil
 }
 
+func (f *fakeAccountNotifier) SendActivationLink(_ context.Context, _ string, _ string, _ string) error {
+	return nil
+}
+
 func (f *fakeAccountNotifier) SendRecoveryLink(_ context.Context, _ string, recoveryURL string) error {
 	f.recoveryCalls++
 	f.lastRecoveryURL = recoveryURL

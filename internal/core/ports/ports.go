@@ -48,6 +48,7 @@ type MailboxRepository interface {
 	GetPendingByAccountID(ctx context.Context, accountID string) (*domain.Mailbox, error)
 	ListPendingPayment(ctx context.Context) ([]domain.Mailbox, error)
 	GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
+	GetByActivationTokenHash(ctx context.Context, tokenHash string) (*domain.Mailbox, error)
 	GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error)
 	GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error)
 	ListActiveExpired(ctx context.Context, now time.Time) ([]domain.Mailbox, error)
@@ -122,6 +123,7 @@ type SupportMessageParams struct {
 
 type Notifier interface {
 	SendPaymentLink(ctx context.Context, ownerEmail string, paymentURL string, mailboxID string) error
+	SendActivationLink(ctx context.Context, ownerEmail string, activationURL string, mailboxID string) error
 	SendRecoveryLink(ctx context.Context, ownerEmail string, recoveryURL string) error
 	SendSupportMessage(ctx context.Context, params SupportMessageParams) error
 }

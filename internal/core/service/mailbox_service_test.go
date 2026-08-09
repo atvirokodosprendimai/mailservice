@@ -1139,6 +1139,7 @@ type fakeMailboxRepo struct {
 	pendingByAccount              map[string]*domain.Mailbox
 	created                       []*domain.Mailbox
 	byStripeSession               map[string]*domain.Mailbox
+	byActivationTokenHash         map[string]*domain.Mailbox
 	byAccessToken                 map[string]*domain.Mailbox
 	byKeyFingerprint              map[string]*domain.Mailbox
 	activeOrPendingByBillingEmail map[string]*domain.Mailbox
@@ -1242,6 +1243,15 @@ func (f *fakeMailboxRepo) GetPendingByAccountID(_ context.Context, accountID str
 func (f *fakeMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID string) (*domain.Mailbox, error) {
 	if f.byStripeSession != nil {
 		if item, ok := f.byStripeSession[sessionID]; ok {
+			return item, nil
+		}
+	}
+	return nil, ports.ErrMailboxNotFound
+}
+
+func (f *fakeMailboxRepo) GetByActivationTokenHash(_ context.Context, tokenHash string) (*domain.Mailbox, error) {
+	if f.byActivationTokenHash != nil {
+		if item, ok := f.byActivationTokenHash[tokenHash]; ok {
 			return item, nil
 		}
 	}
@@ -1357,6 +1367,11 @@ func ptrTime(t time.Time) *time.Time {
 }
 
 func (f *fakeMailboxNotifier) SendPaymentLink(_ context.Context, _ string, _ string, _ string) error {
+	f.calls++
+	return nil
+}
+
+func (f *fakeMailboxNotifier) SendActivationLink(_ context.Context, _ string, _ string, _ string) error {
 	f.calls++
 	return nil
 }
