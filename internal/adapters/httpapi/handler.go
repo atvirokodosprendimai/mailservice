@@ -38,6 +38,7 @@ type Config struct {
 	ChallengeAuth       ports.ChallengeAuthenticator
 	AgentAPISkillDoc    string
 	MockPaymentMode     bool
+	FreeMode            bool
 	Metrics             *metrics.Registry
 }
 
@@ -57,6 +58,7 @@ type Handler struct {
 	challengeAuth       ports.ChallengeAuthenticator
 	agentAPISkillDoc    string
 	mockPaymentMode     bool
+	freeMode            bool
 	metrics             *metrics.Registry
 }
 
@@ -86,6 +88,7 @@ func NewHandler(cfg Config) *Handler {
 		challengeAuth:       cfg.ChallengeAuth,
 		agentAPISkillDoc:    cfg.AgentAPISkillDoc,
 		mockPaymentMode:     cfg.MockPaymentMode,
+		freeMode:            cfg.FreeMode,
 		metrics:             cfg.Metrics,
 	}
 }

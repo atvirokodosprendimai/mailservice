@@ -22,6 +22,7 @@ type Config struct {
 	MailDomain          string
 	IMAPHost            string
 	IMAPPort            int
+	FreeMode            bool   // default on; set FREE_MODE=false to restore paid billing
 	NotifierProvider    string // "unsend", "resend", "sendgrid", "mailgun", "log", or "" (deprecated cascade)
 	SendGridAPIKey      string
 	SendGridFromEmail   string
@@ -43,17 +44,17 @@ type Config struct {
 	PolarProductID      string
 	PolarSuccessURL     string
 	PolarReturnURL      string
-	PolarWebhookSecret    string
-	PolarGiftDiscountID   string
-	PolarGiftCouponCode   string
-	StripeSecretKey       string
+	PolarWebhookSecret  string
+	PolarGiftDiscountID string
+	PolarGiftCouponCode string
+	StripeSecretKey     string
 	StripeWebhookSecret string
 	StripeSuccessURL    string
 	StripeCancelURL     string
 	StripeCurrency      string
 	MailboxPriceCents   int64
-	EdproofHMACSecret  string
-	SupportEmail       string
+	EdproofHMACSecret   string
+	SupportEmail        string
 }
 
 func Load() (*Config, error) {
@@ -108,6 +109,7 @@ func Load() (*Config, error) {
 		MailDomain:          getEnv("MAIL_DOMAIN", "mail.local"),
 		IMAPHost:            getEnv("IMAP_HOST", getEnv("MAIL_DOMAIN", "mail.local")),
 		IMAPPort:            getEnvInt("IMAP_PORT", 143),
+		FreeMode:            getEnvBool("FREE_MODE", true),
 		NotifierProvider:    notifierProvider,
 		SendGridAPIKey:      os.Getenv("SENDGRID_API_KEY"),
 		SendGridFromEmail:   getEnv("SENDGRID_FROM_EMAIL", ""),
@@ -129,17 +131,17 @@ func Load() (*Config, error) {
 		PolarProductID:      getEnv("POLAR_PRODUCT_ID", getEnv("POLAR_PRICE_ID", "")),
 		PolarSuccessURL:     polarSuccessURL,
 		PolarReturnURL:      polarReturnURL,
-		PolarWebhookSecret:    os.Getenv("POLAR_WEBHOOK_SECRET"),
-		PolarGiftDiscountID:   os.Getenv("POLAR_GIFT_DISCOUNT_ID"),
-		PolarGiftCouponCode:   os.Getenv("POLAR_GIFT_COUPON_CODE"),
-		StripeSecretKey:       os.Getenv("STRIPE_SECRET_KEY"),
+		PolarWebhookSecret:  os.Getenv("POLAR_WEBHOOK_SECRET"),
+		PolarGiftDiscountID: os.Getenv("POLAR_GIFT_DISCOUNT_ID"),
+		PolarGiftCouponCode: os.Getenv("POLAR_GIFT_COUPON_CODE"),
+		StripeSecretKey:     os.Getenv("STRIPE_SECRET_KEY"),
 		StripeWebhookSecret: os.Getenv("STRIPE_WEBHOOK_SECRET"),
 		StripeSuccessURL:    getEnv("STRIPE_SUCCESS_URL", "http://localhost:8080/payment/success"),
 		StripeCancelURL:     getEnv("STRIPE_CANCEL_URL", "http://localhost:8080/payment/cancel"),
 		StripeCurrency:      getEnv("STRIPE_CURRENCY", "usd"),
 		MailboxPriceCents:   getEnvInt64("MAILBOX_PRICE_CENTS", 100),
-		EdproofHMACSecret:  edproofSecret,
-		SupportEmail:       getEnv("SUPPORT_EMAIL", "mbx_014d51a9d0b@truevipaccess.com"),
+		EdproofHMACSecret:   edproofSecret,
+		SupportEmail:        getEnv("SUPPORT_EMAIL", "mbx_014d51a9d0b@truevipaccess.com"),
 	}, nil
 }
 
@@ -182,6 +184,18 @@ func getEnvInt64(key string, fallback int64) int64 {
 		return fallback
 	}
 	return n
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
 }
 
 var validNotifierProviders = map[string]bool{

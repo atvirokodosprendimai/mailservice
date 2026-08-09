@@ -38,6 +38,7 @@ type MailboxService struct {
 	giftCoupon  GiftCouponConfig
 	support     SupportConfig
 	metrics     *metrics.Registry
+	freeMode    bool
 }
 
 func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, mailDomain string, imapHost string, imapPort int, giftCoupon ...GiftCouponConfig) *MailboxService {
@@ -78,6 +79,10 @@ func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepos
 
 func (s *MailboxService) SetMetrics(registry *metrics.Registry) {
 	s.metrics = registry
+}
+
+func (s *MailboxService) SetFreeMode(enabled bool) {
+	s.freeMode = enabled
 }
 
 type CreateMailboxRequest struct {
