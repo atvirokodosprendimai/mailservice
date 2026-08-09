@@ -1,0 +1,68 @@
+internal/adapters/notify/unsend_notifier.go
+  s_77b16201efdb08::t_940be5feccb7ea 8,56-68
+  s_77b16201efdb08::t_9c22e62cda7c24 69-70
+internal/core/service/account_service_test.go
+  s_77b16201efdb08::t_aebd87836fbe26 340-343
+internal/domain/mailbox.go
+  s_77b16201efdb08::t_7072e5ea4c7c5e 24-32
+  s_77b16201efdb08::t_4bb13fe5297701 14-23,33-34
+internal/core/service/mailbox_service_test.go
+  s_77b16201efdb08::t_f37ade79fae0ed 1142,1252-1254
+  s_77b16201efdb08::t_972f32eb4d7923 1259,1374-1378
+  s_10131729cde9fd::t_d1a970faca4982 1255-1258,1260
+internal/adapters/httpapi/handler_test.go
+  s_77b16201efdb08::t_437d3d3ece2f5c 574,611-617
+  s_77b16201efdb08::t_9eb1dcf8439a7c 525,569-573
+  s_77b16201efdb08::t_9bc825c780ee81 670-672
+  s_77b16201efdb08::t_2f7a1016e5fd3e 548-553
+internal/adapters/notify/resend_notifier.go
+  s_77b16201efdb08::t_c222563a8ab6ab 8,48-60
+  s_77b16201efdb08::t_0bf000e126b2b6 61-62
+internal/adapters/notify/mailgun_notifier_test.go
+  s_77b16201efdb08::t_11d2ca201d555c 9,71-110
+  s_77b16201efdb08::t_4c7c9dfa46b5d4 111-112
+internal/core/ports/ports.go
+  s_77b16201efdb08::t_e9a62c78e48732 51,126
+internal/adapters/notify/log_notifier.go
+  s_77b16201efdb08::t_fdee9915861c85 23-27
+internal/adapters/notify/mailgun_notifier.go
+  s_77b16201efdb08::t_c13168e9c54fd9 60-69
+internal/adapters/notify/sendgrid_notifier.go
+  s_77b16201efdb08::t_c93003e821e625 6,43-55
+  s_77b16201efdb08::t_30f4ad029470c1 56-57
+internal/platform/database/migrations/20260809090000_add_mailbox_activation_token.sql
+  s_77b16201efdb08::t_01f6085aba48f8 1-9
+internal/adapters/notify/log_notifier_test.go
+  s_77b16201efdb08::t_a2dcc5d8f470d5 1-31
+internal/adapters/repository/mailbox_gorm.go
+  s_77b16201efdb08::t_e8d8ab1c9548de 57-58,87-88,180-182
+  s_77b16201efdb08::t_4bb13fe5297701 16-36,45-56,59-65,75-86,89-93
+  s_77b16201efdb08::t_61b6b3020795b6 183-191
+internal/adapters/repository/mailbox_gorm_test.go
+  s_77b16201efdb08::t_7b9cf89dde3660 5,9,11,161-209
+  s_77b16201efdb08::t_56510b1f6bd7ae 210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "be1674c9d899c1ac3055396fa1bab06f3b186a12",
+  "prompts": {},
+  "sessions": {
+    "s_10131729cde9fd": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe2c2-2459-733a-8294-844c9bc5cacd",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    },
+    "s_77b16201efdb08": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe62a-14cd-7412-a9b7-a5c3a7da084d",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
