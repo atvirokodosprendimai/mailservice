@@ -1,0 +1,24 @@
+internal/core/service/mailbox_service.go
+  s_5921610590e99b::t_496da6eef6231a 155-156,232-233,303-328,417-418,447-448,508-510
+  s_5921610590e99b::t_3cbdfd97a409fe 736-738
+internal/adapters/httpapi/handler.go
+  s_5921610590e99b::t_de6fedfbb8ace6 663-664,672-673,676-677,1383-1389,1391,1396,1400,1407-1408
+internal/core/service/mailbox_service_test.go
+  s_5921610590e99b::t_7236a9da8f156f 2238,2253
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "708317d1019c0e43fc14e7d724b079f0d9e91daf",
+  "prompts": {},
+  "sessions": {
+    "s_5921610590e99b": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe5a2-ba4d-757a-9ab5-c2569b7b522f",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
