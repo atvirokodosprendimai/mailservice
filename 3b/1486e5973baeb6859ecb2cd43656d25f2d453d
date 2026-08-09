@@ -1,0 +1,45 @@
+internal/core/service/mailbox_service.go
+  s_34a2e6b72127ad::t_48f63150a936b6 28-41,224-235
+  s_34a2e6b72127ad::t_21c0828573806d 42,89-94,113-117
+  s_34a2e6b72127ad::t_3f85d00ff42e27 132-137,150-164,236-251,261-262
+  s_34a2e6b72127ad::t_8e14420b59616b 323-327
+  s_34a2e6b72127ad::t_8b6c2bd9e6923c 166,453,474-528,728-733
+  s_34a2e6b72127ad::t_79826def0dcc47 223,288-316,399-451
+  s_34a2e6b72127ad::t_b2a1ede8f87e17 118
+  s_34a2e6b72127ad::t_a327e09d3fd775 165
+  s_34a2e6b72127ad::t_2417613ab2ac21 167
+  s_34a2e6b72127ad::t_55d0f6d914766f 452
+  s_34a2e6b72127ad::t_0a10ea460bdce9 454
+  s_34a2e6b72127ad::t_e44aa1ad442fb6 734
+cmd/app/main.go
+  s_34a2e6b72127ad::t_cd9b431176d15a 118
+internal/core/service/mailbox_service_test.go
+  s_34a2e6b72127ad::t_62c658e7df09ba 1227,1470-1873
+  s_34a2e6b72127ad::t_15383b0169f17a 6,1199-1204,1222-1226
+internal/domain/mailbox.go
+  s_34a2e6b72127ad::t_48f63150a936b6 33-38
+  s_34a2e6b72127ad::t_6665662ed150d5 28-32
+internal/adapters/httpapi/handler.go
+  s_34a2e6b72127ad::t_c817cab9967cac 1395-1462
+  s_34a2e6b72127ad::t_449985224867a0 109,660-691,1644-1647,1652
+internal/adapters/httpapi/handler_test.go
+  s_34a2e6b72127ad::t_9a3ec8231bb10d 6,9,1423-1520
+internal/core/ports/ports.go
+  s_34a2e6b72127ad::t_2fc809432d4aa3 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "3b1486e5973baeb6859ecb2cd43656d25f2d453d",
+  "prompts": {},
+  "sessions": {
+    "s_34a2e6b72127ad": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe62f-2d12-74e9-94bb-a15c6ab7b922",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}

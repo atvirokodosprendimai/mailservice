@@ -1,0 +1,41 @@
+internal/core/ports/ports.go
+  s_d9518fd2d86405::t_b9e146db0991f5 12-33
+  s_d9518fd2d86405::t_479d9fcbfbf3c5 34,52-53,64
+internal/adapters/repository/mailbox_gorm_test.go
+  s_d9518fd2d86405::t_48af1f1cd4c210 231
+  s_d9518fd2d86405::t_89827666ef5c61 211-230,232-278
+internal/adapters/repository/mailbox_gorm.go
+  s_d9518fd2d86405::t_d80d70b4b80612 219-248
+internal/core/service/mailbox_service.go
+  s_d9518fd2d86405::t_7fee6f2fdfe520 735-797
+internal/core/service/mailbox_service_test.go
+  s_d9518fd2d86405::t_0c3845a5c82435 1191-1201,1318-1374
+  s_d9518fd2d86405::t_bbdc4f521dcc0e 1375,2139-2360
+  s_d9518fd2d86405::t_1096b4d87fa67e 1376
+internal/core/service/account_service_test.go
+  s_d9518fd2d86405::t_29ffdabe11e6d4 239-249
+internal/adapters/httpapi/handler_test.go
+  s_d9518fd2d86405::t_59900e1552a1f7 674,1545-1628
+  s_d9518fd2d86405::t_ec23f694eb385b 635-655,672-673
+internal/adapters/repository/account_gorm.go
+  s_d9518fd2d86405::t_76fa8c9e02ddbe 179-191
+internal/adapters/httpapi/handler.go
+  s_d9518fd2d86405::t_ed0108a565aa41 125,1834-1848
+  s_d9518fd2d86405::t_0d02e4484d6a81 1849-1850
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "2fb7d39654d0a37a1131c15ac017acb3ba2aab30",
+  "prompts": {},
+  "sessions": {
+    "s_d9518fd2d86405": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe666-30d4-7434-9821-c7735ab745f2",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}

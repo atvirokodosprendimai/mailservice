@@ -1,0 +1,23 @@
+internal/core/service/mailbox_service_test.go
+  s_32684fe36611eb::t_f997dd1542d7ec 1874-2068
+internal/adapters/httpapi/polar_webhook_test.go
+  s_32684fe36611eb::t_05a31713daea09 400-428
+internal/core/service/mailbox_service.go
+  s_32684fe36611eb::t_1be9bc4054f92c 530-535,606-610,624-629,651-655,710-716,743-746,835-838
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "6d68fee9353cca3c920ed0240aea2fbb15cc7e76",
+  "prompts": {},
+  "sessions": {
+    "s_32684fe36611eb": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe662-ccfe-7408-9a81-5f03b3d1e422",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}

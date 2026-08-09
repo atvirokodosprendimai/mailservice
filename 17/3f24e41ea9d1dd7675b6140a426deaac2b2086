@@ -1,0 +1,32 @@
+internal/adapters/httpapi/handler.go
+  s_dddfd526607779::t_9c7bc147815aa0 41,61,91
+internal/core/service/mailbox_service.go
+  s_dddfd526607779::t_1ce685712c5968 41,84-85
+  s_dddfd526607779::t_632dd04b9ec892 86-87
+internal/platform/config/config_test.go
+  s_dddfd526607779::t_d318f6a44159c5 83-131
+.env.example
+  s_dddfd526607779::t_9e519f8e0976c8 33-35
+internal/platform/config/config.go
+  s_dddfd526607779::t_54fb1edfca02d3 112,189-198
+  s_dddfd526607779::t_f96110c3ae7fc5 25,47-50,56-57,134-137,143-144
+  s_dddfd526607779::t_e63ffc441f4e4c 199-200
+cmd/app/main.go
+  s_dddfd526607779::t_778b6fba85c8ea 117,143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "173f24e41ea9d1dd7675b6140a426deaac2b2086",
+  "prompts": {},
+  "sessions": {
+    "s_dddfd526607779": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe628-2e67-755d-ab06-fee955dd690d",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}

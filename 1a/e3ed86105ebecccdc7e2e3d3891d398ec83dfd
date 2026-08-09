@@ -1,0 +1,20 @@
+docs/agent-api-skill.md
+  s_5921610590e99b::t_50bbef403806f4 344,359,363,410-412,482
+  s_5921610590e99b::t_fc4f1766a999c5 138,143,158-159,161,163,167-169,171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "1ae3ed86105ebecccdc7e2e3d3891d398ec83dfd",
+  "prompts": {},
+  "sessions": {
+    "s_5921610590e99b": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe5a2-ba4d-757a-9ab5-c2569b7b522f",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
