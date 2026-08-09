@@ -106,6 +106,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/accounts/recovery/start", h.handleStartRecovery)
 	mux.HandleFunc("POST /v1/accounts/recovery/complete", h.handleCompleteRecovery)
 	mux.HandleFunc("GET /v1/accounts/recovery/complete", h.handleCompleteRecoveryByLink)
+	mux.HandleFunc("GET /v1/mailboxes/activate", h.handleActivateMailbox)
 	mux.HandleFunc("GET /v1/mailboxes", h.withAccountToken(h.handleListMailboxes))
 	mux.HandleFunc("POST /v1/mailboxes", h.withAccountToken(h.handleCreateMailbox))
 	mux.HandleFunc("POST /v1/auth/challenge", h.handleAuthChallenge)
@@ -654,6 +655,38 @@ func (h *Handler) handleCompleteRecoveryByLink(w http.ResponseWriter, r *http.Re
 			"api_token=" + tokens.APIToken + "\n" +
 			"refresh_token=" + tokens.RefreshToken + "\n",
 	))
+}
+
+func (h *Handler) handleActivateMailbox(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" {
+		writeError(w, http.StatusBadRequest, errors.New("missing token"))
+		return
+	}
+
+	// The token is a bearer credential carried in the URL; never let the page
+	// leak it to other origins via the Referer header.
+	w.Header().Set("Referrer-Policy", "no-referrer")
+
+	result, err := h.mailboxService.ActivateMailboxByActivationToken(r.Context(), token)
+	if err != nil {
+		if errors.Is(err, ports.ErrActivationTokenInvalid) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, activationInvalidPageHTML)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if result.AlreadyActive {
+		_, _ = io.WriteString(w, activationAlreadyActivePageHTML)
+		return
+	}
+	_, _ = io.WriteString(w, activationSuccessPageHTML)
 }
 
 func (h *Handler) handleCreateMailbox(w http.ResponseWriter, r *http.Request) {
@@ -1359,6 +1392,74 @@ type polarSuccessView struct {
 	MailboxID string `json:"mailbox_id"`
 }
 
+var activationSuccessPageHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mailbox activated</title>
+  <style>
+    body{font-family:Georgia,serif;background:#f4efe4;color:#17222d;display:flex;justify-content:center;padding:3rem 1rem}
+    .card{background:#fffaf0;border:1px solid #d8cdb7;border-radius:8px;padding:2rem;max-width:34rem}
+    h1{color:#1f6b34;margin-top:0}
+    .muted{color:#566575}
+    code{background:#f0e7d5;padding:0.1em 0.3em;border-radius:3px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Mailbox activated</h1>
+    <p>Your mailbox is now active and ready for mail. It does not expire.</p>
+    <p class="muted">Return to your agent and call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>
+  </div>
+</body>
+</html>`
+
+var activationAlreadyActivePageHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mailbox already active</title>
+  <style>
+    body{font-family:Georgia,serif;background:#f4efe4;color:#17222d;display:flex;justify-content:center;padding:3rem 1rem}
+    .card{background:#fffaf0;border:1px solid #d8cdb7;border-radius:8px;padding:2rem;max-width:34rem}
+    h1{color:#1f6b34;margin-top:0}
+    .muted{color:#566575}
+    code{background:#f0e7d5;padding:0.1em 0.3em;border-radius:3px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Mailbox already active</h1>
+    <p>This mailbox is already active. Nothing to do.</p>
+    <p class="muted">Call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>
+  </div>
+</body>
+</html>`
+
+var activationInvalidPageHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activation link invalid</title>
+  <style>
+    body{font-family:Georgia,serif;background:#f4efe4;color:#17222d;display:flex;justify-content:center;padding:3rem 1rem}
+    .card{background:#fffaf0;border:1px solid #d8cdb7;border-radius:8px;padding:2rem;max-width:34rem}
+    h1{color:#a23b2a;margin-top:0}
+    .muted{color:#566575}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Activation link invalid</h1>
+    <p>This activation link has expired or is no longer valid.</p>
+    <p class="muted">Re-claim your mailbox with the same key to receive a new activation link.</p>
+  </div>
+</body>
+</html>`
+
 var paymentSuccessHTMLTemplate = `<!doctype html>
 <html lang="en">
 <head>
@@ -1540,11 +1641,15 @@ var paymentSuccessHTMLTemplate = `<!doctype html>
 </html>`
 
 func mailboxResponse(mailbox *domain.Mailbox) mailboxView {
+	paymentURL := mailbox.PaymentURL
+	if mailbox.ActivationURL != "" {
+		paymentURL = mailbox.ActivationURL
+	}
 	resp := mailboxView{
 		ID:         mailbox.ID,
 		Status:     mailbox.Status,
 		Usable:     mailbox.Usable(),
-		PaymentURL: mailbox.PaymentURL,
+		PaymentURL: paymentURL,
 	}
 	if mailbox.ExpiresAt != nil {
 		expires := mailbox.ExpiresAt.Format(time.RFC3339)

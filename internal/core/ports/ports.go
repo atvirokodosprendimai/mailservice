@@ -30,6 +30,7 @@ var (
 	ErrCouponInvalid          = errors.New("invalid coupon code")
 	ErrCouponExhausted        = errors.New("coupon expired or exhausted")
 	ErrCouponAlreadyUsed      = errors.New("coupon already used by this key")
+	ErrActivationTokenInvalid = errors.New("activation token invalid or expired")
 )
 
 // ChallengeAuthenticator generates and verifies challenge-response proofs.

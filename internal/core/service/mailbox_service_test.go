@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -1195,6 +1196,12 @@ func (f *fakeMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) err
 	if mailbox.KeyFingerprint != "" {
 		f.byKeyFingerprint[mailbox.KeyFingerprint] = mailbox
 	}
+	if f.byActivationTokenHash == nil {
+		f.byActivationTokenHash = map[string]*domain.Mailbox{}
+	}
+	if mailbox.ActivationTokenHash != "" {
+		f.byActivationTokenHash[mailbox.ActivationTokenHash] = mailbox
+	}
 	return nil
 }
 
@@ -1211,6 +1218,12 @@ func (f *fakeMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) err
 	}
 	if mailbox.PaymentSessionID != "" {
 		f.byStripeSession[mailbox.PaymentSessionID] = mailbox
+	}
+	if f.byActivationTokenHash == nil {
+		f.byActivationTokenHash = map[string]*domain.Mailbox{}
+	}
+	if mailbox.ActivationTokenHash != "" {
+		f.byActivationTokenHash[mailbox.ActivationTokenHash] = mailbox
 	}
 	return nil
 }
@@ -1453,4 +1466,408 @@ func (g *reconcileFakeGateway) GetPaymentSession(_ context.Context, sessionID st
 		return nil, ports.ErrMailboxNotFound
 	}
 	return &ports.PaymentSession{SessionID: sessionID, Status: status}, nil
+}
+
+func TestClaimMailboxFreeModeSkipsPaymentAndEmailsActivationLink(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "act-token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	service.SetPublicBaseURL("http://test.local")
+
+	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-1",
+		Algorithm:   "ed25519",
+	}, "")
+	if err != nil {
+		t.Fatalf("ClaimMailbox failed: %v", err)
+	}
+	if !created {
+		t.Fatalf("expected new mailbox to be created")
+	}
+	if mailbox.Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected pending_payment status, got %s", mailbox.Status)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment link creation in free mode, got %d", payment.calls)
+	}
+	if notifier.calls != 1 {
+		t.Fatalf("expected one activation email, got %d", notifier.calls)
+	}
+	if mailbox.PaymentURL != "" || mailbox.PaymentSessionID != "" {
+		t.Fatalf("expected no payment fields in free mode, got url=%q session=%q", mailbox.PaymentURL, mailbox.PaymentSessionID)
+	}
+	if mailbox.ActivationTokenHash != hashToken("act-token") {
+		t.Fatalf("expected activation token hash, got %q", mailbox.ActivationTokenHash)
+	}
+	if mailbox.ActivationExpiresAt == nil || !mailbox.ActivationExpiresAt.After(time.Now().UTC()) {
+		t.Fatalf("expected activation expiry in the future, got %v", mailbox.ActivationExpiresAt)
+	}
+	wantURL := "http://test.local/v1/mailboxes/activate?token=act-token"
+	if mailbox.ActivationURL != wantURL {
+		t.Fatalf("expected activation url %q, got %q", wantURL, mailbox.ActivationURL)
+	}
+}
+
+func TestClaimMailboxFreeModeIgnoresCoupon(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "act-token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143, GiftCouponConfig{DiscountID: "disc-1", CouponCode: "GIFT10"})
+	service.SetFreeMode(true)
+	service.SetPublicBaseURL("http://test.local")
+
+	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-1",
+		Algorithm:   "ed25519",
+	}, "GIFT10")
+	if err != nil {
+		t.Fatalf("expected valid configured coupon to be ignored in free mode, got %v", err)
+	}
+	if !created {
+		t.Fatalf("expected new mailbox")
+	}
+	if mailbox.CouponUsed {
+		t.Fatalf("expected no coupon applied in free mode")
+	}
+	if mailbox.GrantedMonths != 0 {
+		t.Fatalf("expected no granted months in free mode, got %d", mailbox.GrantedMonths)
+	}
+
+	// An unknown coupon must not produce a coupon error in free mode.
+	if _, _, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-2",
+		Algorithm:   "ed25519",
+	}, "BOGUS"); err != nil {
+		t.Fatalf("expected unknown coupon to be ignored in free mode, got %v", err)
+	}
+}
+
+func TestClaimMailboxFreeModeReclaimRegeneratesActivationToken(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:                  "mbx-1",
+				KeyFingerprint:      "edproof:key-1",
+				OwnerEmail:          "old@example.com",
+				BillingEmail:        "old@example.com",
+				Status:              domain.MailboxStatusPendingPayment,
+				ActivationTokenHash: hashToken("old-token"),
+			},
+		},
+	}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "new-token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	service.SetPublicBaseURL("http://test.local")
+
+	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-1",
+		Algorithm:   "ed25519",
+	}, "")
+	if err != nil {
+		t.Fatalf("ClaimMailbox failed: %v", err)
+	}
+	if created {
+		t.Fatalf("expected existing mailbox reuse, got created=true")
+	}
+	if mailbox.ActivationTokenHash != hashToken("new-token") {
+		t.Fatalf("expected regenerated activation token hash, got %q", mailbox.ActivationTokenHash)
+	}
+	if !strings.Contains(mailbox.ActivationURL, "token=new-token") {
+		t.Fatalf("expected activation url to carry the new token, got %q", mailbox.ActivationURL)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment link creation, got %d", payment.calls)
+	}
+	if notifier.calls != 1 {
+		t.Fatalf("expected one activation email, got %d", notifier.calls)
+	}
+
+	if _, err := service.ActivateMailboxByActivationToken(context.Background(), "old-token"); !errors.Is(err, ports.ErrActivationTokenInvalid) {
+		t.Fatalf("expected old token to be invalid after re-claim, got %v", err)
+	}
+}
+
+func TestClaimMailboxFreeModeReclaimExpiredMailboxRegeneratesToken(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:             "mbx-1",
+				KeyFingerprint: "edproof:key-1",
+				Status:         domain.MailboxStatusExpired,
+			},
+		},
+	}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "new-token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	service.SetPublicBaseURL("http://test.local")
+
+	mailbox, created, err := service.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{
+		Fingerprint: "edproof:key-1",
+		Algorithm:   "ed25519",
+	}, "")
+	if err != nil {
+		t.Fatalf("ClaimMailbox failed: %v", err)
+	}
+	if created {
+		t.Fatalf("expected existing mailbox reuse, got created=true")
+	}
+	if mailbox.Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected re-claimed mailbox to be pending again, got %s", mailbox.Status)
+	}
+	if mailbox.ActivationTokenHash != hashToken("new-token") {
+		t.Fatalf("expected regenerated activation token hash, got %q", mailbox.ActivationTokenHash)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment link creation, got %d", payment.calls)
+	}
+	if notifier.calls != 1 {
+		t.Fatalf("expected one activation email, got %d", notifier.calls)
+	}
+}
+
+func TestActivateMailboxByActivationTokenActivatesPendingMailbox(t *testing.T) {
+	future := time.Now().UTC().Add(time.Hour)
+	repo := &fakeMailboxRepo{
+		byActivationTokenHash: map[string]*domain.Mailbox{
+			hashToken("raw-token"): {
+				ID:                  "mbx-1",
+				KeyFingerprint:      "edproof:key-1",
+				Status:              domain.MailboxStatusPendingPayment,
+				ActivationTokenHash: hashToken("raw-token"),
+				ActivationExpiresAt: &future,
+			},
+		},
+	}
+	provisioner := &fakeMailRuntimeProvisioner{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "x"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	service.SetPublicBaseURL("http://test.local")
+
+	result, err := service.ActivateMailboxByActivationToken(context.Background(), "raw-token")
+	if err != nil {
+		t.Fatalf("ActivateMailboxByActivationToken failed: %v", err)
+	}
+	if result.AlreadyActive {
+		t.Fatalf("expected a fresh activation, got already-active")
+	}
+	if result.Mailbox.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected active status, got %s", result.Mailbox.Status)
+	}
+	if result.Mailbox.PaidAt == nil {
+		t.Fatalf("expected PaidAt to be set")
+	}
+	if result.Mailbox.ExpiresAt != nil {
+		t.Fatalf("expected nil ExpiresAt in free mode, got %v", result.Mailbox.ExpiresAt)
+	}
+	if provisioner.calls != 1 {
+		t.Fatalf("expected mailbox provisioning, got %d calls", provisioner.calls)
+	}
+
+	// Resolve now works (Covers AE2).
+	res, err := service.ResolveAccessByKey(context.Background(), ports.VerifiedKey{Fingerprint: "edproof:key-1", Algorithm: "ed25519"}, "imap")
+	if err != nil {
+		t.Fatalf("resolve after activation failed: %v", err)
+	}
+	if res.MailboxID != "mbx-1" {
+		t.Fatalf("expected resolve to return mbx-1, got %q", res.MailboxID)
+	}
+}
+
+func TestActivateMailboxByActivationTokenRejectsExpiredToken(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+	repo := &fakeMailboxRepo{
+		byActivationTokenHash: map[string]*domain.Mailbox{
+			hashToken("raw-token"): {
+				ID:                  "mbx-1",
+				Status:              domain.MailboxStatusPendingPayment,
+				ActivationTokenHash: hashToken("raw-token"),
+				ActivationExpiresAt: &past,
+			},
+		},
+	}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "x"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	if _, err := service.ActivateMailboxByActivationToken(context.Background(), "raw-token"); !errors.Is(err, ports.ErrActivationTokenInvalid) {
+		t.Fatalf("expected expired token to be rejected, got %v", err)
+	}
+	mb, _ := repo.GetByActivationTokenHash(context.Background(), hashToken("raw-token"))
+	if mb.Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected expired-token attempt to leave status unchanged, got %s", mb.Status)
+	}
+}
+
+func TestActivateMailboxByActivationTokenRejectsUnknownToken(t *testing.T) {
+	service := NewMailboxService(&fakeMailboxRepo{}, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "x"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	if _, err := service.ActivateMailboxByActivationToken(context.Background(), "nope"); !errors.Is(err, ports.ErrActivationTokenInvalid) {
+		t.Fatalf("expected unknown token to be rejected, got %v", err)
+	}
+}
+
+func TestActivateMailboxByActivationTokenIdempotentWhenAlreadyActive(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeMailboxRepo{
+		byActivationTokenHash: map[string]*domain.Mailbox{
+			hashToken("raw-token"): {
+				ID:                  "mbx-1",
+				Status:              domain.MailboxStatusActive,
+				PaidAt:              &now,
+				ActivationTokenHash: hashToken("raw-token"),
+			},
+		},
+	}
+	provisioner := &fakeMailRuntimeProvisioner{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "x"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+
+	result, err := service.ActivateMailboxByActivationToken(context.Background(), "raw-token")
+	if err != nil {
+		t.Fatalf("ActivateMailboxByActivationToken failed: %v", err)
+	}
+	if !result.AlreadyActive {
+		t.Fatalf("expected already-active result on second click")
+	}
+	if provisioner.calls != 1 {
+		t.Fatalf("expected provisioning on idempotent click, got %d calls", provisioner.calls)
+	}
+}
+
+func TestCreateMailboxFreeModeCreatesActivationPendingMailbox(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "act-token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	service.SetPublicBaseURL("http://test.local")
+
+	mailbox, created, err := service.CreateMailbox(context.Background(), CreateMailboxRequest{
+		Account: &domain.Account{ID: "acc-1", OwnerEmail: "owner@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("CreateMailbox failed: %v", err)
+	}
+	if !created {
+		t.Fatalf("expected new mailbox to be created")
+	}
+	if mailbox.Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected pending_payment status, got %s", mailbox.Status)
+	}
+	if mailbox.ExpiresAt != nil {
+		t.Fatalf("expected no expiry in free mode, got %v", mailbox.ExpiresAt)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment link creation in free mode, got %d", payment.calls)
+	}
+	if notifier.calls != 1 {
+		t.Fatalf("expected one activation email, got %d", notifier.calls)
+	}
+	if mailbox.ActivationURL == "" {
+		t.Fatalf("expected an activation url on the mailbox")
+	}
+}
+
+func TestCreateMailboxFreeModeRegeneratesLinkForExistingPending(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		pendingByAccount: map[string]*domain.Mailbox{
+			"acc-1": {
+				ID:         "mbx-1",
+				AccountID:  "acc-1",
+				OwnerEmail: "owner@example.com",
+				Status:     domain.MailboxStatusPendingPayment,
+			},
+		},
+	}
+	payment := &fakePaymentGateway{}
+	notifier := &fakeMailboxNotifier{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, notifier, fakeMailboxTokenGenerator{token: "act-token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	service.SetPublicBaseURL("http://test.local")
+
+	mailbox, created, err := service.CreateMailbox(context.Background(), CreateMailboxRequest{
+		Account: &domain.Account{ID: "acc-1", OwnerEmail: "owner@example.com"},
+	})
+	if err != nil {
+		t.Fatalf("CreateMailbox failed: %v", err)
+	}
+	if created {
+		t.Fatalf("expected existing pending mailbox reuse, got created=true")
+	}
+	if mailbox.ActivationTokenHash != hashToken("act-token") {
+		t.Fatalf("expected regenerated activation token hash, got %q", mailbox.ActivationTokenHash)
+	}
+	if payment.calls != 0 {
+		t.Fatalf("expected no payment link creation, got %d", payment.calls)
+	}
+	if notifier.calls != 1 {
+		t.Fatalf("expected one activation email, got %d", notifier.calls)
+	}
+}
+
+func TestResolveAccessByTokenFreeModeBypassesAccountSubscription(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeMailboxRepo{
+		byAccessToken: map[string]*domain.Mailbox{
+			"tok-1": {
+				ID:           "mbx-1",
+				AccountID:    "acc-1",
+				AccessToken:  "tok-1",
+				Status:       domain.MailboxStatusActive,
+				PaidAt:       &now,
+				ExpiresAt:    nil,
+				IMAPHost:     "imap.test.local",
+				IMAPPort:     1143,
+				IMAPUsername: "mbx-1",
+			},
+		},
+	}
+	accounts := &fakeMailboxAccountRepo{byID: map[string]*domain.Account{
+		"acc-1": {ID: "acc-1", OwnerEmail: "owner@example.com"},
+	}}
+	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "x"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+
+	res, err := service.ResolveAccessByToken(context.Background(), "tok-1", "imap")
+	if err != nil {
+		t.Fatalf("expected resolve success in free mode despite no subscription, got %v", err)
+	}
+	if res.MailboxID != "mbx-1" {
+		t.Fatalf("expected mailbox mbx-1, got %q", res.MailboxID)
+	}
+}
+
+func TestResolveAccessByTokenGrandfathersFreeMailboxAfterReEnable(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &fakeMailboxRepo{
+		byAccessToken: map[string]*domain.Mailbox{
+			"tok-1": {
+				ID:           "mbx-1",
+				AccountID:    "acc-1",
+				AccessToken:  "tok-1",
+				Status:       domain.MailboxStatusActive,
+				PaidAt:       &now,
+				ExpiresAt:    nil,
+				IMAPHost:     "imap.test.local",
+				IMAPPort:     1143,
+				IMAPUsername: "mbx-1",
+			},
+		},
+	}
+	accounts := &fakeMailboxAccountRepo{byID: map[string]*domain.Account{
+		"acc-1": {ID: "acc-1", OwnerEmail: "owner@example.com"},
+	}}
+	service := NewMailboxService(repo, accounts, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "x"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	// freeMode intentionally left false (paid re-enabled): the mailbox's nil ExpiresAt must still bypass the account gate.
+
+	res, err := service.ResolveAccessByToken(context.Background(), "tok-1", "imap")
+	if err != nil {
+		t.Fatalf("expected grandfathered free mailbox to stay usable after re-enable, got %v", err)
+	}
+	if res.MailboxID != "mbx-1" {
+		t.Fatalf("expected mailbox mbx-1, got %q", res.MailboxID)
+	}
 }

@@ -3,8 +3,10 @@ package httpapi
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1416,5 +1418,103 @@ func TestHandleSendSupportMessageRateLimit(t *testing.T) {
 
 	if rec.Code != 429 {
 		t.Fatalf("expected 429, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func activationHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func newActivationHandler(repo *httpMailboxRepo, freeMode bool) *Handler {
+	svc := service.NewMailboxService(repo, &httpAccountRepo{}, &httpPaymentGateway{}, &httpNotifier{}, httpTokenGenerator{token: "x"}, &httpProvisioner{}, &httpMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	svc.SetFreeMode(freeMode)
+	svc.SetPublicBaseURL("http://test.local")
+	return NewHandler(Config{
+		MailboxService: svc,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+}
+
+func TestHandleActivateMailboxSuccess(t *testing.T) {
+	repo := &httpMailboxRepo{}
+	future := time.Now().UTC().Add(time.Hour)
+	_ = repo.Create(context.Background(), &domain.Mailbox{
+		ID:                  "mbx-1",
+		Status:              domain.MailboxStatusPendingPayment,
+		ActivationTokenHash: activationHash("raw-token"),
+		ActivationExpiresAt: &future,
+		KeyFingerprint:      "fp-1",
+		IMAPUsername:        "mbx-1",
+		AccessToken:         "at-1",
+	})
+
+	handler := newActivationHandler(repo, true)
+	req := httptest.NewRequest("GET", "/v1/mailboxes/activate?token=raw-token", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("expected Referrer-Policy: no-referrer, got %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "Mailbox activated") {
+		t.Fatalf("expected success page, body=%s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "raw-token") {
+		t.Fatalf("activation page must never render the raw token")
+	}
+}
+
+func TestHandleActivateMailboxAlreadyActive(t *testing.T) {
+	repo := &httpMailboxRepo{}
+	now := time.Now().UTC()
+	_ = repo.Create(context.Background(), &domain.Mailbox{
+		ID:                  "mbx-1",
+		Status:              domain.MailboxStatusActive,
+		PaidAt:              &now,
+		ActivationTokenHash: activationHash("raw-token"),
+		KeyFingerprint:      "fp-1",
+		IMAPUsername:        "mbx-1",
+		AccessToken:         "at-1",
+	})
+
+	handler := newActivationHandler(repo, true)
+	req := httptest.NewRequest("GET", "/v1/mailboxes/activate?token=raw-token", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "already active") {
+		t.Fatalf("expected already-active page, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleActivateMailboxInvalidToken(t *testing.T) {
+	handler := newActivationHandler(&httpMailboxRepo{}, true)
+	req := httptest.NewRequest("GET", "/v1/mailboxes/activate?token=unknown", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200 with recovery page, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Re-claim your mailbox") {
+		t.Fatalf("expected recovery-path guidance, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleActivateMailboxMissingToken(t *testing.T) {
+	handler := newActivationHandler(&httpMailboxRepo{}, true)
+	req := httptest.NewRequest("GET", "/v1/mailboxes/activate", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected status 400 for missing token, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }
