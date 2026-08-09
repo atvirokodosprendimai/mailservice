@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -64,6 +65,48 @@ func TestMailgunSendPaymentLink(t *testing.T) {
 	}
 	if !strings.Contains(gotBody, "html=") {
 		t.Fatalf("expected html field, got body: %s", gotBody)
+	}
+}
+
+func TestMailgunSendActivationLink(t *testing.T) {
+	t.Parallel()
+
+	var gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		defer r.Body.Close()
+		gotBody = string(body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	n, err := NewMailgunNotifier("key", "mg.example.com", ts.URL, "noreply@example.com", "")
+	if err != nil {
+		t.Fatalf("NewMailgunNotifier: %v", err)
+	}
+
+	activationURL := `https://mail.example/activate?token=abc"><script>alert(1)</script>`
+	mailboxID := `mbx-1"><img src=x onerror=alert(1)>`
+	if err := n.SendActivationLink(context.Background(), "user@example.com", activationURL, mailboxID); err != nil {
+		t.Fatalf("SendActivationLink failed: %v", err)
+	}
+
+	form, err := url.ParseQuery(gotBody)
+	if err != nil {
+		t.Fatalf("parse request body: %v", err)
+	}
+	htmlBody := form.Get("html")
+	if !strings.Contains(htmlBody, "Activate mailbox") {
+		t.Fatalf("expected activation link text, got: %s", htmlBody)
+	}
+	if !strings.Contains(htmlBody, "&lt;script&gt;") {
+		t.Fatalf("expected escaped script tag in html body, got: %s", htmlBody)
+	}
+	if strings.Contains(htmlBody, "<script>") {
+		t.Fatalf("raw script tag leaked into html body: %s", htmlBody)
+	}
+	if !strings.Contains(htmlBody, "&lt;img") {
+		t.Fatalf("expected escaped mailbox id in html body, got: %s", htmlBody)
 	}
 }
 

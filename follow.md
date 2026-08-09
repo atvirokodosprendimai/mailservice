@@ -12,16 +12,14 @@ curl -X POST http://localhost:8080/v1/mailboxes/claim \
 
 - Same key returns the same mailbox.
 - Different key returns a different mailbox.
-- Service sends payment link to `billing_email`.
+- Service emails a one-time activation link to `billing_email` (24-hour expiry; the claim response carries it in `payment_url`, name kept for compatibility).
 
-2. Complete payment and then resolve IMAP details with the same key:
+2. Activate the mailbox and then resolve IMAP details with the same key:
 
-If using Polar checkout, confirm the redirected checkout before resolving access:
+The owner (or the agent, which received the link in the claim response) opens the activation link:
 
 ```bash
-curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
-
-# production should use signed POST /v1/webhooks/polar with POLAR_WEBHOOK_SECRET
+curl -sf "<activation_url>"  # 200 = activated / already active; 404 = link expired or used
 ```
 
 ```bash
@@ -30,7 +28,7 @@ curl -X POST http://localhost:8080/v1/access/resolve \
   -d '{"protocol":"imap","edproof":"<proof>"}'
 ```
 
-- If not paid yet, API returns `409` with `{ "status": "waiting_payment" }`.
+- If not activated yet, API returns `409` with `{ "status": "waiting_payment" }`.
 - On success the response includes `host`, `port`, `username`, `password`, `email`, and `access_token`.
 
 3. Use the returned `access_token` to read mail via the HTTP API (no separate account token required):
@@ -89,9 +87,9 @@ curl -X POST http://localhost:8080/v1/mailboxes \
   -H 'X-API-Token: <api-token>'
 ```
 
-- If there is no pending mailbox, service creates one, sends payment link to owner email, and returns `201`.
+- If there is no pending mailbox, service creates one, emails an activation link to the owner, and returns `201`.
 - If a pending mailbox already exists, service returns it with `200` and status `pending_payment`.
-- After successful payment, account subscription is extended for 1 month; all mailboxes in that account inherit access (`expires_at` is included in mailbox response).
+- Free mode ignores account subscription state; mailboxes never expire once activated.
 
 6. Poll mailbox status:
 
@@ -108,7 +106,7 @@ curl -X POST http://localhost:8080/v1/imap/resolve \
   -d '{"access_token":"<mailbox-access-token>"}'
 ```
 
-- If not paid yet, API returns `409` with `{ "status": "waiting_payment" }`.
+- If not activated yet, API returns `409` with `{ "status": "waiting_payment" }`.
 
 8. Fetch unread mails via API endpoint:
 

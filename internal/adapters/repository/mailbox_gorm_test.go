@@ -2,10 +2,13 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
 	"github.com/atvirokodosprendimai/mailservice/internal/platform/database"
 )
@@ -153,5 +156,115 @@ func TestMailboxRepositoryAllowsSameBillingEmailForAccountBoundMailboxes(t *test
 		if err := repo.Create(context.Background(), mailbox); err != nil {
 			t.Fatalf("Create account-bound mailbox %s failed: %v", id, err)
 		}
+	}
+}
+
+// No t.Parallel() — OpenAndMigrate calls goose.SetBaseFS/SetDialect (global state).
+func TestMailboxRepositoryActivationToken(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+
+	repo := NewMailboxRepository(db)
+	expiresAt := time.Now().Add(24 * time.Hour).UTC()
+	mailbox := &domain.Mailbox{
+		ID:                  "mbx-act-1",
+		AccountID:           "acc-1",
+		OwnerEmail:          "owner@example.com",
+		BillingEmail:        "billing@example.com",
+		KeyFingerprint:      "edproof:act1",
+		IMAPHost:            "imap.example.com",
+		IMAPPort:            143,
+		IMAPUsername:        "mbx_act_1",
+		IMAPPassword:        "secret",
+		AccessToken:         "access-act-1",
+		PaymentSessionID:    "",
+		PaymentURL:          "",
+		ActivationTokenHash: "hash-act-1",
+		ActivationExpiresAt: &expiresAt,
+		Status:              domain.MailboxStatusPendingPayment,
+	}
+
+	if err := repo.Create(context.Background(), mailbox); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	byHash, err := repo.GetByActivationTokenHash(context.Background(), "hash-act-1")
+	if err != nil {
+		t.Fatalf("GetByActivationTokenHash failed: %v", err)
+	}
+	if byHash.ID != mailbox.ID {
+		t.Fatalf("expected mailbox id %q, got %q", mailbox.ID, byHash.ID)
+	}
+	if byHash.ActivationTokenHash != "hash-act-1" {
+		t.Fatalf("expected activation token hash, got %q", byHash.ActivationTokenHash)
+	}
+	if byHash.ActivationExpiresAt == nil || !byHash.ActivationExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expected activation expiry %v, got %v", expiresAt, byHash.ActivationExpiresAt)
+	}
+
+	if _, err := repo.GetByActivationTokenHash(context.Background(), "hash-unknown"); !errors.Is(err, ports.ErrMailboxNotFound) {
+		t.Fatalf("expected ErrMailboxNotFound for unknown hash, got %v", err)
+	}
+}
+
+func TestMailboxRepositoryListActiveAndClearActiveExpiries(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+	repo := NewMailboxRepository(db)
+
+	future := time.Now().UTC().Add(24 * time.Hour)
+	active := &domain.Mailbox{
+		ID:             "mbx-active",
+		OwnerEmail:     "active@example.com",
+		BillingEmail:   "active@example.com",
+		KeyFingerprint: "edproof:active",
+		IMAPHost:       "imap.example.com",
+		IMAPPort:       143,
+		IMAPUsername:   "mbx_active",
+		IMAPPassword:   "secret",
+		AccessToken:    "access-active",
+		Status:         domain.MailboxStatusActive,
+		PaidAt:         func() *time.Time { t := time.Now().UTC().Add(-time.Hour); return &t }(),
+		ExpiresAt:      &future,
+	}
+	pending := &domain.Mailbox{
+		ID:             "mbx-pending",
+		OwnerEmail:     "pending@example.com",
+		BillingEmail:   "pending@example.com",
+		KeyFingerprint: "edproof:pending",
+		IMAPHost:       "imap.example.com",
+		IMAPPort:       143,
+		IMAPUsername:   "mbx_pending",
+		IMAPPassword:   "secret",
+		AccessToken:    "access-pending",
+		Status:         domain.MailboxStatusPendingPayment,
+	}
+	for _, mb := range []*domain.Mailbox{active, pending} {
+		if err := repo.Create(context.Background(), mb); err != nil {
+			t.Fatalf("Create failed: %v", err)
+		}
+	}
+
+	cleared, err := repo.ClearActiveExpiries(context.Background())
+	if err != nil {
+		t.Fatalf("ClearActiveExpiries failed: %v", err)
+	}
+	if cleared != 1 {
+		t.Fatalf("expected 1 row cleared, got %d", cleared)
+	}
+
+	got, err := repo.GetByID(context.Background(), "mbx-active")
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+	if got.ExpiresAt != nil {
+		t.Fatalf("expected nil ExpiresAt after clear, got %v", got.ExpiresAt)
+	}
+	if got.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected mailbox to stay active, got %s", got.Status)
 	}
 }

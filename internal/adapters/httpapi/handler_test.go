@@ -3,8 +3,10 @@ package httpapi
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -522,6 +524,7 @@ type httpMailboxRepo struct {
 	byID                          map[string]*domain.Mailbox
 	byPaymentSession              map[string]*domain.Mailbox
 	byKeyFingerprint              map[string]*domain.Mailbox
+	byActivationTokenHash         map[string]*domain.Mailbox
 	activeOrPendingByBillingEmail map[string]*domain.Mailbox
 	getByIDCount                  int
 	updateCount                   int
@@ -544,6 +547,12 @@ func (r *httpMailboxRepo) Create(_ context.Context, mailbox *domain.Mailbox) err
 	if mailbox.PaymentSessionID != "" {
 		r.byPaymentSession[mailbox.PaymentSessionID] = mailbox
 	}
+	if r.byActivationTokenHash == nil {
+		r.byActivationTokenHash = map[string]*domain.Mailbox{}
+	}
+	if mailbox.ActivationTokenHash != "" {
+		r.byActivationTokenHash[mailbox.ActivationTokenHash] = mailbox
+	}
 	return nil
 }
 
@@ -558,6 +567,12 @@ func (r *httpMailboxRepo) Update(_ context.Context, mailbox *domain.Mailbox) err
 	}
 	if mailbox.PaymentSessionID != "" {
 		r.byPaymentSession[mailbox.PaymentSessionID] = mailbox
+	}
+	if r.byActivationTokenHash == nil {
+		r.byActivationTokenHash = map[string]*domain.Mailbox{}
+	}
+	if mailbox.ActivationTokenHash != "" {
+		r.byActivationTokenHash[mailbox.ActivationTokenHash] = mailbox
 	}
 	if r.byKeyFingerprint == nil {
 		r.byKeyFingerprint = map[string]*domain.Mailbox{}
@@ -595,6 +610,13 @@ func (r *httpMailboxRepo) GetByPaymentSessionID(_ context.Context, sessionID str
 	return nil, ports.ErrMailboxNotFound
 }
 
+func (r *httpMailboxRepo) GetByActivationTokenHash(_ context.Context, tokenHash string) (*domain.Mailbox, error) {
+	if item, ok := r.byActivationTokenHash[tokenHash]; ok {
+		return item, nil
+	}
+	return nil, ports.ErrMailboxNotFound
+}
+
 func (r *httpMailboxRepo) GetByAccessToken(_ context.Context, _ string) (*domain.Mailbox, error) {
 	return nil, ports.ErrMailboxNotFound
 }
@@ -608,6 +630,17 @@ func (r *httpMailboxRepo) GetByKeyFingerprint(_ context.Context, keyFingerprint 
 
 func (r *httpMailboxRepo) ListActiveExpired(_ context.Context, _ time.Time) ([]domain.Mailbox, error) {
 	return nil, nil
+}
+
+func (r *httpMailboxRepo) ClearActiveExpiries(_ context.Context) (int, error) {
+	count := 0
+	for _, mb := range r.byID {
+		if mb.Status == domain.MailboxStatusActive {
+			mb.ExpiresAt = nil
+			count++
+		}
+	}
+	return count, nil
 }
 
 type httpAccountRepo struct{}
@@ -625,6 +658,9 @@ func (httpAccountRepo) GetByAPIToken(_ context.Context, _ string) (*domain.Accou
 func (httpAccountRepo) UpdateAPIToken(_ context.Context, _ string, _ string) error { return nil }
 func (httpAccountRepo) UpdateSubscriptionExpiresAt(_ context.Context, _ string, _ time.Time) error {
 	return nil
+}
+func (httpAccountRepo) ClearSubscriptionExpiresAt(_ context.Context) (int, error) {
+	return 0, nil
 }
 
 type httpPaymentGateway struct {
@@ -645,6 +681,9 @@ func (g httpPaymentGateway) GetPaymentSession(_ context.Context, sessionID strin
 type httpNotifier struct{}
 
 func (httpNotifier) SendPaymentLink(_ context.Context, _ string, _ string, _ string) error {
+	return nil
+}
+func (httpNotifier) SendActivationLink(_ context.Context, _ string, _ string, _ string) error {
 	return nil
 }
 func (httpNotifier) SendRecoveryLink(_ context.Context, _ string, _ string) error { return nil }
@@ -1393,5 +1432,240 @@ func TestHandleSendSupportMessageRateLimit(t *testing.T) {
 
 	if rec.Code != 429 {
 		t.Fatalf("expected 429, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func activationHash(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+func newActivationHandler(repo *httpMailboxRepo, freeMode bool) *Handler {
+	svc := service.NewMailboxService(repo, &httpAccountRepo{}, &httpPaymentGateway{}, &httpNotifier{}, httpTokenGenerator{token: "x"}, &httpProvisioner{}, &httpMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	svc.SetFreeMode(freeMode)
+	svc.SetPublicBaseURL("http://test.local")
+	return NewHandler(Config{
+		MailboxService: svc,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+}
+
+func TestHandleActivateMailboxSuccess(t *testing.T) {
+	repo := &httpMailboxRepo{}
+	future := time.Now().UTC().Add(time.Hour)
+	_ = repo.Create(context.Background(), &domain.Mailbox{
+		ID:                  "mbx-1",
+		Status:              domain.MailboxStatusPendingPayment,
+		ActivationTokenHash: activationHash("raw-token"),
+		ActivationExpiresAt: &future,
+		KeyFingerprint:      "fp-1",
+		IMAPUsername:        "mbx-1",
+		AccessToken:         "at-1",
+	})
+
+	handler := newActivationHandler(repo, true)
+	req := httptest.NewRequest("GET", "/v1/mailboxes/activate?token=raw-token", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("expected Referrer-Policy: no-referrer, got %q", got)
+	}
+	if !strings.Contains(rec.Body.String(), "Mailbox activated") {
+		t.Fatalf("expected success page, body=%s", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "raw-token") {
+		t.Fatalf("activation page must never render the raw token")
+	}
+}
+
+func TestHandleActivateMailboxAlreadyActive(t *testing.T) {
+	repo := &httpMailboxRepo{}
+	now := time.Now().UTC()
+	_ = repo.Create(context.Background(), &domain.Mailbox{
+		ID:                  "mbx-1",
+		Status:              domain.MailboxStatusActive,
+		PaidAt:              &now,
+		ActivationTokenHash: activationHash("raw-token"),
+		KeyFingerprint:      "fp-1",
+		IMAPUsername:        "mbx-1",
+		AccessToken:         "at-1",
+	})
+
+	handler := newActivationHandler(repo, true)
+	req := httptest.NewRequest("GET", "/v1/mailboxes/activate?token=raw-token", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "already active") {
+		t.Fatalf("expected already-active page, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleActivateMailboxInvalidToken(t *testing.T) {
+	handler := newActivationHandler(&httpMailboxRepo{}, true)
+	req := httptest.NewRequest("GET", "/v1/mailboxes/activate?token=unknown", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 404 {
+		t.Fatalf("expected status 404 with recovery page, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Re-claim your mailbox") {
+		t.Fatalf("expected recovery-path guidance, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleActivateMailboxMissingToken(t *testing.T) {
+	handler := newActivationHandler(&httpMailboxRepo{}, true)
+	req := httptest.NewRequest("GET", "/v1/mailboxes/activate", nil)
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected status 400 for missing token, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleFreeModeSwitchoverRequiresAdminKey(t *testing.T) {
+	repo := &httpMailboxRepo{}
+	service := service.NewMailboxService(repo, &httpAccountRepo{}, &httpPaymentGateway{}, &httpNotifier{}, httpTokenGenerator{token: "token"}, &httpProvisioner{}, &httpMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	handler := NewHandler(Config{
+		MailboxService: service,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/admin/free-mode/switchover", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 without configured admin key, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleFreeModeSwitchoverRunsInFreeMode(t *testing.T) {
+	future := time.Now().UTC().Add(24 * time.Hour)
+	repo := &httpMailboxRepo{
+		byID: map[string]*domain.Mailbox{
+			"mbx-1": {
+				ID:             "mbx-1",
+				OwnerEmail:     "owner@example.com",
+				KeyFingerprint: "edproof:key-1",
+				IMAPHost:       "imap.test.local",
+				IMAPPort:       1143,
+				IMAPUsername:   "mbx_1",
+				IMAPPassword:   "pass",
+				AccessToken:    "access-1",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         func() *time.Time { t := time.Now().UTC().Add(-time.Hour); return &t }(),
+				ExpiresAt:      &future,
+			},
+		},
+	}
+	service := service.NewMailboxService(repo, &httpAccountRepo{}, &httpPaymentGateway{}, &httpNotifier{}, httpTokenGenerator{token: "token"}, &httpProvisioner{}, &httpMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	handler := NewHandler(Config{
+		AdminAPIKey:    "secret",
+		MailboxService: service,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/free-mode/switchover", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		ActiveCleared int `json:"active_cleared"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode switchover response: %v", err)
+	}
+	if payload.ActiveCleared != 1 {
+		t.Fatalf("expected active_cleared=1, got %d", payload.ActiveCleared)
+	}
+	if repo.byID["mbx-1"].ExpiresAt != nil {
+		t.Fatalf("expected expiry cleared after switchover, got %v", repo.byID["mbx-1"].ExpiresAt)
+	}
+}
+
+func TestHandleFreeModeSwitchoverRefusesWhenFreeModeOff(t *testing.T) {
+	service := service.NewMailboxService(&httpMailboxRepo{}, &httpAccountRepo{}, &httpPaymentGateway{}, &httpNotifier{}, httpTokenGenerator{token: "token"}, &httpProvisioner{}, &httpMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	// freeMode defaults to false.
+	handler := NewHandler(Config{
+		AdminAPIKey:    "secret",
+		MailboxService: service,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/free-mode/switchover", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 with free mode off, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlePolarSuccessFreeModeNoPanic(t *testing.T) {
+	repo := &httpMailboxRepo{
+		byPaymentSession: map[string]*domain.Mailbox{
+			"polar_free_1": {
+				ID:               "mbx-free",
+				KeyFingerprint:   "edproof:key-1",
+				PaymentSessionID: "polar_free_1",
+				Status:           domain.MailboxStatusPendingPayment,
+			},
+		},
+	}
+	mailboxService := service.NewMailboxService(
+		repo,
+		&httpAccountRepo{},
+		&httpPaymentGateway{},
+		&httpNotifier{},
+		httpTokenGenerator{token: "token"},
+		&httpProvisioner{},
+		&httpMailReader{},
+		"mail.test.local",
+		"imap.test.local",
+		1143,
+	)
+	mailboxService.SetFreeMode(true)
+	handler := NewHandler(Config{
+		PaymentGateway: httpPaymentGateway{
+			session: &ports.PaymentSession{SessionID: "polar_free_1", Status: ports.PaymentSessionStatusSucceeded},
+		},
+		MailboxService: mailboxService,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("GET", "/v1/payments/polar/success?checkout_id=polar_free_1", nil)
+	rec := httptest.NewRecorder()
+
+	// Must not panic on the free-mode (nil, nil) no-op from MarkMailboxPaid.
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["status"] != "ok" {
+		t.Fatalf("expected ok status, got %#v", resp)
+	}
+	if repo.byPaymentSession["polar_free_1"].Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected mailbox to stay pending in free mode, got %s", repo.byPaymentSession["polar_free_1"].Status)
 	}
 }

@@ -103,6 +103,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/accounts/recovery/start", h.handleStartRecovery)
 	mux.HandleFunc("POST /v1/accounts/recovery/complete", h.handleCompleteRecovery)
 	mux.HandleFunc("GET /v1/accounts/recovery/complete", h.handleCompleteRecoveryByLink)
+	mux.HandleFunc("GET /v1/mailboxes/activate", h.handleActivateMailbox)
 	mux.HandleFunc("GET /v1/mailboxes", h.withAccountToken(h.handleListMailboxes))
 	mux.HandleFunc("POST /v1/mailboxes", h.withAccountToken(h.handleCreateMailbox))
 	mux.HandleFunc("POST /v1/auth/challenge", h.handleAuthChallenge)
@@ -118,6 +119,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /admin/metrics", h.withAdminKey(h.handleAdminMetrics))
 	mux.HandleFunc("POST /admin/mailboxes/reprovision", h.withAdminKey(h.handleReprovisionMailbox))
 	mux.HandleFunc("POST /admin/payments/reconcile", h.withAdminKey(h.handleReconcilePayments))
+	mux.HandleFunc("POST /admin/free-mode/switchover", h.withAdminKey(h.handleFreeModeSwitchover))
 	mux.HandleFunc("POST /v1/support/messages", h.handleSendSupportMessage)
 	mux.HandleFunc("GET /docs/agent-api-skill.md", h.handleAgentAPISkill)
 	if h.mockPaymentMode {
@@ -653,6 +655,39 @@ func (h *Handler) handleCompleteRecoveryByLink(w http.ResponseWriter, r *http.Re
 	))
 }
 
+func (h *Handler) handleActivateMailbox(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" {
+		writeError(w, http.StatusBadRequest, errors.New("missing token"))
+		return
+	}
+
+	// The token is a bearer credential carried in the URL; never let the page
+	// leak it to other origins via the Referer header, and never let proxies
+	// cache the one-time response.
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Cache-Control", "no-store")
+
+	result, err := h.mailboxService.ActivateMailboxByActivationToken(r.Context(), token)
+	if err != nil {
+		if errors.Is(err, ports.ErrActivationTokenInvalid) {
+			renderActivationStatusPage(w, http.StatusNotFound, "#a23b2a", "Activation link invalid", "Activation link invalid",
+				"<p>This activation link has expired or is no longer valid.</p><p class=\"muted\">Re-claim your mailbox with the same key to receive a new activation link.</p>")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	if result.AlreadyActive {
+		renderActivationStatusPage(w, http.StatusOK, "#1f6b34", "Mailbox already active", "Mailbox already active",
+			"<p>This mailbox is already active. Nothing to do.</p><p class=\"muted\">Call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>")
+		return
+	}
+	renderActivationStatusPage(w, http.StatusOK, "#1f6b34", "Mailbox activated", "Mailbox activated",
+		"<p>Your mailbox is now active and ready for mail. It does not expire.</p><p class=\"muted\">Return to your agent and call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>")
+}
+
 func (h *Handler) handleCreateMailbox(w http.ResponseWriter, r *http.Request) {
 	account, err := accountFromContext(r.Context())
 	if err != nil {
@@ -1155,6 +1190,13 @@ func (h *Handler) handlePolarSuccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if mailbox == nil {
+		// Free mode: MarkMailboxPaid no-ops and activation is link-based, so
+		// there is no paid mailbox to render.
+		writeJSON(w, http.StatusOK, polarSuccessView{Status: "ok"})
+		return
+	}
+
 	// Render HTML for browser requests, JSON for API clients.
 	if strings.Contains(r.Header.Get("Accept"), "text/html") {
 		email := mailbox.IMAPUsername
@@ -1356,6 +1398,36 @@ type polarSuccessView struct {
 	MailboxID string `json:"mailbox_id"`
 }
 
+// renderActivationStatusPage renders the activation endpoint's HTML pages from
+// one shared shell; the status code, heading color, and body differ per outcome.
+func renderActivationStatusPage(w http.ResponseWriter, statusCode int, headingColor, title, heading, body string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(statusCode)
+	_, _ = io.WriteString(w, fmt.Sprintf(activationStatusPageHTMLTemplate, title, headingColor, heading, body))
+}
+
+var activationStatusPageHTMLTemplate = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>%s</title>
+  <style>
+    body{font-family:Georgia,serif;background:#f4efe4;color:#17222d;display:flex;justify-content:center;padding:3rem 1rem}
+    .card{background:#fffaf0;border:1px solid #d8cdb7;border-radius:8px;padding:2rem;max-width:34rem}
+    h1{color:%s;margin-top:0}
+    .muted{color:#566575}
+    code{background:#f0e7d5;padding:0.1em 0.3em;border-radius:3px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>%s</h1>
+    %s
+  </div>
+</body>
+</html>`
+
 var paymentSuccessHTMLTemplate = `<!doctype html>
 <html lang="en">
 <head>
@@ -1537,11 +1609,15 @@ var paymentSuccessHTMLTemplate = `<!doctype html>
 </html>`
 
 func mailboxResponse(mailbox *domain.Mailbox) mailboxView {
+	paymentURL := mailbox.PaymentURL
+	if mailbox.ActivationURL != "" {
+		paymentURL = mailbox.ActivationURL
+	}
 	resp := mailboxView{
 		ID:         mailbox.ID,
 		Status:     mailbox.Status,
 		Usable:     mailbox.Usable(),
-		PaymentURL: mailbox.PaymentURL,
+		PaymentURL: paymentURL,
 	}
 	if mailbox.ExpiresAt != nil {
 		expires := mailbox.ExpiresAt.Format(time.RFC3339)
@@ -1720,6 +1796,23 @@ func (h *Handler) handleReconcilePayments(w http.ResponseWriter, r *http.Request
 		"activated":  activated,
 		"results":    results,
 	})
+}
+
+// handleFreeModeSwitchover runs the one-off transition to the free model
+// (KTD6): clear expiry on active mailboxes, clear account subscription
+// expiries, and convert pending mailboxes to activation-pending. It only
+// succeeds while free mode is on.
+func (h *Handler) handleFreeModeSwitchover(w http.ResponseWriter, r *http.Request) {
+	result, err := h.mailboxService.SwitchoverToFreeMode(r.Context())
+	if err != nil {
+		if errors.Is(err, ports.ErrSwitchoverRequiresFreeMode) {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func fallbackString(value string, fallback string) string {

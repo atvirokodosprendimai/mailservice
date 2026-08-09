@@ -114,6 +114,8 @@ func main() {
 	}
 	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort, giftOpts...)
 	mailboxService.SetMetrics(metricsRegistry)
+	mailboxService.SetFreeMode(cfg.FreeMode)
+	mailboxService.SetPublicBaseURL(cfg.PublicBaseURL)
 	supportMessageRepo := repository.NewSupportMessageRepository(db)
 	mailboxService.SetSupportConfig(service.SupportConfig{
 		SupportEmail: cfg.SupportEmail,

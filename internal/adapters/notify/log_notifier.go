@@ -20,6 +20,11 @@ func (n *LogNotifier) SendPaymentLink(_ context.Context, ownerEmail string, paym
 	return nil
 }
 
+func (n *LogNotifier) SendActivationLink(_ context.Context, ownerEmail string, activationURL string, mailboxID string) error {
+	n.logger.Printf("send owner activation email owner=%s mailbox=%s activation_url=%s", ownerEmail, mailboxID, activationURL)
+	return nil
+}
+
 func (n *LogNotifier) SendRecoveryLink(_ context.Context, ownerEmail string, recoveryURL string) error {
 	n.logger.Printf("send owner recovery link owner=%s recovery_url=%s", ownerEmail, recoveryURL)
 	return nil

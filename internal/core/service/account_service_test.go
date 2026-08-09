@@ -236,6 +236,17 @@ func (f *fakeAccountRepo) UpdateSubscriptionExpiresAt(_ context.Context, account
 	return ports.ErrAccountNotFound
 }
 
+func (f *fakeAccountRepo) ClearSubscriptionExpiresAt(_ context.Context) (int, error) {
+	count := 0
+	for _, item := range f.byOwner {
+		if item.SubscriptionExpiresAt != nil {
+			item.SubscriptionExpiresAt = nil
+			count++
+		}
+	}
+	return count, nil
+}
+
 type fakeRecoveryRepo struct {
 	latest       *domain.AccountRecovery
 	markedUsedID string
@@ -334,6 +345,10 @@ type fakeAccountNotifier struct {
 }
 
 func (f *fakeAccountNotifier) SendPaymentLink(_ context.Context, _ string, _ string, _ string) error {
+	return nil
+}
+
+func (f *fakeAccountNotifier) SendActivationLink(_ context.Context, _ string, _ string, _ string) error {
 	return nil
 }
 

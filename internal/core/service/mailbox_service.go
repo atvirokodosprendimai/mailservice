@@ -25,19 +25,21 @@ type SupportConfig struct {
 }
 
 type MailboxService struct {
-	repo        ports.MailboxRepository
-	accounts    ports.AccountRepository
-	payment     ports.PaymentGateway
-	notifier    ports.Notifier
-	tokenGen    ports.TokenGenerator
-	provisioner ports.MailRuntimeProvisioner
-	mailReader  ports.MailReader
-	mailDomain  string
-	imapHost    string
-	imapPort    int
-	giftCoupon  GiftCouponConfig
-	support     SupportConfig
-	metrics     *metrics.Registry
+	repo          ports.MailboxRepository
+	accounts      ports.AccountRepository
+	payment       ports.PaymentGateway
+	notifier      ports.Notifier
+	tokenGen      ports.TokenGenerator
+	provisioner   ports.MailRuntimeProvisioner
+	mailReader    ports.MailReader
+	mailDomain    string
+	imapHost      string
+	imapPort      int
+	giftCoupon    GiftCouponConfig
+	support       SupportConfig
+	metrics       *metrics.Registry
+	freeMode      bool
+	publicBaseURL string
 }
 
 func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, mailDomain string, imapHost string, imapPort int, giftCoupon ...GiftCouponConfig) *MailboxService {
@@ -80,6 +82,16 @@ func (s *MailboxService) SetMetrics(registry *metrics.Registry) {
 	s.metrics = registry
 }
 
+func (s *MailboxService) SetFreeMode(enabled bool) {
+	s.freeMode = enabled
+}
+
+// SetPublicBaseURL configures the base URL used to build activation links.
+// Called after construction to avoid changing the constructor signature.
+func (s *MailboxService) SetPublicBaseURL(baseURL string) {
+	s.publicBaseURL = baseURL
+}
+
 type CreateMailboxRequest struct {
 	Account *domain.Account
 }
@@ -98,6 +110,10 @@ type ResolveAccessResult = ResolveIMAPResult
 
 const giftGrantedMonths = 3
 
+// activationTokenSize is the byte length of activation tokens (16 bytes = 128 bits).
+
+// activationTokenTTL is how long an activation link stays valid.
+
 func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, key ports.VerifiedKey, couponCode string) (*domain.Mailbox, bool, error) {
 	s.metrics.Counter("key_proof_total").Add(1)
 	billingEmail = strings.TrimSpace(strings.ToLower(billingEmail))
@@ -111,6 +127,12 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		return nil, false, ports.ErrInvalidKeyProof
 	}
 
+	// In free mode, coupons are disabled entirely: treat the code as absent so
+	// neither coupon validation nor the coupon-redeemed dedup branch can fire.
+	if s.freeMode {
+		couponCode = ""
+	}
+
 	couponCode = strings.TrimSpace(strings.ToUpper(couponCode))
 	discountID, grantedMonths, err := s.validateCoupon(couponCode)
 	if err != nil {
@@ -120,6 +142,17 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	existing, err := s.repo.GetByKeyFingerprint(ctx, key.Fingerprint)
 	if err == nil {
 		if existing.Usable() {
+			return existing, false, nil
+		}
+
+		// Free-mode re-claim: regenerate the activation token and re-email the
+		// link for any non-usable existing mailbox (pending, expired, or other).
+		if s.freeMode {
+			existing.OwnerEmail = billingEmail
+			existing.BillingEmail = billingEmail
+			if err := s.issueActivationLink(ctx, existing, existing.BillingEmail); err != nil {
+				return nil, false, err
+			}
 			return existing, false, nil
 		}
 
@@ -178,6 +211,28 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		return nil, false, fmt.Errorf("generate access token: %w", err)
 	}
 
+	mailbox := &domain.Mailbox{
+		ID:             id,
+		OwnerEmail:     billingEmail,
+		BillingEmail:   billingEmail,
+		KeyFingerprint: key.Fingerprint,
+		IMAPHost:       s.imapHost,
+		IMAPPort:       s.imapPort,
+		IMAPUsername:   "mbx_" + strings.ReplaceAll(id[:12], "-", ""),
+		IMAPPassword:   imapPassword,
+		AccessToken:    accessToken,
+		Status:         domain.MailboxStatusPendingPayment,
+		GrantedMonths:  grantedMonths,
+		CouponUsed:     couponCode != "",
+	}
+
+	if s.freeMode {
+		if err := s.createMailboxWithActivation(ctx, mailbox, mailbox.BillingEmail); err != nil {
+			return nil, false, err
+		}
+		return mailbox, true, nil
+	}
+
 	paymentLink, err := s.payment.CreatePaymentLink(ctx, ports.PaymentLinkRequest{
 		MailboxID:  id,
 		OwnerEmail: billingEmail,
@@ -187,22 +242,8 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		return nil, false, fmt.Errorf("create payment link: %w", err)
 	}
 
-	mailbox := &domain.Mailbox{
-		ID:               id,
-		OwnerEmail:       billingEmail,
-		BillingEmail:     billingEmail,
-		KeyFingerprint:   key.Fingerprint,
-		IMAPHost:         s.imapHost,
-		IMAPPort:         s.imapPort,
-		IMAPUsername:     "mbx_" + strings.ReplaceAll(id[:12], "-", ""),
-		IMAPPassword:     imapPassword,
-		AccessToken:      accessToken,
-		PaymentSessionID: paymentLink.SessionID,
-		PaymentURL:       paymentLink.URL,
-		Status:           domain.MailboxStatusPendingPayment,
-		GrantedMonths:    grantedMonths,
-		CouponUsed:       couponCode != "",
-	}
+	mailbox.PaymentSessionID = paymentLink.SessionID
+	mailbox.PaymentURL = paymentLink.URL
 
 	if err := s.repo.Create(ctx, mailbox); err != nil {
 		return nil, false, fmt.Errorf("create mailbox: %w", err)
@@ -234,6 +275,11 @@ func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxReq
 	}
 	now := time.Now().UTC()
 	ownerEmail := strings.TrimSpace(strings.ToLower(req.Account.OwnerEmail))
+
+	if s.freeMode {
+		return s.createFreeMailbox(ctx, req.Account, ownerEmail)
+	}
+
 	accountHasActiveSubscription := req.Account.SubscriptionActive(now)
 
 	if !accountHasActiveSubscription {
@@ -324,7 +370,63 @@ func (s *MailboxService) ListMailboxesForAccount(ctx context.Context, accountID 
 	return s.repo.ListByAccountID(ctx, accountID)
 }
 
+// ActivateMailboxByActivationToken activates a pending mailbox whose stored
+// token hash matches the raw token, mirroring the recovery-code pattern. In
+// free mode activation sets PaidAt and leaves ExpiresAt nil so the mailbox
+// never expires. An already-active mailbox is idempotent. Invalid, expired, or
+// unknown tokens return ErrActivationTokenInvalid without side effects.
+func (s *MailboxService) ActivateMailboxByActivationToken(ctx context.Context, rawToken string) (ActivationResult, error) {
+	if strings.TrimSpace(rawToken) == "" {
+		return ActivationResult{}, ports.ErrActivationTokenInvalid
+	}
+
+	mailbox, err := s.repo.GetByActivationTokenHash(ctx, hashToken(rawToken))
+	if err != nil {
+		if errors.Is(err, ports.ErrMailboxNotFound) {
+			return ActivationResult{}, ports.ErrActivationTokenInvalid
+		}
+		return ActivationResult{}, err
+	}
+
+	if mailbox.Status == domain.MailboxStatusActive {
+		if s.provisioner != nil {
+			if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+				return ActivationResult{}, err
+			}
+		}
+		return ActivationResult{Mailbox: mailbox, AlreadyActive: true}, nil
+	}
+
+	if mailbox.Status != domain.MailboxStatusPendingPayment {
+		return ActivationResult{}, ports.ErrActivationTokenInvalid
+	}
+
+	now := time.Now().UTC()
+	if mailbox.ActivationExpiresAt == nil || !mailbox.ActivationExpiresAt.After(now) {
+		return ActivationResult{}, ports.ErrActivationTokenInvalid
+	}
+
+	mailbox.Status = domain.MailboxStatusActive
+	mailbox.PaidAt = &now
+	mailbox.ExpiresAt = nil
+	if err := s.repo.Update(ctx, mailbox); err != nil {
+		return ActivationResult{}, err
+	}
+	if s.provisioner != nil {
+		if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+			return ActivationResult{}, err
+		}
+	}
+	return ActivationResult{Mailbox: mailbox}, nil
+}
+
 func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID string) (*domain.Mailbox, error) {
+	// Free mode makes the payment path inert (KTD4): activation happens through
+	// the emailed activation link, never through a payment signal.
+	if s.freeMode {
+		return nil, nil
+	}
+
 	mailbox, err := s.repo.GetByPaymentSessionID(ctx, paymentSessionID)
 	if err != nil {
 		return nil, err
@@ -395,6 +497,11 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 }
 
 func (s *MailboxService) RenewMailbox(ctx context.Context, mailboxID string, paidAt time.Time, expiresAt time.Time) error {
+	// Free mode makes renewal inert (KTD4): payment signals cannot extend a mailbox.
+	if s.freeMode {
+		return nil
+	}
+
 	mailbox, err := s.repo.GetByID(ctx, mailboxID)
 	if err != nil {
 		return err
@@ -408,6 +515,12 @@ func (s *MailboxService) RenewMailbox(ctx context.Context, mailboxID string, pai
 }
 
 func (s *MailboxService) ExpireMailboxByID(ctx context.Context, mailboxID string) error {
+	// Free mode makes revocation inert (KTD4): a subscription.revoked webhook
+	// cannot expire a mailbox that is now permanent.
+	if s.freeMode {
+		return nil
+	}
+
 	mailbox, err := s.repo.GetByID(ctx, mailboxID)
 	if err != nil {
 		return err
@@ -429,6 +542,11 @@ type ReconcileResult struct {
 // against the payment gateway. If the gateway reports the checkout as confirmed
 // or succeeded, the mailbox is activated via MarkMailboxPaid.
 func (s *MailboxService) ReconcilePendingPayments(ctx context.Context) ([]ReconcileResult, error) {
+	// Free mode makes reconciliation inert (KTD4): no payment gateway is consulted.
+	if s.freeMode {
+		return []ReconcileResult{}, nil
+	}
+
 	pending, err := s.repo.ListPendingPayment(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list pending payments: %w", err)
@@ -483,6 +601,13 @@ func (s *MailboxService) ReconcilePendingPayments(ctx context.Context) ([]Reconc
 // flips their status to expired. It returns the number of mailboxes expired.
 // This is designed to be called periodically by a background sweep.
 func (s *MailboxService) ExpireMailboxes(ctx context.Context) (int, error) {
+	// Free mode makes the expiry sweep inert (KTD4): no row is flipped, including
+	// during the deploy-to-switchover window when active mailboxes still carry
+	// a non-nil ExpiresAt.
+	if s.freeMode {
+		return 0, nil
+	}
+
 	now := time.Now().UTC()
 	expired, err := s.repo.ListActiveExpired(ctx, now)
 	if err != nil {
@@ -501,6 +626,63 @@ func (s *MailboxService) ExpireMailboxes(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// SwitchoverToFreeMode is the one-off admin transition to the free model
+// (KTD6, R6, R7): it clears expiry on all active mailboxes, clears account
+// subscription expiries, and converts pending mailboxes to activation-pending
+// with a fresh token and re-email. It only runs while free mode is on and is
+// idempotent: pending mailboxes that already hold a valid activation token are
+// skipped, and already-expired mailboxes are left untouched.
+func (s *MailboxService) SwitchoverToFreeMode(ctx context.Context) (SwitchoverResult, error) {
+	if !s.freeMode {
+		return SwitchoverResult{}, ports.ErrSwitchoverRequiresFreeMode
+	}
+
+	var result SwitchoverResult
+
+	cleared, err := s.repo.ClearActiveExpiries(ctx)
+	if err != nil {
+		return result, fmt.Errorf("clear active mailbox expiries: %w", err)
+	}
+	result.ActiveCleared = cleared
+
+	accountsCleared, err := s.accounts.ClearSubscriptionExpiresAt(ctx)
+	if err != nil {
+		return result, fmt.Errorf("clear account subscription expiries: %w", err)
+	}
+	result.AccountsCleared = accountsCleared
+
+	pending, err := s.repo.ListPendingPayment(ctx)
+	if err != nil {
+		return result, fmt.Errorf("list pending mailboxes: %w", err)
+	}
+	now := time.Now().UTC()
+	for i := range pending {
+		mb := &pending[i]
+		if mb.ActivationTokenHash != "" && mb.ActivationExpiresAt != nil && mb.ActivationExpiresAt.After(now) {
+			continue // already converted; idempotency
+		}
+		raw, err := s.newActivationToken(mb)
+		if err != nil {
+			return result, fmt.Errorf("generate activation token for %s: %w", mb.ID, err)
+		}
+		ownerEmail := mb.BillingEmail
+		if ownerEmail == "" {
+			ownerEmail = mb.OwnerEmail
+		}
+		// Send the email before persisting the token: if the send fails, the row
+		// stays token-less so a re-run retries this mailbox instead of skipping
+		// it as already converted.
+		if err := s.sendActivationLink(ctx, mb, ownerEmail, raw); err != nil {
+			return result, fmt.Errorf("send activation link for %s: %w", mb.ID, err)
+		}
+		if err := s.repo.Update(ctx, mb); err != nil {
+			return result, fmt.Errorf("update mailbox %s: %w", mb.ID, err)
+		}
+		result.PendingConverted++
+	}
+	return result, nil
+}
+
 // validateMailboxSubscription checks whether mailbox is currently usable.
 // For key-bound mailboxes (empty AccountID) it inspects the mailbox row directly.
 // For account-bound mailboxes it loads the account and validates its subscription.
@@ -509,7 +691,10 @@ func (s *MailboxService) validateMailboxSubscription(ctx context.Context, mailbo
 	if strings.TrimSpace(mailbox.AccountID) == "" {
 		// Key-bound mailbox: subscription is tracked on the mailbox itself.
 		if !mailbox.Usable() {
-			if mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
+			// In free mode the stale active-to-expired flip is inert (KTD4): a
+			// past-due mailbox is unusable during the deploy-to-switchover window
+			// but must not be permanently marked expired.
+			if !s.freeMode && mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
 				mailbox.Status = domain.MailboxStatusExpired
 				_ = s.repo.Update(ctx, mailbox)
 			}
@@ -521,6 +706,22 @@ func (s *MailboxService) validateMailboxSubscription(ctx context.Context, mailbo
 	account, err := s.accounts.GetByID(ctx, mailbox.AccountID)
 	if err != nil {
 		return err
+	}
+
+	// Free mode removes the account gate entirely (R8), but usability still
+	// requires activation: a pending account-bound mailbox (PaidAt nil) is not
+	// usable until its activation link is consumed.
+	if s.freeMode {
+		if !mailbox.Usable() {
+			return ports.ErrMailboxNotUsable
+		}
+		return nil
+	}
+	// Grandfather rule: a mailbox activated under free mode has nil ExpiresAt
+	// and must keep it when paid mode returns; it is not re-gated on the
+	// account subscription.
+	if mailbox.ExpiresAt == nil && mailbox.Status == domain.MailboxStatusActive && mailbox.PaidAt != nil {
+		return nil
 	}
 
 	if !account.SubscriptionActive(now) {
@@ -591,7 +792,10 @@ func (s *MailboxService) ResolveAccessByKey(ctx context.Context, key ports.Verif
 
 	now := time.Now().UTC()
 	if !mailbox.Usable() {
-		if mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
+		// In free mode the stale active-to-expired flip is inert (KTD4): a
+		// past-due mailbox is unusable during the deploy-to-switchover window
+		// but must not be permanently marked expired.
+		if !s.freeMode && mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
 			mailbox.Status = domain.MailboxStatusExpired
 			_ = s.repo.Update(ctx, mailbox)
 		}

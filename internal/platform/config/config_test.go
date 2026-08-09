@@ -80,3 +80,52 @@ func TestLoadReadsDotEnvFile(t *testing.T) {
 		t.Fatalf("expected unsend from email from .env, got %q", cfg.UnsendFromEmail)
 	}
 }
+
+func TestLoadFreeMode(t *testing.T) {
+	t.Setenv("DATABASE_MODE", "local")
+	t.Setenv("EDPROOF_HMAC_SECRET", "0123456789abcdef0123456789abcdef")
+
+	t.Run("unset defaults to true", func(t *testing.T) {
+		t.Setenv("FREE_MODE", "")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		if !cfg.FreeMode {
+			t.Fatalf("expected FreeMode true when FREE_MODE unset, got false")
+		}
+	})
+
+	t.Run("false disables free mode", func(t *testing.T) {
+		t.Setenv("FREE_MODE", "false")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		if cfg.FreeMode {
+			t.Fatalf("expected FreeMode false when FREE_MODE=false, got true")
+		}
+	})
+
+	t.Run("zero disables free mode", func(t *testing.T) {
+		t.Setenv("FREE_MODE", "0")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		if cfg.FreeMode {
+			t.Fatalf("expected FreeMode false when FREE_MODE=0, got true")
+		}
+	})
+
+	t.Run("invalid value falls back to default true", func(t *testing.T) {
+		t.Setenv("FREE_MODE", "garbage")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		if !cfg.FreeMode {
+			t.Fatalf("expected FreeMode true when FREE_MODE=garbage, got false")
+		}
+	})
+}

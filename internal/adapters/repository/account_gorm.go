@@ -176,6 +176,19 @@ func (r *AccountRepository) UpdateSubscriptionExpiresAt(ctx context.Context, acc
 		Updates(map[string]any{"subscription_expires_at": expiresAt.UTC(), "updated_at": time.Now().UTC()}).Error
 }
 
+// ClearSubscriptionExpiresAt clears the subscription expiry on every account
+// (free-mode switchover). It returns the number of rows updated.
+func (r *AccountRepository) ClearSubscriptionExpiresAt(ctx context.Context) (int, error) {
+	res := r.db.WithContext(ctx).
+		Model(&accountModel{}).
+		Where("subscription_expires_at IS NOT NULL").
+		Updates(map[string]any{"subscription_expires_at": nil, "updated_at": time.Now().UTC()})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return int(res.RowsAffected), nil
+}
+
 type AccountRecoveryRepository struct {
 	db *gorm.DB
 }

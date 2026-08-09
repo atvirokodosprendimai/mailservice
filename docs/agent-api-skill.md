@@ -135,12 +135,12 @@ Response (new mailbox):
   "id": "mbx_abc123",
   "status": "pending_payment",
   "usable": false,
-  "payment_url": "https://checkout.stripe.com/...",
+  "payment_url": "https://api.example.com/v1/mailboxes/activate?token=...",
   "access_token": ""
 }
 ```
 
-Response (existing paid mailbox):
+Response (existing active mailbox):
 
 ```json
 {
@@ -148,7 +148,6 @@ Response (existing paid mailbox):
   "status": "active",
   "usable": true,
   "payment_url": "",
-  "expires_at": "2026-04-11T00:00:00Z",
   "access_token": "tok_..."
 }
 ```
@@ -156,20 +155,21 @@ Response (existing paid mailbox):
 **Decision tree after claim:**
 
 - `"usable": true` → skip to [Step 5: Read Messages](#step-5-read-messages). The `access_token` is in the response.
-- `"usable": false` and `"status": "pending_payment"` → proceed to [Step 4: Pay](#step-4-pay).
-- `"status": "expired"` → the `payment_url` is a renewal link. Pay to reactivate.
+- `"usable": false` and `"status": "pending_payment"` → proceed to [Step 4: Activate](#step-4-activate).
+- `"status": "expired"` → legacy state from before free mode; re-claim with the same key to get a fresh activation link.
 
-### Step 4: Pay
+### Step 4: Activate
 
-The `payment_url` from the claim response is a Stripe/Polar checkout link. Payment cannot be completed programmatically by the agent — it requires a human or a browser session.
+The `payment_url` field (name kept for compatibility) carries the **activation link** in free mode. Mailboxes are free: there is no payment step.
 
 **What to do:**
 
-1. Present the `payment_url` to the operator/user for payment.
-2. Wait for payment to complete. The mailbox status changes to `active` after payment.
-3. After payment, proceed to Step 5.
+1. The agent may activate directly: fetch the activation link itself (`curl -sf "$ACTIVATION_URL"`). A `200` means activated or already active; a `404` means the link expired or was used — re-claim with the same key for a fresh link.
+2. Otherwise, present the activation link (in the claim response and emailed to the billing address) to the owner.
+3. The owner opens the link — it activates the mailbox. The link is one-time and expires after 24 hours.
+4. After activation the mailbox never expires. Proceed to Step 5.
 
-**How to check if payment completed:**
+**How to check if activation completed:**
 
 Request a new challenge (Step 1), sign it (Step 2), then call `/v1/access/resolve` (Step 5). If the mailbox is active, you'll get IMAP credentials. If still pending, you'll get a `409 Conflict` with `{"status": "waiting_payment"}`.
 
@@ -342,7 +342,7 @@ Response:
 | 401 | `signature verification failed` | Signature doesn't match the challenge+key | Check: (1) signed the exact challenge string, (2) used `-n edproof` namespace, (3) stripped armor headers and newlines from SSHSIG output |
 | 401 | `invalid key proof` | Public key verification failed | Ensure the public key is valid Ed25519 in SSH format |
 | 404 | `mailbox not found` | No mailbox exists for this key | Claim a mailbox first with `/v1/mailboxes/claim` |
-| 409 | `{"status": "waiting_payment"}` | Mailbox exists but payment is pending | Complete payment via the `payment_url`, then retry |
+| 409 | `{"status": "waiting_payment"}` | Mailbox exists but activation is pending | Activate via the link in the claim response or email, then retry |
 | 429 | `support message rate limit reached` | Sent 3+ support messages in the last hour | Wait and try again later |
 
 ---
@@ -357,11 +357,11 @@ Response:
 
 4. **Using a different key for challenge vs claim/resolve.** The challenge is HMAC-bound to the public key. You must use the same key for requesting the challenge and for the subsequent claim or resolve call.
 
-5. **Trying to resolve access before paying.** `/v1/access/resolve` returns `409 Conflict` with `{"status": "waiting_payment"}` until the mailbox is paid.
+5. **Trying to resolve access before activating.** `/v1/access/resolve` returns `409 Conflict` with `{"status": "waiting_payment"}` until the mailbox is activated via its link.
 
 6. **Sending the public key without the key type prefix.** The API expects the full SSH public key line: `ssh-ed25519 AAAA... comment`. Not just the base64 blob.
 
-7. **Using `example.com` as billing email.** The payment provider validates that the email domain actually accepts mail. Use a real email address.
+7. **Using `example.com` as billing email.** The activation email must reach the owner. Use a real email address.
 
 ---
 
@@ -408,9 +408,9 @@ if [ "$USABLE" = "true" ]; then
   ACCESS_TOKEN=$(echo "$CLAIM" | jq -r '.access_token')
   echo "Mailbox is active. Access token: $ACCESS_TOKEN"
 else
-  PAYMENT_URL=$(echo "$CLAIM" | jq -r '.payment_url')
-  echo "Payment required: $PAYMENT_URL"
-  echo "Complete payment, then run the resolve step."
+  ACTIVATION_URL=$(echo "$CLAIM" | jq -r '.payment_url')
+  echo "Activation required: $ACTIVATION_URL"
+  echo "Have the owner open the link to activate, then run the resolve step."
   exit 0
 fi
 
@@ -480,5 +480,5 @@ if claim.get("usable"):
     })
     print(resp.json())
 else:
-    print(f"Payment required: {claim.get('payment_url')}")
+    print(f"Activation required: {claim.get('payment_url')}")
 ```

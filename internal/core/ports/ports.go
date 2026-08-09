@@ -9,27 +9,29 @@ import (
 )
 
 var (
-	ErrMailboxNotFound        = errors.New("mailbox not found")
-	ErrPaymentSessionNotFound = errors.New("payment session not found")
-	ErrMailboxNotUsable       = errors.New("mailbox not usable")
-	ErrAccountNotFound        = errors.New("account not found")
-	ErrForbidden              = errors.New("forbidden")
-	ErrAccountExists          = errors.New("account already exists")
-	ErrRecoveryNotFound       = errors.New("recovery not found")
-	ErrRecoveryInvalid        = errors.New("recovery failed")
-	ErrRecoveryExpired        = errors.New("recovery failed")
-	ErrRateLimitReached       = errors.New("rate limit reached")
-	ErrRefreshNotFound        = errors.New("authentication failed")
-	ErrRefreshExpired         = errors.New("authentication failed")
-	ErrMessageNotFound        = errors.New("message not found")
-	ErrInvalidKeyProof        = errors.New("invalid key proof")
-	ErrChallengeExpired       = errors.New("challenge expired")
-	ErrChallengeTampered      = errors.New("challenge tampered or invalid")
-	ErrChallengeFuture        = errors.New("challenge timestamp is in the future")
-	ErrSignatureInvalid       = errors.New("signature verification failed")
-	ErrCouponInvalid          = errors.New("invalid coupon code")
-	ErrCouponExhausted        = errors.New("coupon expired or exhausted")
-	ErrCouponAlreadyUsed      = errors.New("coupon already used by this key")
+	ErrMailboxNotFound            = errors.New("mailbox not found")
+	ErrPaymentSessionNotFound     = errors.New("payment session not found")
+	ErrMailboxNotUsable           = errors.New("mailbox not usable")
+	ErrAccountNotFound            = errors.New("account not found")
+	ErrForbidden                  = errors.New("forbidden")
+	ErrAccountExists              = errors.New("account already exists")
+	ErrRecoveryNotFound           = errors.New("recovery not found")
+	ErrRecoveryInvalid            = errors.New("recovery failed")
+	ErrRecoveryExpired            = errors.New("recovery failed")
+	ErrRateLimitReached           = errors.New("rate limit reached")
+	ErrRefreshNotFound            = errors.New("authentication failed")
+	ErrRefreshExpired             = errors.New("authentication failed")
+	ErrMessageNotFound            = errors.New("message not found")
+	ErrInvalidKeyProof            = errors.New("invalid key proof")
+	ErrChallengeExpired           = errors.New("challenge expired")
+	ErrChallengeTampered          = errors.New("challenge tampered or invalid")
+	ErrChallengeFuture            = errors.New("challenge timestamp is in the future")
+	ErrSignatureInvalid           = errors.New("signature verification failed")
+	ErrCouponInvalid              = errors.New("invalid coupon code")
+	ErrCouponExhausted            = errors.New("coupon expired or exhausted")
+	ErrCouponAlreadyUsed          = errors.New("coupon already used by this key")
+	ErrActivationTokenInvalid     = errors.New("activation token invalid or expired")
+	ErrSwitchoverRequiresFreeMode = errors.New("switchover requires free mode to be enabled")
 )
 
 // ChallengeAuthenticator generates and verifies challenge-response proofs.
@@ -47,7 +49,9 @@ type MailboxRepository interface {
 	ListByAccountID(ctx context.Context, accountID string) ([]domain.Mailbox, error)
 	GetPendingByAccountID(ctx context.Context, accountID string) (*domain.Mailbox, error)
 	ListPendingPayment(ctx context.Context) ([]domain.Mailbox, error)
+	ClearActiveExpiries(ctx context.Context) (int, error)
 	GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
+	GetByActivationTokenHash(ctx context.Context, tokenHash string) (*domain.Mailbox, error)
 	GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error)
 	GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error)
 	ListActiveExpired(ctx context.Context, now time.Time) ([]domain.Mailbox, error)
@@ -56,6 +60,7 @@ type MailboxRepository interface {
 type AccountRepository interface {
 	Create(ctx context.Context, account *domain.Account) error
 	GetByID(ctx context.Context, accountID string) (*domain.Account, error)
+	ClearSubscriptionExpiresAt(ctx context.Context) (int, error)
 	GetByOwnerEmail(ctx context.Context, ownerEmail string) (*domain.Account, error)
 	GetByAPIToken(ctx context.Context, apiToken string) (*domain.Account, error)
 	UpdateAPIToken(ctx context.Context, accountID string, apiToken string) error
@@ -122,6 +127,7 @@ type SupportMessageParams struct {
 
 type Notifier interface {
 	SendPaymentLink(ctx context.Context, ownerEmail string, paymentURL string, mailboxID string) error
+	SendActivationLink(ctx context.Context, ownerEmail string, activationURL string, mailboxID string) error
 	SendRecoveryLink(ctx context.Context, ownerEmail string, recoveryURL string) error
 	SendSupportMessage(ctx context.Context, params SupportMessageParams) error
 }
