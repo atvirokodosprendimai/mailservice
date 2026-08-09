@@ -663,13 +663,15 @@ func (h *Handler) handleActivateMailbox(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// The token is a bearer credential carried in the URL; never let the page
-	// leak it to other origins via the Referer header.
+	// leak it to other origins via the Referer header, and never let proxies
+	// cache the one-time response.
 	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Cache-Control", "no-store")
 
 	result, err := h.mailboxService.ActivateMailboxByActivationToken(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, ports.ErrActivationTokenInvalid) {
-			renderActivationStatusPage(w, "#a23b2a", "Activation link invalid", "Activation link invalid",
+			renderActivationStatusPage(w, http.StatusNotFound, "#a23b2a", "Activation link invalid", "Activation link invalid",
 				"<p>This activation link has expired or is no longer valid.</p><p class=\"muted\">Re-claim your mailbox with the same key to receive a new activation link.</p>")
 			return
 		}
@@ -678,11 +680,11 @@ func (h *Handler) handleActivateMailbox(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if result.AlreadyActive {
-		renderActivationStatusPage(w, "#1f6b34", "Mailbox already active", "Mailbox already active",
+		renderActivationStatusPage(w, http.StatusOK, "#1f6b34", "Mailbox already active", "Mailbox already active",
 			"<p>This mailbox is already active. Nothing to do.</p><p class=\"muted\">Call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>")
 		return
 	}
-	renderActivationStatusPage(w, "#1f6b34", "Mailbox activated", "Mailbox activated",
+	renderActivationStatusPage(w, http.StatusOK, "#1f6b34", "Mailbox activated", "Mailbox activated",
 		"<p>Your mailbox is now active and ready for mail. It does not expire.</p><p class=\"muted\">Return to your agent and call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>")
 }
 
@@ -1188,6 +1190,13 @@ func (h *Handler) handlePolarSuccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if mailbox == nil {
+		// Free mode: MarkMailboxPaid no-ops and activation is link-based, so
+		// there is no paid mailbox to render.
+		writeJSON(w, http.StatusOK, polarSuccessView{Status: "ok"})
+		return
+	}
+
 	// Render HTML for browser requests, JSON for API clients.
 	if strings.Contains(r.Header.Get("Accept"), "text/html") {
 		email := mailbox.IMAPUsername
@@ -1390,10 +1399,10 @@ type polarSuccessView struct {
 }
 
 // renderActivationStatusPage renders the activation endpoint's HTML pages from
-// one shared shell; the heading color and body differ per outcome.
-func renderActivationStatusPage(w http.ResponseWriter, headingColor, title, heading, body string) {
+// one shared shell; the status code, heading color, and body differ per outcome.
+func renderActivationStatusPage(w http.ResponseWriter, statusCode int, headingColor, title, heading, body string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(statusCode)
 	_, _ = io.WriteString(w, fmt.Sprintf(activationStatusPageHTMLTemplate, title, headingColor, heading, body))
 }
 

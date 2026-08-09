@@ -164,9 +164,10 @@ The `payment_url` field (name kept for compatibility) carries the **activation l
 
 **What to do:**
 
-1. Present the activation link (in the claim response and emailed to the billing address) to the owner.
-2. The owner opens the link — it activates the mailbox. The link is one-time and expires after 24 hours.
-3. After activation the mailbox never expires. Proceed to Step 5.
+1. The agent may activate directly: fetch the activation link itself (`curl -sf "$ACTIVATION_URL"`). A `200` means activated or already active; a `404` means the link expired or was used — re-claim with the same key for a fresh link.
+2. Otherwise, present the activation link (in the claim response and emailed to the billing address) to the owner.
+3. The owner opens the link — it activates the mailbox. The link is one-time and expires after 24 hours.
+4. After activation the mailbox never expires. Proceed to Step 5.
 
 **How to check if activation completed:**
 

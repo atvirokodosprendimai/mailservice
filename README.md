@@ -11,12 +11,14 @@ Live at [truevipaccess.com](https://truevipaccess.com). Open source (AGPL v3.0).
 
 ## How it works
 
-Current preferred flow:
+Current preferred flow (free mode, default on):
 1. Agent presents `billing_email` plus key proof to `POST /v1/mailboxes/claim`.
 2. Service reuses the same mailbox for the same key, or creates a new pending mailbox for a new key.
-3. Service sends payment link to `billing_email`.
-4. After payment, mailbox becomes active for one month.
+3. Service emails a one-time activation link to `billing_email` (24-hour expiry); the claim response carries it in `payment_url` (name kept for compatibility).
+4. The owner opens the activation link and the mailbox becomes active; it never expires.
 5. Agent presents the same key proof to `POST /v1/access/resolve` to obtain IMAP access details.
+
+Free mode is controlled by `FREE_MODE` (default `true`). Set `FREE_MODE=false` to restore the paid flow: claim → payment link → payment activates the mailbox for one month.
 
 Legacy flow remains available during migration:
 - account creation via `POST /v1/accounts`

@@ -1397,7 +1397,8 @@ func (f fakeMailboxTokenGenerator) NewToken(_ int) (string, error) {
 }
 
 type fakeMailboxNotifier struct {
-	calls int
+	calls              int
+	activationSendErrs []error // consumed one per SendActivationLink call; a nil entry means success
 }
 
 type fakeMailRuntimeProvisioner struct {
@@ -1446,6 +1447,11 @@ func (f *fakeMailboxNotifier) SendPaymentLink(_ context.Context, _ string, _ str
 
 func (f *fakeMailboxNotifier) SendActivationLink(_ context.Context, _ string, _ string, _ string) error {
 	f.calls++
+	if len(f.activationSendErrs) > 0 {
+		err := f.activationSendErrs[0]
+		f.activationSendErrs = f.activationSendErrs[1:]
+		return err
+	}
 	return nil
 }
 
@@ -2343,5 +2349,80 @@ func TestSwitchoverToFreeModeRequiresFreeMode(t *testing.T) {
 	// freeMode defaults to false: switchover must refuse.
 	if _, err := service.SwitchoverToFreeMode(context.Background()); !errors.Is(err, ports.ErrSwitchoverRequiresFreeMode) {
 		t.Fatalf("expected ErrSwitchoverRequiresFreeMode, got %v", err)
+	}
+}
+
+func TestFreeModeAccountBoundPendingMailboxNotUsableUntilActivated(t *testing.T) {
+	repo := &fakeMailboxRepo{byAccessToken: map[string]*domain.Mailbox{
+		"tok-1": {
+			ID:          "mbx-acc",
+			AccountID:   "acc-1",
+			OwnerEmail:  "owner@example.com",
+			AccessToken: "tok-1",
+			Status:      domain.MailboxStatusPendingPayment,
+		},
+	}}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{byID: map[string]*domain.Account{"acc-1": {ID: "acc-1"}}}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "raw"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+
+	// A legacy account-bound mailbox must not be usable until its activation
+	// link is consumed, even though the account gate is bypassed in free mode.
+	if _, err := service.ResolveAccessByToken(context.Background(), "tok-1", "imap"); !errors.Is(err, ports.ErrMailboxNotUsable) {
+		t.Fatalf("expected ErrMailboxNotUsable for unactivated account-bound mailbox, got %v", err)
+	}
+}
+
+func TestSwitchoverRetriesPendingAfterEmailFailure(t *testing.T) {
+	repo := &fakeMailboxRepo{byStripeSession: map[string]*domain.Mailbox{
+		"pay-1": {
+			ID:               "mbx-pending",
+			OwnerEmail:       "owner@example.com",
+			BillingEmail:     "owner@example.com",
+			KeyFingerprint:   "edproof:key-1",
+			PaymentSessionID: "pay-1",
+			PaymentURL:       "https://pay.example.com/1",
+			Status:           domain.MailboxStatusPendingPayment,
+		},
+	}}
+	notifier := &fakeMailboxNotifier{activationSendErrs: []error{errors.New("smtp down")}}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, notifier, fakeMailboxTokenGenerator{token: "raw-token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	service.SetPublicBaseURL("http://test.local")
+
+	// First run: the email send fails, so the token must NOT be persisted and
+	// the pending mailbox stays unconverted.
+	if _, err := service.SwitchoverToFreeMode(context.Background()); err == nil {
+		t.Fatalf("expected error when activation email fails")
+	}
+	mb, err := repo.GetByActivationTokenHash(context.Background(), hashToken("raw-token"))
+	if !errors.Is(err, ports.ErrMailboxNotFound) {
+		t.Fatalf("expected no persisted token after email failure, got %v (mailbox=%+v)", err, mb)
+	}
+
+	// Second run with the notifier recovered: the same pending is converted.
+	result, err := service.SwitchoverToFreeMode(context.Background())
+	if err != nil {
+		t.Fatalf("second switchover failed: %v", err)
+	}
+	if result.PendingConverted != 1 {
+		t.Fatalf("expected 1 pending converted on retry, got %d", result.PendingConverted)
+	}
+	if notifier.calls != 2 {
+		t.Fatalf("expected two activation email attempts, got %d", notifier.calls)
+	}
+}
+
+func TestSendActivationLinkFailsWithoutPublicBaseURL(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "raw"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	// publicBaseURL intentionally unset.
+
+	raw, err := service.newActivationToken(&domain.Mailbox{ID: "mbx-1"})
+	if err != nil {
+		t.Fatalf("newActivationToken failed: %v", err)
+	}
+	if err := service.sendActivationLink(context.Background(), &domain.Mailbox{ID: "mbx-1"}, "owner@example.com", raw); err == nil {
+		t.Fatalf("expected error when public base URL is not configured")
 	}
 }

@@ -1514,8 +1514,8 @@ func TestHandleActivateMailboxInvalidToken(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.Routes().ServeHTTP(rec, req)
 
-	if rec.Code != 200 {
-		t.Fatalf("expected status 200 with recovery page, got %d body=%s", rec.Code, rec.Body.String())
+	if rec.Code != 404 {
+		t.Fatalf("expected status 404 with recovery page, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	if !strings.Contains(rec.Body.String(), "Re-claim your mailbox") {
 		t.Fatalf("expected recovery-path guidance, body=%s", rec.Body.String())
@@ -1614,5 +1614,58 @@ func TestHandleFreeModeSwitchoverRefusesWhenFreeModeOff(t *testing.T) {
 
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409 with free mode off, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlePolarSuccessFreeModeNoPanic(t *testing.T) {
+	repo := &httpMailboxRepo{
+		byPaymentSession: map[string]*domain.Mailbox{
+			"polar_free_1": {
+				ID:               "mbx-free",
+				KeyFingerprint:   "edproof:key-1",
+				PaymentSessionID: "polar_free_1",
+				Status:           domain.MailboxStatusPendingPayment,
+			},
+		},
+	}
+	mailboxService := service.NewMailboxService(
+		repo,
+		&httpAccountRepo{},
+		&httpPaymentGateway{},
+		&httpNotifier{},
+		httpTokenGenerator{token: "token"},
+		&httpProvisioner{},
+		&httpMailReader{},
+		"mail.test.local",
+		"imap.test.local",
+		1143,
+	)
+	mailboxService.SetFreeMode(true)
+	handler := NewHandler(Config{
+		PaymentGateway: httpPaymentGateway{
+			session: &ports.PaymentSession{SessionID: "polar_free_1", Status: ports.PaymentSessionStatusSucceeded},
+		},
+		MailboxService: mailboxService,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest("GET", "/v1/payments/polar/success?checkout_id=polar_free_1", nil)
+	rec := httptest.NewRecorder()
+
+	// Must not panic on the free-mode (nil, nil) no-op from MarkMailboxPaid.
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("expected status 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp["status"] != "ok" {
+		t.Fatalf("expected ok status, got %#v", resp)
+	}
+	if repo.byPaymentSession["polar_free_1"].Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected mailbox to stay pending in free mode, got %s", repo.byPaymentSession["polar_free_1"].Status)
 	}
 }
