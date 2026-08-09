@@ -216,6 +216,36 @@ func (r *MailboxRepository) ListActiveExpired(ctx context.Context, now time.Time
 	return items, nil
 }
 
+// ListActive returns every mailbox in active status, regardless of expiry.
+func (r *MailboxRepository) ListActive(ctx context.Context) ([]domain.Mailbox, error) {
+	var models []mailboxModel
+	err := r.db.WithContext(ctx).
+		Where("status = ?", string(domain.MailboxStatusActive)).
+		Order("created_at ASC").
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domain.Mailbox, 0, len(models))
+	for i := range models {
+		items = append(items, *toDomain(&models[i]))
+	}
+	return items, nil
+}
+
+// ClearActiveExpiries clears the expiry on every active mailbox (free-mode
+// switchover). It returns the number of rows updated.
+func (r *MailboxRepository) ClearActiveExpiries(ctx context.Context) (int, error) {
+	res := r.db.WithContext(ctx).
+		Model(&mailboxModel{}).
+		Where("status = ?", string(domain.MailboxStatusActive)).
+		Update("expires_at", nil)
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return int(res.RowsAffected), nil
+}
+
 func (r *MailboxRepository) GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error) {
 	var model mailboxModel
 	err := r.db.WithContext(ctx).First(&model, "key_fingerprint = ?", strings.TrimSpace(strings.ToLower(keyFingerprint))).Error

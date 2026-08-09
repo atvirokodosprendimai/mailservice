@@ -208,3 +208,71 @@ func TestMailboxRepositoryActivationToken(t *testing.T) {
 		t.Fatalf("expected ErrMailboxNotFound for unknown hash, got %v", err)
 	}
 }
+
+func TestMailboxRepositoryListActiveAndClearActiveExpiries(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+	repo := NewMailboxRepository(db)
+
+	future := time.Now().UTC().Add(24 * time.Hour)
+	active := &domain.Mailbox{
+		ID:             "mbx-active",
+		OwnerEmail:     "active@example.com",
+		BillingEmail:   "active@example.com",
+		KeyFingerprint: "edproof:active",
+		IMAPHost:       "imap.example.com",
+		IMAPPort:       143,
+		IMAPUsername:   "mbx_active",
+		IMAPPassword:   "secret",
+		AccessToken:    "access-active",
+		Status:         domain.MailboxStatusActive,
+		PaidAt:         func() *time.Time { t := time.Now().UTC().Add(-time.Hour); return &t }(),
+		ExpiresAt:      &future,
+	}
+	pending := &domain.Mailbox{
+		ID:             "mbx-pending",
+		OwnerEmail:     "pending@example.com",
+		BillingEmail:   "pending@example.com",
+		KeyFingerprint: "edproof:pending",
+		IMAPHost:       "imap.example.com",
+		IMAPPort:       143,
+		IMAPUsername:   "mbx_pending",
+		IMAPPassword:   "secret",
+		AccessToken:    "access-pending",
+		Status:         domain.MailboxStatusPendingPayment,
+	}
+	for _, mb := range []*domain.Mailbox{active, pending} {
+		if err := repo.Create(context.Background(), mb); err != nil {
+			t.Fatalf("Create failed: %v", err)
+		}
+	}
+
+	list, err := repo.ListActive(context.Background())
+	if err != nil {
+		t.Fatalf("ListActive failed: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != "mbx-active" {
+		t.Fatalf("expected only the active mailbox, got %+v", list)
+	}
+
+	cleared, err := repo.ClearActiveExpiries(context.Background())
+	if err != nil {
+		t.Fatalf("ClearActiveExpiries failed: %v", err)
+	}
+	if cleared != 1 {
+		t.Fatalf("expected 1 row cleared, got %d", cleared)
+	}
+
+	got, err := repo.GetByID(context.Background(), "mbx-active")
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+	if got.ExpiresAt != nil {
+		t.Fatalf("expected nil ExpiresAt after clear, got %v", got.ExpiresAt)
+	}
+	if got.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected mailbox to stay active, got %s", got.Status)
+	}
+}

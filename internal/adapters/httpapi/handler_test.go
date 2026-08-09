@@ -632,6 +632,27 @@ func (r *httpMailboxRepo) ListActiveExpired(_ context.Context, _ time.Time) ([]d
 	return nil, nil
 }
 
+func (r *httpMailboxRepo) ListActive(_ context.Context) ([]domain.Mailbox, error) {
+	var result []domain.Mailbox
+	for _, mb := range r.byID {
+		if mb.Status == domain.MailboxStatusActive {
+			result = append(result, *mb)
+		}
+	}
+	return result, nil
+}
+
+func (r *httpMailboxRepo) ClearActiveExpiries(_ context.Context) (int, error) {
+	count := 0
+	for _, mb := range r.byID {
+		if mb.Status == domain.MailboxStatusActive {
+			mb.ExpiresAt = nil
+			count++
+		}
+	}
+	return count, nil
+}
+
 type httpAccountRepo struct{}
 
 func (httpAccountRepo) Create(_ context.Context, _ *domain.Account) error { return nil }
@@ -647,6 +668,9 @@ func (httpAccountRepo) GetByAPIToken(_ context.Context, _ string) (*domain.Accou
 func (httpAccountRepo) UpdateAPIToken(_ context.Context, _ string, _ string) error { return nil }
 func (httpAccountRepo) UpdateSubscriptionExpiresAt(_ context.Context, _ string, _ time.Time) error {
 	return nil
+}
+func (httpAccountRepo) ClearSubscriptionExpiresAt(_ context.Context) (int, error) {
+	return 0, nil
 }
 
 type httpPaymentGateway struct {
@@ -1516,5 +1540,89 @@ func TestHandleActivateMailboxMissingToken(t *testing.T) {
 
 	if rec.Code != 400 {
 		t.Fatalf("expected status 400 for missing token, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleFreeModeSwitchoverRequiresAdminKey(t *testing.T) {
+	repo := &httpMailboxRepo{}
+	service := service.NewMailboxService(repo, &httpAccountRepo{}, &httpPaymentGateway{}, &httpNotifier{}, httpTokenGenerator{token: "token"}, &httpProvisioner{}, &httpMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	handler := NewHandler(Config{
+		MailboxService: service,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/admin/free-mode/switchover", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 without configured admin key, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleFreeModeSwitchoverRunsInFreeMode(t *testing.T) {
+	future := time.Now().UTC().Add(24 * time.Hour)
+	repo := &httpMailboxRepo{
+		byID: map[string]*domain.Mailbox{
+			"mbx-1": {
+				ID:             "mbx-1",
+				OwnerEmail:     "owner@example.com",
+				KeyFingerprint: "edproof:key-1",
+				IMAPHost:       "imap.test.local",
+				IMAPPort:       1143,
+				IMAPUsername:   "mbx_1",
+				IMAPPassword:   "pass",
+				AccessToken:    "access-1",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         func() *time.Time { t := time.Now().UTC().Add(-time.Hour); return &t }(),
+				ExpiresAt:      &future,
+			},
+		},
+	}
+	service := service.NewMailboxService(repo, &httpAccountRepo{}, &httpPaymentGateway{}, &httpNotifier{}, httpTokenGenerator{token: "token"}, &httpProvisioner{}, &httpMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+	handler := NewHandler(Config{
+		AdminAPIKey:    "secret",
+		MailboxService: service,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/free-mode/switchover", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		ActiveCleared int `json:"active_cleared"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode switchover response: %v", err)
+	}
+	if payload.ActiveCleared != 1 {
+		t.Fatalf("expected active_cleared=1, got %d", payload.ActiveCleared)
+	}
+	if repo.byID["mbx-1"].ExpiresAt != nil {
+		t.Fatalf("expected expiry cleared after switchover, got %v", repo.byID["mbx-1"].ExpiresAt)
+	}
+}
+
+func TestHandleFreeModeSwitchoverRefusesWhenFreeModeOff(t *testing.T) {
+	service := service.NewMailboxService(&httpMailboxRepo{}, &httpAccountRepo{}, &httpPaymentGateway{}, &httpNotifier{}, httpTokenGenerator{token: "token"}, &httpProvisioner{}, &httpMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	// freeMode defaults to false.
+	handler := NewHandler(Config{
+		AdminAPIKey:    "secret",
+		MailboxService: service,
+		Logger:         log.New(io.Discard, "", 0),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/free-mode/switchover", nil)
+	req.Header.Set("Authorization", "Bearer secret")
+	rec := httptest.NewRecorder()
+	handler.Routes().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 with free mode off, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

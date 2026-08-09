@@ -122,6 +122,7 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("GET /admin/metrics", h.withAdminKey(h.handleAdminMetrics))
 	mux.HandleFunc("POST /admin/mailboxes/reprovision", h.withAdminKey(h.handleReprovisionMailbox))
 	mux.HandleFunc("POST /admin/payments/reconcile", h.withAdminKey(h.handleReconcilePayments))
+	mux.HandleFunc("POST /admin/free-mode/switchover", h.withAdminKey(h.handleFreeModeSwitchover))
 	mux.HandleFunc("POST /v1/support/messages", h.handleSendSupportMessage)
 	mux.HandleFunc("GET /docs/agent-api-skill.md", h.handleAgentAPISkill)
 	if h.mockPaymentMode {
@@ -1828,6 +1829,23 @@ func (h *Handler) handleReconcilePayments(w http.ResponseWriter, r *http.Request
 		"activated":  activated,
 		"results":    results,
 	})
+}
+
+// handleFreeModeSwitchover runs the one-off transition to the free model
+// (KTD6): clear expiry on active mailboxes, clear account subscription
+// expiries, and convert pending mailboxes to activation-pending. It only
+// succeeds while free mode is on.
+func (h *Handler) handleFreeModeSwitchover(w http.ResponseWriter, r *http.Request) {
+	result, err := h.mailboxService.SwitchoverToFreeMode(r.Context())
+	if err != nil {
+		if errors.Is(err, ports.ErrSwitchoverRequiresFreeMode) {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func fallbackString(value string, fallback string) string {

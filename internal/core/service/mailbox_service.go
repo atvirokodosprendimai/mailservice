@@ -732,6 +732,69 @@ func (s *MailboxService) ExpireMailboxes(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// SwitchoverResult reports what a free-mode switchover changed.
+type SwitchoverResult struct {
+	ActiveCleared     int `json:"active_cleared"`
+	AccountsCleared   int `json:"accounts_cleared"`
+	PendingConverted  int `json:"pending_converted"`
+	PendingEmailsSent int `json:"pending_emails_sent"`
+}
+
+// SwitchoverToFreeMode is the one-off admin transition to the free model
+// (KTD6, R6, R7): it clears expiry on all active mailboxes, clears account
+// subscription expiries, and converts pending mailboxes to activation-pending
+// with a fresh token and re-email. It only runs while free mode is on and is
+// idempotent: pending mailboxes that already hold a valid activation token are
+// skipped, and already-expired mailboxes are left untouched.
+func (s *MailboxService) SwitchoverToFreeMode(ctx context.Context) (SwitchoverResult, error) {
+	if !s.freeMode {
+		return SwitchoverResult{}, ports.ErrSwitchoverRequiresFreeMode
+	}
+
+	var result SwitchoverResult
+
+	cleared, err := s.repo.ClearActiveExpiries(ctx)
+	if err != nil {
+		return result, fmt.Errorf("clear active mailbox expiries: %w", err)
+	}
+	result.ActiveCleared = cleared
+
+	accountsCleared, err := s.accounts.ClearSubscriptionExpiresAt(ctx)
+	if err != nil {
+		return result, fmt.Errorf("clear account subscription expiries: %w", err)
+	}
+	result.AccountsCleared = accountsCleared
+
+	pending, err := s.repo.ListPendingPayment(ctx)
+	if err != nil {
+		return result, fmt.Errorf("list pending mailboxes: %w", err)
+	}
+	now := time.Now().UTC()
+	for i := range pending {
+		mb := &pending[i]
+		if mb.ActivationTokenHash != "" && mb.ActivationExpiresAt != nil && mb.ActivationExpiresAt.After(now) {
+			continue // already converted; idempotency
+		}
+		raw, err := s.newActivationToken(mb)
+		if err != nil {
+			return result, fmt.Errorf("generate activation token for %s: %w", mb.ID, err)
+		}
+		if err := s.repo.Update(ctx, mb); err != nil {
+			return result, fmt.Errorf("update mailbox %s: %w", mb.ID, err)
+		}
+		result.PendingConverted++
+		ownerEmail := mb.BillingEmail
+		if ownerEmail == "" {
+			ownerEmail = mb.OwnerEmail
+		}
+		if err := s.sendActivationLink(ctx, mb, ownerEmail, raw); err != nil {
+			return result, fmt.Errorf("send activation link for %s: %w", mb.ID, err)
+		}
+		result.PendingEmailsSent++
+	}
+	return result, nil
+}
+
 // validateMailboxSubscription checks whether mailbox is currently usable.
 // For key-bound mailboxes (empty AccountID) it inspects the mailbox row directly.
 // For account-bound mailboxes it loads the account and validates its subscription.
