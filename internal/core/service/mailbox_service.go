@@ -527,6 +527,12 @@ func (s *MailboxService) ActivateMailboxByActivationToken(ctx context.Context, r
 }
 
 func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID string) (*domain.Mailbox, error) {
+	// Free mode makes the payment path inert (KTD4): activation happens through
+	// the emailed activation link, never through a payment signal.
+	if s.freeMode {
+		return nil, nil
+	}
+
 	mailbox, err := s.repo.GetByPaymentSessionID(ctx, paymentSessionID)
 	if err != nil {
 		return nil, err
@@ -597,6 +603,11 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 }
 
 func (s *MailboxService) RenewMailbox(ctx context.Context, mailboxID string, paidAt time.Time, expiresAt time.Time) error {
+	// Free mode makes renewal inert (KTD4): payment signals cannot extend a mailbox.
+	if s.freeMode {
+		return nil
+	}
+
 	mailbox, err := s.repo.GetByID(ctx, mailboxID)
 	if err != nil {
 		return err
@@ -610,6 +621,12 @@ func (s *MailboxService) RenewMailbox(ctx context.Context, mailboxID string, pai
 }
 
 func (s *MailboxService) ExpireMailboxByID(ctx context.Context, mailboxID string) error {
+	// Free mode makes revocation inert (KTD4): a subscription.revoked webhook
+	// cannot expire a mailbox that is now permanent.
+	if s.freeMode {
+		return nil
+	}
+
 	mailbox, err := s.repo.GetByID(ctx, mailboxID)
 	if err != nil {
 		return err
@@ -631,6 +648,11 @@ type ReconcileResult struct {
 // against the payment gateway. If the gateway reports the checkout as confirmed
 // or succeeded, the mailbox is activated via MarkMailboxPaid.
 func (s *MailboxService) ReconcilePendingPayments(ctx context.Context) ([]ReconcileResult, error) {
+	// Free mode makes reconciliation inert (KTD4): no payment gateway is consulted.
+	if s.freeMode {
+		return []ReconcileResult{}, nil
+	}
+
 	pending, err := s.repo.ListPendingPayment(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list pending payments: %w", err)
@@ -685,6 +707,13 @@ func (s *MailboxService) ReconcilePendingPayments(ctx context.Context) ([]Reconc
 // flips their status to expired. It returns the number of mailboxes expired.
 // This is designed to be called periodically by a background sweep.
 func (s *MailboxService) ExpireMailboxes(ctx context.Context) (int, error) {
+	// Free mode makes the expiry sweep inert (KTD4): no row is flipped, including
+	// during the deploy-to-switchover window when active mailboxes still carry
+	// a non-nil ExpiresAt.
+	if s.freeMode {
+		return 0, nil
+	}
+
 	now := time.Now().UTC()
 	expired, err := s.repo.ListActiveExpired(ctx, now)
 	if err != nil {
@@ -711,7 +740,10 @@ func (s *MailboxService) validateMailboxSubscription(ctx context.Context, mailbo
 	if strings.TrimSpace(mailbox.AccountID) == "" {
 		// Key-bound mailbox: subscription is tracked on the mailbox itself.
 		if !mailbox.Usable() {
-			if mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
+			// In free mode the stale active-to-expired flip is inert (KTD4): a
+			// past-due mailbox is unusable during the deploy-to-switchover window
+			// but must not be permanently marked expired.
+			if !s.freeMode && mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
 				mailbox.Status = domain.MailboxStatusExpired
 				_ = s.repo.Update(ctx, mailbox)
 			}
@@ -800,7 +832,10 @@ func (s *MailboxService) ResolveAccessByKey(ctx context.Context, key ports.Verif
 
 	now := time.Now().UTC()
 	if !mailbox.Usable() {
-		if mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
+		// In free mode the stale active-to-expired flip is inert (KTD4): a
+		// past-due mailbox is unusable during the deploy-to-switchover window
+		// but must not be permanently marked expired.
+		if !s.freeMode && mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
 			mailbox.Status = domain.MailboxStatusExpired
 			_ = s.repo.Update(ctx, mailbox)
 		}

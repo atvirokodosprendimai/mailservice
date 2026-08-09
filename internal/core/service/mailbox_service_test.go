@@ -1871,3 +1871,198 @@ func TestResolveAccessByTokenGrandfathersFreeMailboxAfterReEnable(t *testing.T) 
 		t.Fatalf("expected mailbox mbx-1, got %q", res.MailboxID)
 	}
 }
+
+func TestMarkMailboxPaidFreeModeIsNoOp(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byStripeSession: map[string]*domain.Mailbox{
+			"sess-free": {
+				ID:               "mbx-free",
+				IMAPUsername:     "mbx_free",
+				IMAPPassword:     "pass",
+				PaymentSessionID: "sess-free",
+				Status:           domain.MailboxStatusPendingPayment,
+			},
+		},
+	}
+	provisioner := &fakeMailRuntimeProvisioner{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+
+	mailbox, err := service.MarkMailboxPaid(context.Background(), "sess-free")
+	if err != nil {
+		t.Fatalf("MarkMailboxPaid in free mode should no-op without error, got %v", err)
+	}
+	if mailbox != nil {
+		t.Fatalf("expected nil mailbox from free-mode no-op, got %+v", mailbox)
+	}
+	if got := repo.byStripeSession["sess-free"]; got.Status != domain.MailboxStatusPendingPayment {
+		t.Fatalf("expected mailbox to stay pending, got %s", got.Status)
+	}
+	if repo.updated != nil {
+		t.Fatalf("expected no repo update in free mode, got %+v", repo.updated)
+	}
+	if provisioner.calls != 0 {
+		t.Fatalf("expected no provisioning call in free mode, got %d", provisioner.calls)
+	}
+}
+
+func TestRenewMailboxFreeModeIsNoOp(t *testing.T) {
+	repo := &fakeMailboxRepo{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+
+	err := service.RenewMailbox(context.Background(), "mbx-any", time.Now().UTC(), time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("RenewMailbox in free mode should no-op without error, got %v", err)
+	}
+	if repo.updated != nil {
+		t.Fatalf("expected no repo update in free mode, got %+v", repo.updated)
+	}
+}
+
+// Covers AE5: a subscription.revoked event path (ExpireMailboxByID) in free mode
+// leaves an active mailbox active.
+func TestExpireMailboxByIDFreeModeLeavesActiveMailboxActive(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:             "mbx-1",
+				KeyFingerprint: "edproof:key-1",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC().Add(-time.Hour)),
+			},
+		},
+	}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+
+	if err := service.ExpireMailboxByID(context.Background(), "mbx-1"); err != nil {
+		t.Fatalf("ExpireMailboxByID in free mode should no-op, got %v", err)
+	}
+	if got := repo.byKeyFingerprint["edproof:key-1"]; got.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected mailbox to stay active, got %s", got.Status)
+	}
+	if repo.updated != nil {
+		t.Fatalf("expected no repo update in free mode, got %+v", repo.updated)
+	}
+}
+
+func TestReconcilePendingPaymentsFreeModeTouchesNoRows(t *testing.T) {
+	repo := &fakeMailboxRepo{
+		byStripeSession: map[string]*domain.Mailbox{
+			"sess-p1": {
+				ID:               "mbx-p1",
+				PaymentSessionID: "sess-p1",
+				Status:           domain.MailboxStatusPendingPayment,
+			},
+		},
+	}
+	payment := &fakePaymentGateway{}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, payment, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+
+	results, err := service.ReconcilePendingPayments(context.Background())
+	if err != nil {
+		t.Fatalf("ReconcilePendingPayments in free mode should no-op, got %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("expected empty results in free mode, got %d entries", len(results))
+	}
+	if payment.getCalls != 0 {
+		t.Fatalf("expected no gateway session lookups in free mode, got %d", payment.getCalls)
+	}
+	if repo.updated != nil {
+		t.Fatalf("expected no repo update in free mode, got %+v", repo.updated)
+	}
+}
+
+func TestExpireMailboxesFreeModeFlipsNoRows(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:             "mbx-1",
+				KeyFingerprint: "edproof:key-1",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC().Add(-2 * time.Hour)),
+				ExpiresAt:      &past,
+			},
+		},
+	}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+
+	n, err := service.ExpireMailboxes(context.Background())
+	if err != nil {
+		t.Fatalf("ExpireMailboxes in free mode should no-op, got %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 expired in free mode, got %d", n)
+	}
+	if got := repo.byKeyFingerprint["edproof:key-1"]; got.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected mailbox to stay active, got %s", got.Status)
+	}
+	if repo.updated != nil {
+		t.Fatalf("expected no repo update in free mode, got %+v", repo.updated)
+	}
+}
+
+func TestResolveAccessByKeyFreeModeDoesNotExpireStaleMailbox(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+	repo := &fakeMailboxRepo{
+		byKeyFingerprint: map[string]*domain.Mailbox{
+			"edproof:key-1": {
+				ID:             "mbx-1",
+				KeyFingerprint: "edproof:key-1",
+				Status:         domain.MailboxStatusActive,
+				PaidAt:         ptrTime(time.Now().UTC().Add(-2 * time.Hour)),
+				ExpiresAt:      &past,
+			},
+		},
+	}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+
+	_, err := service.ResolveAccessByKey(context.Background(), ports.VerifiedKey{Fingerprint: "edproof:key-1", Algorithm: "ed25519"}, "imap")
+	if !errors.Is(err, ports.ErrMailboxNotUsable) {
+		t.Fatalf("expected ErrMailboxNotUsable, got %v", err)
+	}
+	if got := repo.byKeyFingerprint["edproof:key-1"]; got.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected mailbox to stay active in free mode, got %s", got.Status)
+	}
+	if repo.updated != nil {
+		t.Fatalf("expected no repo update in free mode, got %+v", repo.updated)
+	}
+}
+
+func TestResolveAccessByTokenFreeModeDoesNotExpireStaleKeyBoundMailbox(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+	repo := &fakeMailboxRepo{
+		byAccessToken: map[string]*domain.Mailbox{
+			"token-1": {
+				ID:           "mbx-1",
+				Status:       domain.MailboxStatusActive,
+				PaidAt:       ptrTime(time.Now().UTC().Add(-2 * time.Hour)),
+				ExpiresAt:    &past,
+				AccessToken:  "token-1",
+				IMAPHost:     "imap.test.local",
+				IMAPPort:     1143,
+				IMAPUsername: "mbx_1",
+				IMAPPassword: "pass",
+			},
+		},
+	}
+	service := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	service.SetFreeMode(true)
+
+	_, err := service.ResolveIMAPByToken(context.Background(), "token-1")
+	if !errors.Is(err, ports.ErrMailboxNotUsable) {
+		t.Fatalf("expected ErrMailboxNotUsable, got %v", err)
+	}
+	if got := repo.byAccessToken["token-1"]; got.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected mailbox to stay active in free mode, got %s", got.Status)
+	}
+	if repo.updated != nil {
+		t.Fatalf("expected no repo update in free mode, got %+v", repo.updated)
+	}
+}

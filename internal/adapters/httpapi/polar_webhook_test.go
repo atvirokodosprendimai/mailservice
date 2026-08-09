@@ -397,3 +397,32 @@ func signedPolarHeaders(secret string, msgID string, timestamp int64, body []byt
 		"webhook-signature": "v1," + base64.StdEncoding.EncodeToString(mac.Sum(nil)),
 	}
 }
+
+// Covers AE5: in free mode a subscription.revoked webhook is inert and cannot
+// expire an active mailbox.
+func TestHandlePolarWebhookSubscriptionRevokedInFreeMode(t *testing.T) {
+	paidAt := time.Date(2026, 5, 14, 12, 30, 0, 0, time.UTC)
+	expiresAt := time.Date(2026, 6, 14, 12, 30, 0, 0, time.UTC)
+	repo, handler := newPolarWebhookCancellationHandler("mbx-1", paidAt, expiresAt)
+	handler.mailboxService.SetFreeMode(true)
+
+	body := `{"type":"subscription.revoked","data":{"metadata":{"mailbox_id":"mbx-1"},"current_period_end":"2026-06-14T12:30:00Z"}}`
+	rec := serveSignedPolarWebhook(handler, body)
+
+	if rec.Code != 202 {
+		t.Fatalf("expected status 202, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if repo.updateCount != 0 {
+		t.Fatalf("expected no mailbox update in free mode, got %d", repo.updateCount)
+	}
+	mailbox := repo.byID["mbx-1"]
+	if mailbox.Status != domain.MailboxStatusActive {
+		t.Fatalf("expected mailbox to stay active in free mode, got %s", mailbox.Status)
+	}
+	if mailbox.PaidAt == nil || !mailbox.PaidAt.Equal(paidAt) {
+		t.Fatalf("expected paid_at to remain %s, got %v", paidAt, mailbox.PaidAt)
+	}
+	if mailbox.ExpiresAt == nil || !mailbox.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expected expires_at to remain %s, got %v", expiresAt, mailbox.ExpiresAt)
+	}
+}
