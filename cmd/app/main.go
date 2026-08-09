@@ -141,7 +141,6 @@ func main() {
 		ChallengeAuth:       edproof.NewAuthenticator([]byte(cfg.EdproofHMACSecret)),
 		AgentAPISkillDoc:    docs.AgentAPISkill,
 		MockPaymentMode:     mockPaymentMode,
-		FreeMode:            cfg.FreeMode,
 		Metrics:             metricsRegistry,
 	})
 

@@ -38,7 +38,6 @@ type Config struct {
 	ChallengeAuth       ports.ChallengeAuthenticator
 	AgentAPISkillDoc    string
 	MockPaymentMode     bool
-	FreeMode            bool
 	Metrics             *metrics.Registry
 }
 
@@ -58,7 +57,6 @@ type Handler struct {
 	challengeAuth       ports.ChallengeAuthenticator
 	agentAPISkillDoc    string
 	mockPaymentMode     bool
-	freeMode            bool
 	metrics             *metrics.Registry
 }
 
@@ -88,7 +86,6 @@ func NewHandler(cfg Config) *Handler {
 		challengeAuth:       cfg.ChallengeAuth,
 		agentAPISkillDoc:    cfg.AgentAPISkillDoc,
 		mockPaymentMode:     cfg.MockPaymentMode,
-		freeMode:            cfg.FreeMode,
 		metrics:             cfg.Metrics,
 	}
 }
@@ -672,22 +669,21 @@ func (h *Handler) handleActivateMailbox(w http.ResponseWriter, r *http.Request) 
 	result, err := h.mailboxService.ActivateMailboxByActivationToken(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, ports.ErrActivationTokenInvalid) {
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			_, _ = io.WriteString(w, activationInvalidPageHTML)
+			renderActivationStatusPage(w, "#a23b2a", "Activation link invalid", "Activation link invalid",
+				"<p>This activation link has expired or is no longer valid.</p><p class=\"muted\">Re-claim your mailbox with the same key to receive a new activation link.</p>")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
 	if result.AlreadyActive {
-		_, _ = io.WriteString(w, activationAlreadyActivePageHTML)
+		renderActivationStatusPage(w, "#1f6b34", "Mailbox already active", "Mailbox already active",
+			"<p>This mailbox is already active. Nothing to do.</p><p class=\"muted\">Call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>")
 		return
 	}
-	_, _ = io.WriteString(w, activationSuccessPageHTML)
+	renderActivationStatusPage(w, "#1f6b34", "Mailbox activated", "Mailbox activated",
+		"<p>Your mailbox is now active and ready for mail. It does not expire.</p><p class=\"muted\">Return to your agent and call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>")
 }
 
 func (h *Handler) handleCreateMailbox(w http.ResponseWriter, r *http.Request) {
@@ -1393,70 +1389,32 @@ type polarSuccessView struct {
 	MailboxID string `json:"mailbox_id"`
 }
 
-var activationSuccessPageHTML = `<!doctype html>
+// renderActivationStatusPage renders the activation endpoint's HTML pages from
+// one shared shell; the heading color and body differ per outcome.
+func renderActivationStatusPage(w http.ResponseWriter, headingColor, title, heading, body string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, fmt.Sprintf(activationStatusPageHTMLTemplate, title, headingColor, heading, body))
+}
+
+var activationStatusPageHTMLTemplate = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mailbox activated</title>
+  <title>%s</title>
   <style>
     body{font-family:Georgia,serif;background:#f4efe4;color:#17222d;display:flex;justify-content:center;padding:3rem 1rem}
     .card{background:#fffaf0;border:1px solid #d8cdb7;border-radius:8px;padding:2rem;max-width:34rem}
-    h1{color:#1f6b34;margin-top:0}
+    h1{color:%s;margin-top:0}
     .muted{color:#566575}
     code{background:#f0e7d5;padding:0.1em 0.3em;border-radius:3px}
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>Mailbox activated</h1>
-    <p>Your mailbox is now active and ready for mail. It does not expire.</p>
-    <p class="muted">Return to your agent and call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>
-  </div>
-</body>
-</html>`
-
-var activationAlreadyActivePageHTML = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mailbox already active</title>
-  <style>
-    body{font-family:Georgia,serif;background:#f4efe4;color:#17222d;display:flex;justify-content:center;padding:3rem 1rem}
-    .card{background:#fffaf0;border:1px solid #d8cdb7;border-radius:8px;padding:2rem;max-width:34rem}
-    h1{color:#1f6b34;margin-top:0}
-    .muted{color:#566575}
-    code{background:#f0e7d5;padding:0.1em 0.3em;border-radius:3px}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Mailbox already active</h1>
-    <p>This mailbox is already active. Nothing to do.</p>
-    <p class="muted">Call <code>POST /v1/access/resolve</code> with your key to get IMAP credentials.</p>
-  </div>
-</body>
-</html>`
-
-var activationInvalidPageHTML = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Activation link invalid</title>
-  <style>
-    body{font-family:Georgia,serif;background:#f4efe4;color:#17222d;display:flex;justify-content:center;padding:3rem 1rem}
-    .card{background:#fffaf0;border:1px solid #d8cdb7;border-radius:8px;padding:2rem;max-width:34rem}
-    h1{color:#a23b2a;margin-top:0}
-    .muted{color:#566575}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Activation link invalid</h1>
-    <p>This activation link has expired or is no longer valid.</p>
-    <p class="muted">Re-claim your mailbox with the same key to receive a new activation link.</p>
+    <h1>%s</h1>
+    %s
   </div>
 </body>
 </html>`

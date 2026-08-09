@@ -249,14 +249,6 @@ func TestMailboxRepositoryListActiveAndClearActiveExpiries(t *testing.T) {
 		}
 	}
 
-	list, err := repo.ListActive(context.Background())
-	if err != nil {
-		t.Fatalf("ListActive failed: %v", err)
-	}
-	if len(list) != 1 || list[0].ID != "mbx-active" {
-		t.Fatalf("expected only the active mailbox, got %+v", list)
-	}
-
 	cleared, err := repo.ClearActiveExpiries(context.Background())
 	if err != nil {
 		t.Fatalf("ClearActiveExpiries failed: %v", err)

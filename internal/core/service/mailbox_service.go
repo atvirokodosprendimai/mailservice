@@ -150,17 +150,10 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 		// Free-mode re-claim: regenerate the activation token and re-email the
 		// link for any non-usable existing mailbox (pending, expired, or other).
 		if s.freeMode {
-			raw, genErr := s.newActivationToken(existing)
-			if genErr != nil {
-				return nil, false, fmt.Errorf("generate activation token: %w", genErr)
-			}
 			existing.OwnerEmail = billingEmail
 			existing.BillingEmail = billingEmail
-			if err := s.repo.Update(ctx, existing); err != nil {
-				return nil, false, fmt.Errorf("update mailbox activation link: %w", err)
-			}
-			if err := s.sendActivationLink(ctx, existing, existing.BillingEmail, raw); err != nil {
-				return nil, false, fmt.Errorf("send activation link: %w", err)
+			if err := s.issueActivationLink(ctx, existing, existing.BillingEmail); err != nil {
+				return nil, false, err
 			}
 			return existing, false, nil
 		}
@@ -236,15 +229,8 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	}
 
 	if s.freeMode {
-		raw, genErr := s.newActivationToken(mailbox)
-		if genErr != nil {
-			return nil, false, fmt.Errorf("generate activation token: %w", genErr)
-		}
-		if err := s.repo.Create(ctx, mailbox); err != nil {
-			return nil, false, fmt.Errorf("create mailbox: %w", err)
-		}
-		if err := s.sendActivationLink(ctx, mailbox, mailbox.BillingEmail, raw); err != nil {
-			return nil, false, fmt.Errorf("send activation link: %w", err)
+		if err := s.createMailboxWithActivation(ctx, mailbox, mailbox.BillingEmail); err != nil {
+			return nil, false, err
 		}
 		return mailbox, true, nil
 	}
@@ -312,6 +298,32 @@ func (s *MailboxService) sendActivationLink(ctx context.Context, mailbox *domain
 
 func (s *MailboxService) activationURL(rawToken string) string {
 	return s.publicBaseURL + "/v1/mailboxes/activate?token=" + rawToken
+}
+
+// issueActivationLink generates a fresh activation token for an existing
+// mailbox, persists it, and emails the activation link.
+func (s *MailboxService) issueActivationLink(ctx context.Context, mailbox *domain.Mailbox, ownerEmail string) error {
+	raw, err := s.newActivationToken(mailbox)
+	if err != nil {
+		return fmt.Errorf("generate activation token: %w", err)
+	}
+	if err := s.repo.Update(ctx, mailbox); err != nil {
+		return fmt.Errorf("update mailbox activation link: %w", err)
+	}
+	return s.sendActivationLink(ctx, mailbox, ownerEmail, raw)
+}
+
+// createMailboxWithActivation creates a new mailbox with a fresh activation
+// token and emails the activation link.
+func (s *MailboxService) createMailboxWithActivation(ctx context.Context, mailbox *domain.Mailbox, ownerEmail string) error {
+	raw, err := s.newActivationToken(mailbox)
+	if err != nil {
+		return fmt.Errorf("generate activation token: %w", err)
+	}
+	if err := s.repo.Create(ctx, mailbox); err != nil {
+		return fmt.Errorf("create mailbox: %w", err)
+	}
+	return s.sendActivationLink(ctx, mailbox, ownerEmail, raw)
 }
 
 func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxRequest) (*domain.Mailbox, bool, error) {
@@ -402,15 +414,8 @@ func (s *MailboxService) CreateMailbox(ctx context.Context, req CreateMailboxReq
 func (s *MailboxService) createFreeMailbox(ctx context.Context, account *domain.Account, ownerEmail string) (*domain.Mailbox, bool, error) {
 	pending, err := s.repo.GetPendingByAccountID(ctx, account.ID)
 	if err == nil {
-		raw, genErr := s.newActivationToken(pending)
-		if genErr != nil {
-			return nil, false, fmt.Errorf("generate activation token: %w", genErr)
-		}
-		if err := s.repo.Update(ctx, pending); err != nil {
-			return nil, false, fmt.Errorf("update mailbox activation link: %w", err)
-		}
-		if err := s.sendActivationLink(ctx, pending, pending.OwnerEmail, raw); err != nil {
-			return nil, false, fmt.Errorf("send activation link: %w", err)
+		if err := s.issueActivationLink(ctx, pending, pending.OwnerEmail); err != nil {
+			return nil, false, err
 		}
 		return pending, false, nil
 	}
@@ -439,15 +444,8 @@ func (s *MailboxService) createFreeMailbox(ctx context.Context, account *domain.
 		AccessToken:  accessToken,
 		Status:       domain.MailboxStatusPendingPayment,
 	}
-	raw, err := s.newActivationToken(mailbox)
-	if err != nil {
-		return nil, false, fmt.Errorf("generate activation token: %w", err)
-	}
-	if err := s.repo.Create(ctx, mailbox); err != nil {
-		return nil, false, fmt.Errorf("create mailbox: %w", err)
-	}
-	if err := s.sendActivationLink(ctx, mailbox, mailbox.OwnerEmail, raw); err != nil {
-		return nil, false, fmt.Errorf("send activation link: %w", err)
+	if err := s.createMailboxWithActivation(ctx, mailbox, mailbox.OwnerEmail); err != nil {
+		return nil, false, err
 	}
 	return mailbox, true, nil
 }
@@ -507,11 +505,12 @@ func (s *MailboxService) ActivateMailboxByActivationToken(ctx context.Context, r
 	if mailbox.Status != domain.MailboxStatusPendingPayment {
 		return ActivationResult{}, ports.ErrActivationTokenInvalid
 	}
-	if mailbox.ActivationExpiresAt == nil || !mailbox.ActivationExpiresAt.After(time.Now().UTC()) {
+
+	now := time.Now().UTC()
+	if mailbox.ActivationExpiresAt == nil || !mailbox.ActivationExpiresAt.After(now) {
 		return ActivationResult{}, ports.ErrActivationTokenInvalid
 	}
 
-	now := time.Now().UTC()
 	mailbox.Status = domain.MailboxStatusActive
 	mailbox.PaidAt = &now
 	mailbox.ExpiresAt = nil
@@ -734,10 +733,9 @@ func (s *MailboxService) ExpireMailboxes(ctx context.Context) (int, error) {
 
 // SwitchoverResult reports what a free-mode switchover changed.
 type SwitchoverResult struct {
-	ActiveCleared     int `json:"active_cleared"`
-	AccountsCleared   int `json:"accounts_cleared"`
-	PendingConverted  int `json:"pending_converted"`
-	PendingEmailsSent int `json:"pending_emails_sent"`
+	ActiveCleared    int `json:"active_cleared"`
+	AccountsCleared  int `json:"accounts_cleared"`
+	PendingConverted int `json:"pending_converted"`
 }
 
 // SwitchoverToFreeMode is the one-off admin transition to the free model
@@ -790,7 +788,6 @@ func (s *MailboxService) SwitchoverToFreeMode(ctx context.Context) (SwitchoverRe
 		if err := s.sendActivationLink(ctx, mb, ownerEmail, raw); err != nil {
 			return result, fmt.Errorf("send activation link for %s: %w", mb.ID, err)
 		}
-		result.PendingEmailsSent++
 	}
 	return result, nil
 }

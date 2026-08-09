@@ -49,7 +49,6 @@ type MailboxRepository interface {
 	ListByAccountID(ctx context.Context, accountID string) ([]domain.Mailbox, error)
 	GetPendingByAccountID(ctx context.Context, accountID string) (*domain.Mailbox, error)
 	ListPendingPayment(ctx context.Context) ([]domain.Mailbox, error)
-	ListActive(ctx context.Context) ([]domain.Mailbox, error)
 	ClearActiveExpiries(ctx context.Context) (int, error)
 	GetByPaymentSessionID(ctx context.Context, sessionID string) (*domain.Mailbox, error)
 	GetByActivationTokenHash(ctx context.Context, tokenHash string) (*domain.Mailbox, error)

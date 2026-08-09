@@ -632,16 +632,6 @@ func (r *httpMailboxRepo) ListActiveExpired(_ context.Context, _ time.Time) ([]d
 	return nil, nil
 }
 
-func (r *httpMailboxRepo) ListActive(_ context.Context) ([]domain.Mailbox, error) {
-	var result []domain.Mailbox
-	for _, mb := range r.byID {
-		if mb.Status == domain.MailboxStatusActive {
-			result = append(result, *mb)
-		}
-	}
-	return result, nil
-}
-
 func (r *httpMailboxRepo) ClearActiveExpiries(_ context.Context) (int, error) {
 	count := 0
 	for _, mb := range r.byID {

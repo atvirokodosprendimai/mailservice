@@ -1353,16 +1353,6 @@ func (f *fakeMailboxRepo) allMailboxes() []*domain.Mailbox {
 	return result
 }
 
-func (f *fakeMailboxRepo) ListActive(_ context.Context) ([]domain.Mailbox, error) {
-	var result []domain.Mailbox
-	for _, mb := range f.allMailboxes() {
-		if mb.Status == domain.MailboxStatusActive {
-			result = append(result, *mb)
-		}
-	}
-	return result, nil
-}
-
 func (f *fakeMailboxRepo) ClearActiveExpiries(_ context.Context) (int, error) {
 	count := 0
 	for _, mb := range f.allMailboxes() {
@@ -2195,9 +2185,6 @@ func TestSwitchoverToFreeModeConvertsPendingMailboxWithActivationLink(t *testing
 	if result.PendingConverted != 1 {
 		t.Fatalf("expected 1 pending converted, got %d", result.PendingConverted)
 	}
-	if result.PendingEmailsSent != 1 {
-		t.Fatalf("expected 1 activation email, got %d", result.PendingEmailsSent)
-	}
 	if notifier.calls != 1 {
 		t.Fatalf("expected one activation email sent, got %d", notifier.calls)
 	}
@@ -2248,7 +2235,7 @@ func TestSwitchoverToFreeModeSkipsPendingWithValidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first SwitchoverToFreeMode failed: %v", err)
 	}
-	if first.PendingConverted != 0 || first.PendingEmailsSent != 0 {
+	if first.PendingConverted != 0 {
 		t.Fatalf("expected valid-token pending skipped, got %+v", first)
 	}
 	if notifier.calls != 0 {
@@ -2263,7 +2250,7 @@ func TestSwitchoverToFreeModeSkipsPendingWithValidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second SwitchoverToFreeMode failed: %v", err)
 	}
-	if second.PendingConverted != 0 || second.PendingEmailsSent != 0 {
+	if second.PendingConverted != 0 {
 		t.Fatalf("expected re-run to be a no-op for pendings, got %+v", second)
 	}
 	if notifier.calls != 0 {
