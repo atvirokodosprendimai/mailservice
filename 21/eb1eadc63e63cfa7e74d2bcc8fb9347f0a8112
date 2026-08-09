@@ -1,0 +1,19 @@
+docs/residual-review-findings/feat-free-mode-mailbox-service.md
+  s_5921610590e99b::t_598b79c17f89f6 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "21eb1eadc63e63cfa7e74d2bcc8fb9347f0a8112",
+  "prompts": {},
+  "sessions": {
+    "s_5921610590e99b": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe5a2-ba4d-757a-9ab5-c2569b7b522f",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
