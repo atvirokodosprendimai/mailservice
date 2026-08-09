@@ -1,0 +1,19 @@
+internal/adapters/repository/account_gorm_test.go
+  s_d9518fd2d86405::t_89827666ef5c61 1-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "c735ac268809a01858c92ca98da08cfeeee5da96",
+  "prompts": {},
+  "sessions": {
+    "s_d9518fd2d86405": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe666-30d4-7434-9821-c7735ab745f2",
+        "model": "deepseek-v4-flash"
+      },
+      "human_author": "Marty <saint@ghost.lt>"
+    }
+  }
+}
