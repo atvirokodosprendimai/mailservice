@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,8 @@ type SupportConfig struct {
 
 type MailboxService struct {
 	paymentReconcileMu sync.Mutex
+	claimReconcileMu   sync.Mutex
+	lastClaimReconcile time.Time
 	repo               ports.MailboxRepository
 	accounts           ports.AccountRepository
 	payment            ports.PaymentGateway
@@ -112,6 +115,9 @@ type ResolveAccessResult = ResolveIMAPResult
 
 const giftGrantedMonths = 3
 
+// claimReconcileCooldown is shared across all claims so anonymous re-claims cannot hammer the Open Collective API.
+const claimReconcileCooldown = 30 * time.Second
+
 // activationTokenSize is the byte length of activation tokens (16 bytes = 128 bits).
 
 // activationTokenTTL is how long an activation link stays valid.
@@ -145,6 +151,11 @@ func (s *MailboxService) ClaimMailbox(ctx context.Context, billingEmail string, 
 	if err == nil {
 		if existing.Usable() {
 			return existing, false, nil
+		}
+		if !s.freeMode && existing.Status == domain.MailboxStatusPendingPayment && s.reconcileOnClaim(ctx) {
+			if fresh, err := s.repo.GetByID(ctx, existing.ID); err == nil && fresh.Usable() {
+				return fresh, false, nil
+			}
 		}
 
 		// Free-mode re-claim: regenerate the activation token and re-email the
@@ -552,6 +563,27 @@ func (s *MailboxService) expireMailbox(ctx context.Context, mailbox *domain.Mail
 	}
 	mailbox.Status = domain.MailboxStatusExpired
 	return s.repo.Update(ctx, mailbox)
+}
+
+// reconcileOnClaim runs payment reconciliation at most once per cooldown so a just-paid mailbox activates on re-claim.
+func (s *MailboxService) reconcileOnClaim(ctx context.Context) bool {
+	source, ok := s.payment.(ports.PaymentChargeSource)
+	if !ok {
+		return false
+	}
+	s.claimReconcileMu.Lock()
+	if time.Since(s.lastClaimReconcile) < claimReconcileCooldown {
+		s.claimReconcileMu.Unlock()
+		return false
+	}
+	s.lastClaimReconcile = time.Now()
+	s.claimReconcileMu.Unlock()
+	applied, err := s.ReconcileOpenCollectivePayments(ctx, source)
+	if err != nil {
+		log.Printf("claim-triggered reconcile: %v", err)
+		return false
+	}
+	return applied > 0
 }
 
 // ReconcileResult holds the outcome of a single mailbox reconciliation attempt.
