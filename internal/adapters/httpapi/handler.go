@@ -25,7 +25,6 @@ import (
 type Config struct {
 	AdminAPIKey         string
 	StripeWebhookSecret string
-	PolarWebhookSecret  string
 	MaxConcurrentReqs   int
 	BuildNumber         string
 	CacheBuster         string
@@ -44,7 +43,6 @@ type Config struct {
 type Handler struct {
 	adminAPIKey         string
 	stripeWebhookSecret string
-	polarWebhookSecret  string
 	concurrencySem      chan struct{}
 	keyProofVerifier    ports.KeyProofVerifier
 	paymentGateway      ports.PaymentGateway
@@ -73,7 +71,6 @@ func NewHandler(cfg Config) *Handler {
 	return &Handler{
 		adminAPIKey:         cfg.AdminAPIKey,
 		stripeWebhookSecret: cfg.StripeWebhookSecret,
-		polarWebhookSecret:  cfg.PolarWebhookSecret,
 		concurrencySem:      sem,
 		keyProofVerifier:    cfg.KeyProofVerifier,
 		paymentGateway:      cfg.PaymentGateway,
@@ -110,8 +107,6 @@ func (h *Handler) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/mailboxes/claim", h.handleClaimMailbox)
 	mux.HandleFunc("GET /v1/mailboxes/{id}", h.withAccountToken(h.handleGetMailbox))
 	mux.HandleFunc("POST /v1/access/resolve", h.handleResolveAccess)
-	mux.HandleFunc("GET /v1/payments/polar/success", h.handlePolarSuccess)
-	mux.HandleFunc("POST /v1/webhooks/polar", h.handlePolarWebhook)
 	mux.HandleFunc("POST /v1/imap/resolve", h.handleResolveIMAP)
 	mux.HandleFunc("POST /v1/imap/messages", h.handleListIMAPMessages)
 	mux.HandleFunc("POST /v1/imap/messages/get", h.handleGetIMAPMessageByUID)
@@ -1157,190 +1152,6 @@ func (h *Handler) handleMockPay(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "paid"})
 }
 
-func (h *Handler) handlePolarSuccess(w http.ResponseWriter, r *http.Request) {
-	if h.paymentGateway == nil {
-		writeError(w, http.StatusServiceUnavailable, errors.New("payment gateway not configured"))
-		return
-	}
-
-	checkoutID := strings.TrimSpace(r.URL.Query().Get("checkout_id"))
-	if checkoutID == "" {
-		writeError(w, http.StatusBadRequest, errors.New("missing checkout_id"))
-		return
-	}
-
-	session, err := h.paymentGateway.GetPaymentSession(r.Context(), checkoutID)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
-	}
-
-	if !isSuccessfulPayment(session.Status) {
-		writeJSON(w, http.StatusConflict, map[string]string{"status": "waiting_payment"})
-		return
-	}
-
-	mailbox, err := h.mailboxService.MarkMailboxPaid(r.Context(), session.SessionID)
-	if err != nil {
-		if errors.Is(err, ports.ErrMailboxNotFound) {
-			writeError(w, http.StatusNotFound, err)
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	if mailbox == nil {
-		// Free mode: MarkMailboxPaid no-ops and activation is link-based, so
-		// there is no paid mailbox to render.
-		writeJSON(w, http.StatusOK, polarSuccessView{Status: "ok"})
-		return
-	}
-
-	// Render HTML for browser requests, JSON for API clients.
-	if strings.Contains(r.Header.Get("Accept"), "text/html") {
-		email := mailbox.IMAPUsername
-		if email == "" {
-			email = mailbox.OwnerEmail
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, paymentSuccessHTMLTemplate, mailbox.ID, email)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, polarSuccessView{
-		Status:    "ok",
-		MailboxID: mailbox.ID,
-	})
-}
-
-func (h *Handler) handlePolarWebhook(w http.ResponseWriter, r *http.Request) {
-	if h.paymentGateway == nil {
-		writeError(w, http.StatusServiceUnavailable, errors.New("payment gateway not configured"))
-		return
-	}
-	if strings.TrimSpace(h.polarWebhookSecret) == "" {
-		writeError(w, http.StatusServiceUnavailable, errors.New("polar webhook secret not configured"))
-		return
-	}
-
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxRequestBodyBytes))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	headers := map[string]string{
-		"webhook-id":        r.Header.Get("webhook-id"),
-		"webhook-timestamp": r.Header.Get("webhook-timestamp"),
-		"webhook-signature": r.Header.Get("webhook-signature"),
-	}
-	if err := verifyPolarWebhook(h.polarWebhookSecret, headers, body, h.now()); err != nil {
-		writeError(w, http.StatusUnauthorized, err)
-		return
-	}
-
-	event, err := parsePolarWebhook(body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	switch event.Type {
-	case "checkout.updated", "checkout.created":
-		h.handleCheckoutEvent(w, r, event)
-	case "subscription.canceled", "subscription.uncanceled":
-		h.handleSubscriptionCancellation(w, r, event)
-	case "subscription.revoked":
-		h.handleSubscriptionRevocation(w, r, event)
-	case "subscription.updated", "subscription.created", "order.created", "order.paid":
-		h.handleSubscriptionRenewal(w, r, event)
-	default:
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-	}
-}
-
-func (h *Handler) handleCheckoutEvent(w http.ResponseWriter, r *http.Request, event *polarWebhookEvent) {
-	checkoutID := polarCheckoutID(event)
-	if checkoutID == "" {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-		return
-	}
-
-	session, err := h.paymentGateway.GetPaymentSession(r.Context(), checkoutID)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
-	}
-	if !isSuccessfulPayment(session.Status) {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-		return
-	}
-
-	if _, err := h.mailboxService.MarkMailboxPaid(r.Context(), session.SessionID); err != nil {
-		if errors.Is(err, ports.ErrMailboxNotFound) {
-			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
-}
-
-func (h *Handler) handleSubscriptionCancellation(w http.ResponseWriter, _ *http.Request, event *polarWebhookEvent) {
-	mailboxID := strings.TrimSpace(event.Data.Metadata["mailbox_id"])
-	if h.logger != nil {
-		h.logger.Printf("polar subscription cancellation event ack type=%s mailbox_id=%s", event.Type, mailboxID)
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
-}
-
-func (h *Handler) handleSubscriptionRevocation(w http.ResponseWriter, r *http.Request, event *polarWebhookEvent) {
-	mailboxID, _, ok := polarSubscriptionFields(event.Data)
-	if !ok {
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-		return
-	}
-
-	if err := h.mailboxService.ExpireMailboxByID(r.Context(), mailboxID); err != nil {
-		if errors.Is(err, ports.ErrMailboxNotFound) {
-			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
-}
-
-func (h *Handler) handleSubscriptionRenewal(w http.ResponseWriter, r *http.Request, event *polarWebhookEvent) {
-	mailboxID, expiresAt, ok := polarSubscriptionFields(event.Data)
-	if !ok {
-		if h.logger != nil {
-			h.logger.Printf("polar subscription renewal ignored: missing mailbox_id or current_period_end")
-		}
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-		return
-	}
-
-	if err := h.mailboxService.RenewMailbox(r.Context(), mailboxID, time.Now(), expiresAt); err != nil {
-		if errors.Is(err, ports.ErrMailboxNotFound) {
-			if h.logger != nil {
-				h.logger.Printf("polar subscription renewal ignored: mailbox not found mailbox_id=%s", mailboxID)
-			}
-			writeJSON(w, http.StatusAccepted, map[string]string{"status": "ignored"})
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ok"})
-}
-
 func (h *Handler) withAccountToken(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := r.Header.Get("X-API-Token")
@@ -1393,11 +1204,6 @@ type resolveAccessView struct {
 	AccessToken string `json:"access_token,omitempty"`
 }
 
-type polarSuccessView struct {
-	Status    string `json:"status"`
-	MailboxID string `json:"mailbox_id"`
-}
-
 // renderActivationStatusPage renders the activation endpoint's HTML pages from
 // one shared shell; the status code, heading color, and body differ per outcome.
 func renderActivationStatusPage(w http.ResponseWriter, statusCode int, headingColor, title, heading, body string) {
@@ -1425,186 +1231,6 @@ var activationStatusPageHTMLTemplate = `<!doctype html>
     <h1>%s</h1>
     %s
   </div>
-</body>
-</html>`
-
-var paymentSuccessHTMLTemplate = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Payment Confirmed — TrueVIP Access</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f4efe4;
-      --ink: #17222d;
-      --muted: #566575;
-      --card: #fffaf0;
-      --line: #d8cdb7;
-      --accent: #a23b2a;
-      --accent-ink: #fffaf0;
-      --code: #f0e7d5;
-      --green: #2d7a3a;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      background:
-        radial-gradient(circle at top left, rgba(162,59,42,0.12), transparent 28%%),
-        linear-gradient(180deg, #f7f2e8 0%%, var(--bg) 100%%);
-      color: var(--ink);
-    }
-    main {
-      max-width: 620px;
-      margin: 0 auto;
-      padding: 72px 20px;
-      text-align: center;
-    }
-    .check {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 72px;
-      height: 72px;
-      border-radius: 50%%;
-      background: var(--green);
-      margin-bottom: 24px;
-    }
-    .check svg { width: 36px; height: 36px; }
-    h1 {
-      margin: 0 0 12px;
-      font-size: clamp(1.8rem, 4vw, 2.8rem);
-      line-height: 1.1;
-      letter-spacing: -0.03em;
-    }
-    .lede {
-      max-width: 42rem;
-      margin: 0 auto 32px;
-      font-size: 1.1rem;
-      line-height: 1.6;
-      color: var(--muted);
-    }
-    .card {
-      padding: 24px;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: rgba(255, 250, 240, 0.9);
-      text-align: left;
-      margin-bottom: 24px;
-    }
-    .card h2 {
-      margin: 0 0 14px;
-      font-size: 1.15rem;
-    }
-    .detail {
-      display: flex;
-      justify-content: space-between;
-      padding: 10px 0;
-      border-bottom: 1px solid var(--line);
-      font-size: 0.95rem;
-    }
-    .detail:last-child { border-bottom: none; }
-    .detail .label { color: var(--muted); }
-    .detail .value {
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.9rem;
-      word-break: break-all;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      justify-content: center;
-      margin-top: 32px;
-    }
-    .button {
-      display: inline-block;
-      padding: 12px 20px;
-      border-radius: 999px;
-      text-decoration: none;
-      font-weight: 700;
-      border: 1px solid var(--ink);
-    }
-    .button.primary {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: var(--accent-ink);
-    }
-    .button.secondary {
-      color: var(--ink);
-      background: transparent;
-    }
-    .next-steps {
-      margin-top: 32px;
-      padding: 22px;
-      border-radius: 22px;
-      border: 1px solid var(--line);
-      background: var(--card);
-      text-align: left;
-    }
-    .next-steps h2 {
-      margin: 0 0 12px;
-      font-size: 1.15rem;
-    }
-    .next-steps ol {
-      margin: 0;
-      padding-left: 20px;
-    }
-    .next-steps li {
-      line-height: 1.6;
-      margin-bottom: 6px;
-    }
-    code {
-      padding: 0.1em 0.35em;
-      border-radius: 6px;
-      background: var(--code);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.9em;
-    }
-  </style>
-</head>
-<body>
-  <main>
-    <div class="check">
-      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="20 6 9 17 4 12"></polyline>
-      </svg>
-    </div>
-    <h1>Payment confirmed</h1>
-    <p class="lede">Your mailbox is active and ready to receive mail.</p>
-
-    <div class="card">
-      <h2>Mailbox details</h2>
-      <div class="detail">
-        <span class="label">Mailbox ID</span>
-        <span class="value">%s</span>
-      </div>
-      <div class="detail">
-        <span class="label">Email</span>
-        <span class="value">%s</span>
-      </div>
-      <div class="detail">
-        <span class="label">Status</span>
-        <span class="value">Active</span>
-      </div>
-    </div>
-
-    <section class="next-steps">
-      <h2>Next steps</h2>
-      <ol>
-        <li>Get a fresh challenge from <code>POST /v1/auth/challenge</code></li>
-        <li>Sign it with your Ed25519 private key</li>
-        <li>Call <code>POST /v1/access/resolve</code> to get IMAP credentials</li>
-        <li>Read mail via the HTTP API or any IMAP client</li>
-      </ol>
-    </section>
-
-    <div class="actions">
-      <a class="button primary" href="/">Back to home</a>
-    </div>
-  </main>
 </body>
 </html>`
 
@@ -1668,10 +1294,6 @@ func writeJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(payload)
-}
-
-func isSuccessfulPayment(status ports.PaymentSessionStatus) bool {
-	return status == ports.PaymentSessionStatusSucceeded || status == ports.PaymentSessionStatusConfirmed
 }
 
 func coalesceNow(now func() time.Time) func() time.Time {
@@ -1778,6 +1400,15 @@ func (h *Handler) handleReprovisionMailbox(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *Handler) handleReconcilePayments(w http.ResponseWriter, r *http.Request) {
+	if source, ok := h.paymentGateway.(ports.PaymentChargeSource); ok {
+		applied, err := h.mailboxService.ReconcileOpenCollectivePayments(r.Context(), source)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"reconciled": applied, "activated": applied, "results": []service.ReconcileResult{}})
+		return
+	}
 	results, err := h.mailboxService.ReconcilePendingPayments(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -26,13 +25,10 @@ const (
 	defaultOutputDir     = "docs/pulse-reports/"
 	defaultPublicBaseURL = "https://truevipaccess.com"
 
-	polarSubscriptionsURL = "https://api.polar.sh/v1/subscriptions"
-	pendingMetricNote     = "no data — source not connected (prod telemetry unreachable until Coroot/log-shipper/admin-metrics ships)"
+	pendingMetricNote = "no data — source not connected (prod telemetry unreachable until Coroot/log-shipper/admin-metrics ships)"
 
 	httpClientTimeout      = 10 * time.Second
 	queryTrailingBuffer    = 15 * time.Minute
-	polarRetryBackoff      = 1 * time.Second
-	polarMaxAttempts       = 3
 	healthProbeSamples     = 5
 	dayHours               = 24
 	percentileScale        = 100
@@ -42,8 +38,6 @@ const (
 type pulseConfig struct {
 	DatabaseURL   string
 	DatabaseAuth  string
-	PolarBearer   string
-	PolarOrgID    string
 	PublicBaseURL string
 	AdminAPIKey   string
 }
@@ -54,10 +48,6 @@ type databaseMetrics struct {
 	Activated           int64
 	SupportVolume       int64
 	RenewalsInWindow    int64
-}
-
-type polarMetrics struct {
-	SubscriptionsObserved int
 }
 
 type adminTopError struct {
@@ -90,7 +80,6 @@ type pulseReport struct {
 	WindowStart time.Time
 	WindowEnd   time.Time
 	Database    databaseMetrics
-	Polar       polarMetrics
 	Admin       adminMetrics
 	Health      healthMetrics
 }
@@ -140,11 +129,6 @@ func run(ctx context.Context, args []string, logger *log.Logger) error {
 	}
 
 	client := &http.Client{Timeout: httpClientTimeout}
-	polar, err := fetchPolarSubscriptions(ctx, client, cfg.PolarBearer, cfg.PolarOrgID)
-	if err != nil {
-		return fmt.Errorf("fetch polar subscriptions: %w", err)
-	}
-
 	admin, err := fetchAdminMetrics(ctx, client, cfg.PublicBaseURL, cfg.AdminAPIKey, *windowFlag)
 	if err != nil {
 		return fmt.Errorf("fetch admin metrics: %w", err)
@@ -161,7 +145,6 @@ func run(ctx context.Context, args []string, logger *log.Logger) error {
 		WindowStart: windowStart,
 		WindowEnd:   windowEnd,
 		Database:    dbMetrics,
-		Polar:       polar,
 		Admin:       admin,
 		Health:      health,
 	})
@@ -184,14 +167,6 @@ func loadPulseConfig() (pulseConfig, error) {
 	if err != nil {
 		return pulseConfig{}, err
 	}
-	polarBearer, err := requiredEnv("POLAR_PULSE_TOKEN")
-	if err != nil {
-		return pulseConfig{}, err
-	}
-	polarOrgID, err := requiredEnv("POLAR_ORGANIZATION_ID")
-	if err != nil {
-		return pulseConfig{}, err
-	}
 	adminAPIKey, err := requiredEnv("ADMIN_API_KEY")
 	if err != nil {
 		return pulseConfig{}, err
@@ -205,8 +180,6 @@ func loadPulseConfig() (pulseConfig, error) {
 	return pulseConfig{
 		DatabaseURL:   databaseURL,
 		DatabaseAuth:  databaseAuth,
-		PolarBearer:   polarBearer,
-		PolarOrgID:    polarOrgID,
 		PublicBaseURL: publicBaseURL,
 		AdminAPIKey:   adminAPIKey,
 	}, nil
@@ -270,81 +243,6 @@ func queryCount(ctx context.Context, db *sql.DB, destination *int64, statement s
 		return fmt.Errorf("query count: %w", err)
 	}
 	return nil
-}
-
-func fetchPolarSubscriptions(ctx context.Context, client *http.Client, bearer string, orgID string) (polarMetrics, error) {
-	var lastErr error
-	for attempt := 1; attempt <= polarMaxAttempts; attempt++ {
-		metrics, retry, err := fetchPolarSubscriptionsAttempt(ctx, client, bearer, orgID)
-		if err == nil {
-			return metrics, nil
-		}
-		lastErr = err
-		if !retry || attempt == polarMaxAttempts {
-			break
-		}
-		if err := waitPolarRetry(ctx, attempt); err != nil {
-			return polarMetrics{}, err
-		}
-	}
-	if lastErr == nil {
-		lastErr = errors.New("polar subscriptions failed")
-	}
-	return polarMetrics{}, lastErr
-}
-
-func fetchPolarSubscriptionsAttempt(ctx context.Context, client *http.Client, bearer string, orgID string) (polarMetrics, bool, error) {
-	endpoint := polarSubscriptionsURL + "?organization_id=" + url.QueryEscape(orgID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return polarMetrics{}, false, fmt.Errorf("create polar request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+bearer)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return polarMetrics{}, true, fmt.Errorf("do polar request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
-		return polarMetrics{}, true, fmt.Errorf("polar subscriptions status %d", resp.StatusCode)
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return polarMetrics{}, false, fmt.Errorf("polar subscriptions status %d", resp.StatusCode)
-	}
-
-	var payload any
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return polarMetrics{}, false, fmt.Errorf("decode polar subscriptions: %w", err)
-	}
-
-	return polarMetrics{SubscriptionsObserved: countPolarSubscriptions(payload)}, false, nil
-}
-
-func waitPolarRetry(ctx context.Context, attempt int) error {
-	timer := time.NewTimer(time.Duration(attempt) * polarRetryBackoff)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("wait polar retry: %w", ctx.Err())
-	case <-timer.C:
-		return nil
-	}
-}
-
-func countPolarSubscriptions(payload any) int {
-	switch value := payload.(type) {
-	case []any:
-		return len(value)
-	case map[string]any:
-		for _, key := range []string{"items", "data", "results"} {
-			if items, ok := value[key].([]any); ok {
-				return len(items)
-			}
-		}
-	}
-	return 0
 }
 
 func fetchAdminMetrics(ctx context.Context, client *http.Client, baseURL string, adminKey string, window string) (adminMetrics, error) {
@@ -509,7 +407,6 @@ func renderReport(report pulseReport) string {
 	fmt.Fprintf(&b, "## System\n")
 	fmt.Fprintf(&b, "- healthz p50/p95/p99 (CI-side, not prod-side): %s / %s / %s\n", report.Health.P50, report.Health.P95, report.Health.P99)
 	fmt.Fprintf(&b, "- healthz non_200: %d/%d\n", report.Health.Non200, report.Health.ProbeCount)
-	fmt.Fprintf(&b, "- polar_subscriptions_observed: %d\n", report.Polar.SubscriptionsObserved)
 	fmt.Fprintf(&b, "- top_errors: %s\n", formatTopErrors(report.Admin.TopErrors))
 	fmt.Fprintf(&b, "- latency_p50_p95_p99: %dms / %dms / %dms\n\n",
 		report.Admin.Latency["p50_ms"],
@@ -518,7 +415,7 @@ func renderReport(report pulseReport) string {
 
 	fmt.Fprintf(&b, "## Followups\n")
 	fmt.Fprintf(&b, "1. Ship prod telemetry for pending IMAP metrics.\n")
-	fmt.Fprintf(&b, "2. Compare Polar subscription count against active paid mailboxes for billing drift.\n")
+	fmt.Fprintf(&b, "2. Compare Open Collective paid orders against active paid mailboxes for billing drift.\n")
 	fmt.Fprintf(&b, "3. Investigate any healthz non-200 probes from this CI-side sample.\n")
 	fmt.Fprintf(&b, "4. Add IMAP log shipping before treating mailbox read activity as prod-side truth.\n")
 	fmt.Fprintf(&b, "5. Review support volume changes when the next report lands.\n")
