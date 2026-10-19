@@ -293,6 +293,33 @@ jobs:
           echo "endpoint=$endpoint" >> "$GITHUB_OUTPUT"
           echo "region=$region" >> "$GITHUB_OUTPUT"
 
+      # nixos-rebuild re-evaluates on this runner; without root's cache-ci profile the daemon
+      # reads S3 anonymously, gets 403, and builds postfix from source (fails on kernel 7 runners).
+      - name: Configure AWS profile for Nix daemon
+        if: ${{ steps.s3cache.outputs.upload_enabled == 'true' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.NIX_CACHE_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.NIX_CACHE_S3_SECRET_ACCESS_KEY }}
+          NIX_CACHE_S3_REGION: ${{ steps.s3cache.outputs.region }}
+        run: |
+          set -eu
+          install -d -m 700 "$HOME/.aws"
+          cat > "$HOME/.aws/credentials" <<EOF
+          [cache-ci]
+          aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+          aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+          EOF
+          cat > "$HOME/.aws/config" <<EOF
+          [profile cache-ci]
+          region = ${NIX_CACHE_S3_REGION}
+          EOF
+          chmod 600 "$HOME/.aws/credentials" "$HOME/.aws/config"
+
+          sudo install -d -m 700 /root/.aws
+          sudo cp "$HOME/.aws/credentials" /root/.aws/credentials
+          sudo cp "$HOME/.aws/config" /root/.aws/config
+          sudo chmod 600 /root/.aws/credentials /root/.aws/config
+
       - name: Compute build metadata
         run: |
           short_sha="${GITHUB_SHA:0:7}"
@@ -470,7 +497,7 @@ jobs:
               --flake .#truevipaccess \
               --target-host "${DEPLOY_USER}@${DEPLOY_HOST}" \
               --print-build-logs \
-              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
+              --option extra-substituters "s3://${NIX_CACHE_S3_BUCKET}?profile=cache-ci&scheme=https&endpoint=${NIX_CACHE_S3_ENDPOINT}&region=${NIX_CACHE_S3_REGION}"
           else
             nix run nixpkgs#nixos-rebuild -- switch \
               --flake .#truevipaccess \
