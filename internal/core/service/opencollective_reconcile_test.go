@@ -58,3 +58,19 @@ func TestReconcileOpenCollectiveRequiresRecordedTag(t *testing.T) {
 		t.Fatalf("unrecorded tag = %d, %v", n, err)
 	}
 }
+
+// created_at is not a reliable clock (legacy full-row saves zeroed or rewrote it), and a tag is a hash
+// of the mailbox ID, so a charge for that tag cannot predate the mailbox anyway.
+func TestReconcileOpenCollectiveIgnoresMailboxCreatedAt(t *testing.T) {
+	chargedAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	mailbox := &domain.Mailbox{ID: "mbx-1", PaymentSessionID: "tva-example", Status: domain.MailboxStatusPendingPayment, CreatedAt: chargedAt.Add(time.Minute)}
+	repo := &fakeMailboxRepo{byStripeSession: map[string]*domain.Mailbox{"tva-example": mailbox}}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, nil, &fakeMailReader{}, "mail.test", "imap.test", 993)
+	source := fakeChargeSource{charges: []ports.PaymentCharge{{Tag: "tva-example", ChargeID: "tx_1", ChargedAt: chargedAt}}}
+	if n, err := svc.ReconcileOpenCollectivePayments(context.Background(), source); err != nil || n != 1 {
+		t.Fatalf("reconcile = %d, %v", n, err)
+	}
+	if !mailbox.Usable() {
+		t.Fatalf("mailbox not activated: %+v", mailbox)
+	}
+}
