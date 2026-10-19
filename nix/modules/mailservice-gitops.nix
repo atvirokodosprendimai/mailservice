@@ -134,7 +134,14 @@ in
 
     nixpkgs.overlays = [
       (final: prev: {
-        postfix = prev.postfix.override { withSQLite = true; };
+        # Custom build is never in a public cache, so it compiles on CI runners; postfix 3.9.3
+        # only knows kernels 3-6 and fails on Linux 7 runners. Remove once nixpkgs ships a fixed postfix.
+        postfix = (prev.postfix.override { withSQLite = true; }).overrideAttrs (old: {
+          postPatch = (old.postPatch or "") + ''
+            substituteInPlace makedefs --replace-fail 'Linux.[3456].*)' 'Linux.[34567].*)'
+            substituteInPlace src/util/sys_defs.h --replace-fail '|| defined(LINUX6)' '|| defined(LINUX6) || defined(LINUX7)'
+          '';
+        });
       })
     ];
 
