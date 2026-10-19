@@ -121,7 +121,7 @@ type ocOrdersResponse struct {
 						Type       string `json:"type"`
 						Kind       string `json:"kind"`
 						CreatedAt  string `json:"createdAt"`
-						IsRefunded bool   `json:"isRefunded"`
+						IsRefunded *bool  `json:"isRefunded"`
 					} `json:"transactions"`
 				} `json:"nodes"`
 			} `json:"orders"`
@@ -145,7 +145,8 @@ func (g *OpenCollectiveGateway) ListPaidCharges(ctx context.Context) ([]ports.Pa
 				continue
 			}
 			for _, transaction := range order.Transactions {
-				if transaction.Type != "CREDIT" || transaction.Kind != "CONTRIBUTION" || transaction.IsRefunded || transaction.PublicID == "" {
+				// A nullable refund flag is not evidence that the charge remains settled.
+				if transaction.Type != "CREDIT" || transaction.Kind != "CONTRIBUTION" || transaction.IsRefunded == nil || *transaction.IsRefunded || transaction.PublicID == "" {
 					continue
 				}
 				chargedAt, err := time.Parse(time.RFC3339, transaction.CreatedAt)

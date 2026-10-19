@@ -39,6 +39,7 @@ func TestOpenCollectiveCheckoutAndPaidOrderMatching(t *testing.T) {
 {"publicId":"tx_1","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-09-19T09:00:00Z","isRefunded":false},
 {"publicId":"tx_2","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T09:00:00Z","isRefunded":false},
 {"publicId":"tx_tip","type":"CREDIT","kind":"PLATFORM_TIP","createdAt":"2026-10-19T09:00:00Z","isRefunded":false},
+{"publicId":"tx_unknown","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T09:00:00Z","isRefunded":null},
 {"publicId":"tx_refund","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-08-19T09:00:00Z","isRefunded":true}]},
 {"publicId":"or_2","frequency":"MONTHLY","tier":{"slug":"wrong"},"tags":["TAG"],"transactions":[{"publicId":"tx_3","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T09:00:00Z"}]},
 {"publicId":"or_3","frequency":"MONTHLY","tier":{"slug":"mailbox-monthly"},"tags":["TAG"],"transactions":[]},
