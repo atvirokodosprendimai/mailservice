@@ -125,3 +125,26 @@ func TestOpenCollectiveOrderWithSeveralMailboxTagsCreditsNone(t *testing.T) {
 		t.Fatalf("charges = %+v, want only tx_2 for %s", charges, a)
 	}
 }
+
+func TestOpenCollectiveHTMLResponseNamesStatus(t *testing.T) {
+	var gotUA string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "text/html")
+		w.Header().Set("Cf-Ray", "abc123-HEL")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`<!DOCTYPE html><title>Just a moment...</title>`))
+	}))
+	defer server.Close()
+	gateway, err := NewOpenCollectiveGateway(OpenCollectiveConfig{CheckoutURL: "https://opencollective.com/it-uoga/contribute/mailbox-monthly-106782/checkout", APIURL: server.URL, PersonalToken: "token", ProjectSlug: "truevipaccess", TierSlug: "mailbox-monthly"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = gateway.ListPaidCharges(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "HTTP 403") || !strings.Contains(err.Error(), "abc123-HEL") || !strings.Contains(err.Error(), "Just a moment") {
+		t.Fatalf("error = %v, want status, cf-ray and body snippet", err)
+	}
+	if !strings.HasPrefix(gotUA, "truevipaccess-reconcile/") {
+		t.Fatalf("User-Agent = %q", gotUA)
+	}
+}

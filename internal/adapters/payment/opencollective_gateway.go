@@ -7,6 +7,7 @@ import (
 	"encoding/base32"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -174,13 +175,23 @@ func (g *OpenCollectiveGateway) fetchPage(ctx context.Context, offset int) (ocOr
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Personal-Token", g.token)
+	req.Header.Set("User-Agent", "truevipaccess-reconcile/1 (+https://truevipaccess.com)")
 	resp, err := g.client.Do(req)
 	if err != nil {
 		return result, fmt.Errorf("Open Collective request: %w", err)
 	}
 	defer resp.Body.Close()
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return result, fmt.Errorf("decode Open Collective response: %w", err)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20))
+	if err != nil {
+		return result, fmt.Errorf("read Open Collective response: %w", err)
+	}
+	// A proxy or bot wall answers with HTML; name it instead of failing on the first '<'.
+	if !bytes.HasPrefix(bytes.TrimSpace(respBody), []byte("{")) {
+		return result, fmt.Errorf("Open Collective HTTP %d, content-type %q, server %q, cf-ray %q: %.300s",
+			resp.StatusCode, resp.Header.Get("Content-Type"), resp.Header.Get("Server"), resp.Header.Get("Cf-Ray"), respBody)
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return result, fmt.Errorf("decode Open Collective response (HTTP %d): %w", resp.StatusCode, err)
 	}
 	if len(result.Errors) != 0 {
 		return result, fmt.Errorf("Open Collective rejected orders query: %s", result.Errors[0].Message)
