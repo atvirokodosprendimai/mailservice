@@ -42,3 +42,10 @@ func (p *MailRuntimeProvisioner) EnsureMailbox(ctx context.Context, mailbox *dom
 		return nil
 	})
 }
+
+func (p *MailRuntimeProvisioner) DisableMailbox(ctx context.Context, mailbox *domain.Mailbox) error {
+	if err := p.db.WithContext(ctx).Exec("UPDATE mail_users SET enabled=0, updated_at=CURRENT_TIMESTAMP WHERE login=?", mailbox.IMAPUsername).Error; err != nil {
+		return fmt.Errorf("disable mail user: %w", err)
+	}
+	return nil
+}

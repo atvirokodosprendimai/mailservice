@@ -85,19 +85,11 @@ func (g *OpenCollectiveGateway) CreatePaymentLink(_ context.Context, req ports.P
 	return &ports.PaymentLink{SessionID: tag, URL: checkout.String()}, nil
 }
 
-// GetPaymentSession reports a checkout confirmed only after an authenticated order read.
-func (g *OpenCollectiveGateway) GetPaymentSession(ctx context.Context, sessionID string) (*ports.PaymentSession, error) {
-	if g.token == "" || g.projectSlug == "" || g.tierSlug == "" {
-		return &ports.PaymentSession{SessionID: sessionID, Status: ports.PaymentSessionStatusOpen}, nil
-	}
-	charges, err := g.ListPaidCharges(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, charge := range charges {
-		if charge.Tag == sessionID {
-			return &ports.PaymentSession{SessionID: sessionID, Status: ports.PaymentSessionStatusConfirmed}, nil
-		}
+// GetPaymentSession checks whether this provider issued the session tag.
+func (g *OpenCollectiveGateway) GetPaymentSession(_ context.Context, sessionID string) (*ports.PaymentSession, error) {
+	// Tags are deterministic per mailbox, so a tva- checkout stays reusable; any other ID is a retired provider's session.
+	if !strings.HasPrefix(sessionID, "tva-") {
+		return nil, ports.ErrPaymentSessionNotFound
 	}
 	return &ports.PaymentSession{SessionID: sessionID, Status: ports.PaymentSessionStatusOpen}, nil
 }

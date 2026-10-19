@@ -97,6 +97,7 @@ func toModel(mailbox *domain.Mailbox) *mailboxModel {
 		CouponUsed:           mailbox.CouponUsed,
 		PaidAt:               mailbox.PaidAt,
 		ExpiresAt:            mailbox.ExpiresAt,
+		CreatedAt:            mailbox.CreatedAt,
 	}
 }
 
@@ -211,6 +212,21 @@ func (r *MailboxRepository) ListActiveExpired(ctx context.Context, now time.Time
 	var models []mailboxModel
 	err := r.db.WithContext(ctx).
 		Where("status = ? AND expires_at IS NOT NULL AND expires_at <= ?", string(domain.MailboxStatusActive), now).
+		Find(&models).Error
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domain.Mailbox, 0, len(models))
+	for i := range models {
+		items = append(items, *toDomain(&models[i]))
+	}
+	return items, nil
+}
+
+func (r *MailboxRepository) ListExpired(ctx context.Context) ([]domain.Mailbox, error) {
+	var models []mailboxModel
+	err := r.db.WithContext(ctx).
+		Where("status = ?", string(domain.MailboxStatusExpired)).
 		Find(&models).Error
 	if err != nil {
 		return nil, err

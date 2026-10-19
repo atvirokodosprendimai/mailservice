@@ -126,6 +126,12 @@ func main() {
 		}
 	}()
 
+	if n, err := mailboxService.DisableExpiredMailboxes(ctx); err != nil {
+		log.Printf("disable expired mailboxes: %v", err)
+	} else if n > 0 {
+		log.Printf("disabled mail access for %d expired mailbox(es)", n)
+	}
+
 	// Background sweep: expire mailboxes whose ExpiresAt has passed.
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)

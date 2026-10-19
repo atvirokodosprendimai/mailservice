@@ -540,6 +540,16 @@ func (s *MailboxService) ExpireMailboxByID(ctx context.Context, mailboxID string
 	if err != nil {
 		return err
 	}
+	return s.expireMailbox(ctx, mailbox)
+}
+
+// expireMailbox disables mail access before marking expired, so a failed disable leaves the row active for the next sweep to retry.
+func (s *MailboxService) expireMailbox(ctx context.Context, mailbox *domain.Mailbox) error {
+	if s.provisioner != nil {
+		if err := s.provisioner.DisableMailbox(ctx, mailbox); err != nil {
+			return fmt.Errorf("disable mailbox %s: %w", mailbox.ID, err)
+		}
+	}
 	mailbox.Status = domain.MailboxStatusExpired
 	return s.repo.Update(ctx, mailbox)
 }
@@ -691,9 +701,28 @@ func (s *MailboxService) ExpireMailboxes(ctx context.Context) (int, error) {
 	count := 0
 	for i := range expired {
 		mb := &expired[i]
-		mb.Status = domain.MailboxStatusExpired
-		if err := s.repo.Update(ctx, mb); err != nil {
+		if err := s.expireMailbox(ctx, mb); err != nil {
 			return count, fmt.Errorf("expire mailbox %s: %w", mb.ID, err)
+		}
+		count++
+	}
+	return count, nil
+}
+
+// DisableExpiredMailboxes revokes mail access for mailboxes expired before runtime disabling was added.
+func (s *MailboxService) DisableExpiredMailboxes(ctx context.Context) (int, error) {
+	if s.freeMode || s.provisioner == nil {
+		return 0, nil
+	}
+	expired, err := s.repo.ListExpired(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("list expired mailboxes: %w", err)
+	}
+	count := 0
+	for i := range expired {
+		mb := &expired[i]
+		if err := s.provisioner.DisableMailbox(ctx, mb); err != nil {
+			return count, fmt.Errorf("disable mailbox %s: %w", mb.ID, err)
 		}
 		count++
 	}
@@ -769,8 +798,7 @@ func (s *MailboxService) validateMailboxSubscription(ctx context.Context, mailbo
 			// past-due mailbox is unusable during the deploy-to-switchover window
 			// but must not be permanently marked expired.
 			if !s.freeMode && mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
-				mailbox.Status = domain.MailboxStatusExpired
-				_ = s.repo.Update(ctx, mailbox)
+				_ = s.expireMailbox(ctx, mailbox)
 			}
 			return ports.ErrMailboxNotUsable
 		}
@@ -800,8 +828,7 @@ func (s *MailboxService) validateMailboxSubscription(ctx context.Context, mailbo
 
 	if !account.SubscriptionActive(now) {
 		if mailbox.Status == domain.MailboxStatusActive {
-			mailbox.Status = domain.MailboxStatusExpired
-			_ = s.repo.Update(ctx, mailbox)
+			_ = s.expireMailbox(ctx, mailbox)
 		}
 		return ports.ErrMailboxNotUsable
 	}
@@ -870,8 +897,7 @@ func (s *MailboxService) ResolveAccessByKey(ctx context.Context, key ports.Verif
 		// past-due mailbox is unusable during the deploy-to-switchover window
 		// but must not be permanently marked expired.
 		if !s.freeMode && mailbox.Status == domain.MailboxStatusActive && mailbox.ExpiresAt != nil && !mailbox.ExpiresAt.After(now) {
-			mailbox.Status = domain.MailboxStatusExpired
-			_ = s.repo.Update(ctx, mailbox)
+			_ = s.expireMailbox(ctx, mailbox)
 		}
 		return nil, ports.ErrMailboxNotUsable
 	}

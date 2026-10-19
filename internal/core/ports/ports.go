@@ -55,6 +55,7 @@ type MailboxRepository interface {
 	GetByAccessToken(ctx context.Context, accessToken string) (*domain.Mailbox, error)
 	GetByKeyFingerprint(ctx context.Context, keyFingerprint string) (*domain.Mailbox, error)
 	ListActiveExpired(ctx context.Context, now time.Time) ([]domain.Mailbox, error)
+	ListExpired(ctx context.Context) ([]domain.Mailbox, error)
 }
 
 type AccountRepository interface {
@@ -164,6 +165,7 @@ type SupportMessageRepository interface {
 
 type MailRuntimeProvisioner interface {
 	EnsureMailbox(ctx context.Context, mailbox *domain.Mailbox) error
+	DisableMailbox(ctx context.Context, mailbox *domain.Mailbox) error
 }
 
 type IMAPMessage struct {

@@ -23,21 +23,21 @@ func TestMailboxRepositoryPersistsBillingEmailAndKeyFingerprint(t *testing.T) {
 	repo := NewMailboxRepository(db)
 	chargedAt := time.Date(2026, 10, 19, 9, 0, 0, 0, time.UTC)
 	mailbox := &domain.Mailbox{
-		ID:               "mbx-1",
-		AccountID:        "acc-1",
-		OwnerEmail:       "legacy@example.com",
-		BillingEmail:     "billing@example.com",
-		KeyFingerprint:   "edproof:abc123",
-		IMAPHost:         "imap.example.com",
-		IMAPPort:         143,
-		IMAPUsername:     "mbx_abc123",
-		IMAPPassword:     "secret",
-		AccessToken:      "access-1",
-		PaymentSessionID: "payment-1",
-		LastPaymentChargeID: "or_1:2026-10-19T09:00:00Z",
+		ID:                   "mbx-1",
+		AccountID:            "acc-1",
+		OwnerEmail:           "legacy@example.com",
+		BillingEmail:         "billing@example.com",
+		KeyFingerprint:       "edproof:abc123",
+		IMAPHost:             "imap.example.com",
+		IMAPPort:             143,
+		IMAPUsername:         "mbx_abc123",
+		IMAPPassword:         "secret",
+		AccessToken:          "access-1",
+		PaymentSessionID:     "payment-1",
+		LastPaymentChargeID:  "or_1:2026-10-19T09:00:00Z",
 		LastPaymentChargedAt: &chargedAt,
-		PaymentURL:       "https://pay.example.com/session/1",
-		Status:           domain.MailboxStatusPendingPayment,
+		PaymentURL:           "https://pay.example.com/session/1",
+		Status:               domain.MailboxStatusPendingPayment,
 	}
 
 	if err := repo.Create(context.Background(), mailbox); err != nil {
@@ -64,6 +64,66 @@ func TestMailboxRepositoryPersistsBillingEmailAndKeyFingerprint(t *testing.T) {
 	}
 	if byKey.ID != mailbox.ID {
 		t.Fatalf("expected mailbox id %q, got %q", mailbox.ID, byKey.ID)
+	}
+}
+
+func TestMailboxRepositoryUpdatePreservesCreatedAt(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+	repo := NewMailboxRepository(db)
+	ctx := context.Background()
+	mailbox := &domain.Mailbox{ID: "mbx-created", OwnerEmail: "owner@example.com", IMAPHost: "imap.example.com", IMAPPort: 143, IMAPUsername: "mbx_created", IMAPPassword: "secret", AccessToken: "access-created", Status: domain.MailboxStatusPendingPayment}
+	if err := repo.Create(ctx, mailbox); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	before, err := repo.GetByID(ctx, mailbox.ID)
+	if err != nil {
+		t.Fatalf("GetByID before update failed: %v", err)
+	}
+	before.Status = domain.MailboxStatusActive
+	if err := repo.Update(ctx, before); err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	after, err := repo.GetByID(ctx, mailbox.ID)
+	if err != nil {
+		t.Fatalf("GetByID after update failed: %v", err)
+	}
+	if after.CreatedAt.IsZero() || !after.CreatedAt.Truncate(time.Second).Equal(before.CreatedAt.Truncate(time.Second)) {
+		t.Fatalf("created_at changed from %v to %v", before.CreatedAt, after.CreatedAt)
+	}
+}
+
+func TestMailRuntimeProvisionerDisablesAndReenablesMailbox(t *testing.T) {
+	db, err := database.OpenAndMigrate(filepath.Join(t.TempDir(), "mailboxes.db"))
+	if err != nil {
+		t.Fatalf("OpenAndMigrate failed: %v", err)
+	}
+	provisioner := NewMailRuntimeProvisioner(db, "example.com")
+	ctx := context.Background()
+	mailbox := &domain.Mailbox{IMAPUsername: "mbx_runtime", IMAPPassword: "secret"}
+	if err := provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+		t.Fatalf("EnsureMailbox failed: %v", err)
+	}
+	if err := provisioner.DisableMailbox(ctx, mailbox); err != nil {
+		t.Fatalf("DisableMailbox failed: %v", err)
+	}
+	var enabled int
+	if err := db.WithContext(ctx).Raw("SELECT enabled FROM mail_users WHERE login=?", mailbox.IMAPUsername).Scan(&enabled).Error; err != nil {
+		t.Fatalf("read enabled failed: %v", err)
+	}
+	if enabled != 0 {
+		t.Fatalf("enabled after disable = %d", enabled)
+	}
+	if err := provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+		t.Fatalf("EnsureMailbox after disable failed: %v", err)
+	}
+	if err := db.WithContext(ctx).Raw("SELECT enabled FROM mail_users WHERE login=?", mailbox.IMAPUsername).Scan(&enabled).Error; err != nil {
+		t.Fatalf("read enabled failed: %v", err)
+	}
+	if enabled != 1 {
+		t.Fatalf("enabled after renewal = %d", enabled)
 	}
 }
 

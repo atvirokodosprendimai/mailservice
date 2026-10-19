@@ -541,6 +541,10 @@ func (r *httpMailboxRepo) ListActiveExpired(_ context.Context, _ time.Time) ([]d
 	return nil, nil
 }
 
+func (r *httpMailboxRepo) ListExpired(_ context.Context) ([]domain.Mailbox, error) {
+	return nil, nil
+}
+
 func (r *httpMailboxRepo) ClearActiveExpiries(_ context.Context) (int, error) {
 	count := 0
 	for _, mb := range r.byID {
@@ -606,7 +610,8 @@ func (g httpTokenGenerator) NewToken(_ int) (string, error) { return g.token, ni
 
 type httpProvisioner struct{}
 
-func (httpProvisioner) EnsureMailbox(_ context.Context, _ *domain.Mailbox) error { return nil }
+func (httpProvisioner) EnsureMailbox(_ context.Context, _ *domain.Mailbox) error  { return nil }
+func (httpProvisioner) DisableMailbox(_ context.Context, _ *domain.Mailbox) error { return nil }
 
 type httpMailReader struct{}
 
