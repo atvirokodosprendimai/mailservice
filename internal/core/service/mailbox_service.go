@@ -616,7 +616,6 @@ func (s *MailboxService) ReconcileOpenCollectivePayments(ctx context.Context, so
 			return applied, fmt.Errorf("find mailbox for charge: %w", err)
 		}
 		if !strings.HasPrefix(mailbox.PaymentSessionID, "tva-") || charge.ChargeID == "" ||
-			(!mailbox.CreatedAt.IsZero() && charge.ChargedAt.Before(mailbox.CreatedAt)) ||
 			(mailbox.LastPaymentChargedAt != nil && !charge.ChargedAt.After(*mailbox.LastPaymentChargedAt)) {
 			continue
 		}
