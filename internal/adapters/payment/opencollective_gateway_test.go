@@ -3,6 +3,7 @@ package payment
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -76,8 +77,11 @@ func TestOpenCollectiveCheckoutAndPaidOrderMatching(t *testing.T) {
 		t.Fatalf("charges = %+v", charges)
 	}
 	session, err := gateway.GetPaymentSession(context.Background(), tag)
-	if err != nil || session.Status != ports.PaymentSessionStatusConfirmed {
+	if err != nil || session.Status != ports.PaymentSessionStatusOpen {
 		t.Fatalf("session = %+v, %v", session, err)
+	}
+	if _, err := gateway.GetPaymentSession(context.Background(), "polar_c_abc"); !errors.Is(err, ports.ErrPaymentSessionNotFound) {
+		t.Fatalf("retired session error = %v", err)
 	}
 }
 

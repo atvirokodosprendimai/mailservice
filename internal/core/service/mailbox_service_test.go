@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/atvirokodosprendimai/mailservice/internal/adapters/payment"
 	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
 	"github.com/atvirokodosprendimai/mailservice/internal/domain"
 )
@@ -129,6 +130,31 @@ func TestClaimMailboxReusesExistingPendingPaymentSession(t *testing.T) {
 	}
 	if notifier.calls != 0 {
 		t.Fatalf("expected no notifier call, got %d calls", notifier.calls)
+	}
+}
+
+func TestClaimMailboxReplacesPolarPaymentSession(t *testing.T) {
+	repo := &fakeMailboxRepo{byKeyFingerprint: map[string]*domain.Mailbox{
+		"edproof:key-polar": {
+			ID:               "mbx-polar",
+			BillingEmail:     "billing@example.com",
+			KeyFingerprint:   "edproof:key-polar",
+			Status:           domain.MailboxStatusPendingPayment,
+			PaymentSessionID: "polar_c_old",
+			PaymentURL:       "https://polar.sh/checkout/polar_c_old",
+		},
+	}}
+	gateway, err := payment.NewOpenCollectiveGateway(payment.OpenCollectiveConfig{CheckoutURL: "https://opencollective.com/it-uoga/contribute/mailbox-monthly-106782/checkout", APIURL: "https://api.opencollective.com/graphql/v2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, gateway, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	mailbox, created, err := svc.ClaimMailbox(context.Background(), "billing@example.com", ports.VerifiedKey{Fingerprint: "edproof:key-polar", Algorithm: "ed25519"}, "")
+	if err != nil {
+		t.Fatalf("ClaimMailbox failed: %v", err)
+	}
+	if created || !strings.HasPrefix(mailbox.PaymentSessionID, "tva-") || mailbox.PaymentURL == "https://polar.sh/checkout/polar_c_old" {
+		t.Fatalf("mailbox = %+v, created = %v", mailbox, created)
 	}
 }
 
@@ -1085,8 +1111,9 @@ func TestExpireMailboxesSweepsExpiredOnly(t *testing.T) {
 			},
 		},
 	}
+	provisioner := &fakeMailRuntimeProvisioner{}
 	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{},
-		fakeMailboxTokenGenerator{token: "token"}, &fakeMailRuntimeProvisioner{}, &fakeMailReader{},
+		fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{},
 		"mail.test.local", "imap.test.local", 1143)
 
 	n, err := svc.ExpireMailboxes(context.Background())
@@ -1095,6 +1122,9 @@ func TestExpireMailboxesSweepsExpiredOnly(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("expected 1 expired, got %d", n)
+	}
+	if provisioner.disabled != 1 {
+		t.Fatalf("expected one disabled mailbox, got %d", provisioner.disabled)
 	}
 
 	// The expired mailbox should be flipped.
@@ -1108,6 +1138,23 @@ func TestExpireMailboxesSweepsExpiredOnly(t *testing.T) {
 	// The pending mailbox should be untouched.
 	if repo.byKeyFingerprint["edproof:pending"].Status != domain.MailboxStatusPendingPayment {
 		t.Fatalf("expected mbx-pending to remain pending, got %s", repo.byKeyFingerprint["edproof:pending"].Status)
+	}
+}
+
+func TestExpireMailboxesKeepsActiveWhenDisableFails(t *testing.T) {
+	past := time.Now().UTC().Add(-time.Hour)
+	repo := &fakeMailboxRepo{byKeyFingerprint: map[string]*domain.Mailbox{
+		"edproof:expired": {ID: "mbx-expired", KeyFingerprint: "edproof:expired", Status: domain.MailboxStatusActive, ExpiresAt: &past},
+	}}
+	disableErr := errors.New("runtime unavailable")
+	provisioner := &fakeMailRuntimeProvisioner{disableErr: disableErr}
+	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, provisioner, &fakeMailReader{}, "mail.test.local", "imap.test.local", 1143)
+	n, err := svc.ExpireMailboxes(context.Background())
+	if n != 0 || !errors.Is(err, disableErr) {
+		t.Fatalf("ExpireMailboxes = %d, %v", n, err)
+	}
+	if provisioner.disabled != 1 || repo.byKeyFingerprint["edproof:expired"].Status != domain.MailboxStatusActive {
+		t.Fatalf("mailbox changed after failed disable: %+v", repo.byKeyFingerprint["edproof:expired"])
 	}
 }
 
@@ -1315,6 +1362,16 @@ func (f *fakeMailboxRepo) ListActiveExpired(_ context.Context, now time.Time) ([
 	return result, nil
 }
 
+func (f *fakeMailboxRepo) ListExpired(_ context.Context) ([]domain.Mailbox, error) {
+	var result []domain.Mailbox
+	for _, mb := range f.allMailboxes() {
+		if mb.Status == domain.MailboxStatusExpired {
+			result = append(result, *mb)
+		}
+	}
+	return result, nil
+}
+
 // allMailboxes returns every mailbox the fake holds, deduplicated by ID.
 func (f *fakeMailboxRepo) allMailboxes() []*domain.Mailbox {
 	seen := map[string]*domain.Mailbox{}
@@ -1402,7 +1459,9 @@ type fakeMailboxNotifier struct {
 }
 
 type fakeMailRuntimeProvisioner struct {
-	calls int
+	calls      int
+	disabled   int
+	disableErr error
 }
 
 type fakeMailReader struct {
@@ -1434,6 +1493,11 @@ func (f *fakeMailReader) GetMessageByUID(_ context.Context, _ string, _ int, _ s
 func (f *fakeMailRuntimeProvisioner) EnsureMailbox(_ context.Context, _ *domain.Mailbox) error {
 	f.calls++
 	return nil
+}
+
+func (f *fakeMailRuntimeProvisioner) DisableMailbox(_ context.Context, _ *domain.Mailbox) error {
+	f.disabled++
+	return f.disableErr
 }
 
 func ptrTime(t time.Time) *time.Time {
