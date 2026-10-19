@@ -11,14 +11,13 @@ Live at [truevipaccess.com](https://truevipaccess.com). Open source (AGPL v3.0).
 
 ## How it works
 
-Current preferred flow (free mode, default on):
+Current paid flow (default):
 1. Agent presents `billing_email` plus key proof to `POST /v1/mailboxes/claim`.
-2. Service reuses the same mailbox for the same key, or creates a new pending mailbox for a new key.
-3. Service emails a one-time activation link to `billing_email` (24-hour expiry); the claim response carries it in `payment_url` (name kept for compatibility).
-4. The owner opens the activation link and the mailbox becomes active; it never expires.
-5. Agent presents the same key proof to `POST /v1/access/resolve` to obtain IMAP access details.
+2. The service creates or reuses a mailbox in `pending_payment` and returns an Open Collective monthly tier checkout URL with a mailbox attribution tag.
+3. After the card payment, the background reconciler reads Open Collective orders using a read-only personal token. A settled monthly order on the `mailbox-monthly` tier activates the mailbox for one month; later charges renew it once each.
+4. Agent presents the same key proof to `POST /v1/access/resolve` for IMAP access details.
 
-Free mode is controlled by `FREE_MODE` (default `true`). Set `FREE_MODE=false` to restore the paid flow: claim → payment link → payment activates the mailbox for one month.
+`FREE_MODE` defaults to `false`. Set `FREE_MODE=true` for emailed activation links without payment. Free mode is intended only for controlled use because unpaid claims can be abused.
 
 Legacy flow remains available during migration:
 - account creation via `POST /v1/accounts`
@@ -59,9 +58,8 @@ Deployment runtime template:
 - SQLite (pure Go, no CGO) via `github.com/glebarez/sqlite`
 - GORM ORM
 - Goose SQL migrations
-- Polar checkout for the preferred key-bound flow
-- Stripe Checkout + webhooks kept as legacy fallback
-- mock payment links for local development
+- Open Collective checkout and read-only order polling for the key-bound flow
+- Stripe webhook handler remains for legacy sessions
 
 ## Run
 
@@ -157,17 +155,17 @@ On the NixOS production host:
 - `MAIL_DOMAIN` (default `mail.local`)
 - `IMAP_HOST` (default `MAIL_DOMAIN`)
 - `IMAP_PORT` (default `143`)
-- `MAILBOX_PRICE_CENTS` (default `299`)
-- `POLAR_TOKEN` (optional; enable Polar for the preferred key-bound flow)
-- `POLAR_PRODUCT_ID` (required when Polar is enabled)
-- `POLAR_SERVER_URL` (default `https://api.polar.sh`)
-- `POLAR_SUCCESS_URL` (default `PUBLIC_BASE_URL/v1/payments/polar/success?checkout_id={CHECKOUT_ID}`)
-- `POLAR_RETURN_URL` (default `PUBLIC_BASE_URL`)
-- `POLAR_WEBHOOK_SECRET` (recommended for production; enables signed `POST /v1/webhooks/polar`)
+- `FREE_MODE` (default `false`)
+- `OPENCOLLECTIVE_CHECKOUT_URL` (default TrueVIP Access monthly tier checkout)
+- `OPENCOLLECTIVE_PERSONAL_TOKEN` (read-only personal token; reconciliation stays off when unset)
+- `OPENCOLLECTIVE_PROJECT_SLUG` (default `truevipaccess`)
+- `OPENCOLLECTIVE_TIER_SLUG` (default `mailbox-monthly`)
+- `OPENCOLLECTIVE_API_URL` (default `https://api.opencollective.com/graphql/v2`)
+- `OPENCOLLECTIVE_RECONCILE_INTERVAL` (default `15m`)
 - `STRIPE_CURRENCY` (default `usd`)
 - `STRIPE_SUCCESS_URL` (default `http://localhost:8080/payment/success`)
 - `STRIPE_CANCEL_URL` (default `http://localhost:8080/payment/cancel`)
-- `STRIPE_SECRET_KEY` (optional legacy fallback; if no real provider is configured, mock payment links are used)
+- `STRIPE_SECRET_KEY` (legacy setting; new checkouts use Open Collective)
 - `STRIPE_WEBHOOK_SECRET` (required only for real Stripe webhook verification)
 - `SENDGRID_API_KEY` (optional; enable SendGrid notifier)
 - `SENDGRID_FROM_EMAIL` (required when SendGrid is enabled)
@@ -196,21 +194,7 @@ curl -X POST http://localhost:8080/v1/mailboxes/claim \
   -d '{"billing_email":"billing@example.com","edproof":"<proof>"}'
 ```
 
-Confirm Polar payment after redirect fallback:
-
-```bash
-curl "http://localhost:8080/v1/payments/polar/success?checkout_id=<polar-checkout-id>"
-```
-
-Preferred production payment completion path:
-
-```bash
-curl -X POST http://localhost:8080/v1/webhooks/polar \
-  -H 'webhook-id: <message-id>' \
-  -H 'webhook-timestamp: <unix-seconds>' \
-  -H 'webhook-signature: v1,<signature>' \
-  -d '<signed-payload-from-polar>'
-```
+The checkout URL returned by claim is on Open Collective. Payment activation is automatic after the next authenticated order poll; the service does not accept Open Collective webhooks.
 
 Resolve IMAP credentials by key proof:
 

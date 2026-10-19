@@ -71,48 +71,18 @@ func main() {
 	notifier, notifierProvider := selectNotifier(cfg, log.Default())
 	log.Printf("%s notifier enabled", notifierProvider)
 
-	mockPaymentMode := true
-	var paymentGateway ports.PaymentGateway = payment.NewMockGateway(cfg.PublicBaseURL)
-	if cfg.PolarToken != "" && cfg.PolarProductID != "" {
-		paymentGateway = payment.NewPolarGateway(payment.PolarConfig{
-			ServerURL:  cfg.PolarServerURL,
-			Token:      cfg.PolarToken,
-			ProductID:  cfg.PolarProductID,
-			SuccessURL: cfg.PolarSuccessURL,
-			ReturnURL:  cfg.PolarReturnURL,
-		})
-		mockPaymentMode = false
-		log.Printf("polar enabled")
-	} else if cfg.PolarToken != "" || cfg.PolarProductID != "" {
-		log.Printf("polar partially configured, falling back to legacy payment provider selection")
-	} else if cfg.StripeSecretKey != "" {
-		paymentGateway = payment.NewStripeGateway(payment.StripeConfig{
-			SecretKey:  cfg.StripeSecretKey,
-			PriceCents: cfg.MailboxPriceCents,
-			Currency:   cfg.StripeCurrency,
-			SuccessURL: cfg.StripeSuccessURL,
-			CancelURL:  cfg.StripeCancelURL,
-		})
-		mockPaymentMode = false
-		log.Printf("stripe enabled")
-	} else {
-		log.Printf("real payment providers disabled, using mock payment links")
+	openCollective, err := payment.NewOpenCollectiveGateway(payment.OpenCollectiveConfig{
+		CheckoutURL:   cfg.OpenCollectiveCheckoutURL,
+		APIURL:        cfg.OpenCollectiveAPIURL,
+		PersonalToken: cfg.OpenCollectivePersonalToken,
+		ProjectSlug:   cfg.OpenCollectiveProjectSlug,
+		TierSlug:      cfg.OpenCollectiveTierSlug,
+	})
+	if err != nil {
+		log.Fatalf("Open Collective configuration: %v", err)
 	}
-
-	// Gift coupons are only supported when Polar is the active payment gateway.
-	var giftOpts []service.GiftCouponConfig
-	if cfg.PolarToken != "" && cfg.PolarProductID != "" &&
-		cfg.PolarGiftDiscountID != "" && cfg.PolarGiftCouponCode != "" {
-		giftOpts = append(giftOpts, service.GiftCouponConfig{
-			DiscountID: cfg.PolarGiftDiscountID,
-			CouponCode: cfg.PolarGiftCouponCode,
-		})
-		log.Printf("gift coupon enabled (code: %s)", cfg.PolarGiftCouponCode)
-	} else if (cfg.PolarGiftDiscountID != "" || cfg.PolarGiftCouponCode != "") &&
-		!(cfg.PolarToken != "" && cfg.PolarProductID != "") {
-		log.Printf("gift coupon config present but Polar not fully configured; gift coupons disabled")
-	}
-	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort, giftOpts...)
+	var paymentGateway ports.PaymentGateway = openCollective
+	mailboxService := service.NewMailboxService(mailboxRepo, accountRepo, paymentGateway, notifier, tokenGen, mailRuntimeProvisioner, imapReader, cfg.MailDomain, cfg.IMAPHost, cfg.IMAPPort)
 	mailboxService.SetMetrics(metricsRegistry)
 	mailboxService.SetFreeMode(cfg.FreeMode)
 	mailboxService.SetPublicBaseURL(cfg.PublicBaseURL)
@@ -129,7 +99,6 @@ func main() {
 	handler := httpapi.NewHandler(httpapi.Config{
 		AdminAPIKey:         cfg.AdminAPIKey,
 		StripeWebhookSecret: cfg.StripeWebhookSecret,
-		PolarWebhookSecret:  cfg.PolarWebhookSecret,
 		MaxConcurrentReqs:   cfg.MaxConcurrentReqs,
 		BuildNumber:         cfg.BuildNumber,
 		CacheBuster:         cfg.CacheBuster,
@@ -140,7 +109,7 @@ func main() {
 		Logger:              log.Default(),
 		ChallengeAuth:       edproof.NewAuthenticator([]byte(cfg.EdproofHMACSecret)),
 		AgentAPISkillDoc:    docs.AgentAPISkill,
-		MockPaymentMode:     mockPaymentMode,
+		MockPaymentMode:     false,
 		Metrics:             metricsRegistry,
 	})
 
@@ -175,6 +144,32 @@ func main() {
 			}
 		}
 	}()
+
+	if cfg.OpenCollectivePersonalToken == "" || cfg.OpenCollectiveProjectSlug == "" || cfg.OpenCollectiveTierSlug == "" {
+		log.Printf("Open Collective reconciliation off: personal token, project slug or tier slug is unset")
+	} else if !cfg.FreeMode {
+		go func() {
+			ticker := time.NewTicker(cfg.OpenCollectiveReconcileInterval)
+			defer ticker.Stop()
+			reconcile := func() {
+				n, err := mailboxService.ReconcileOpenCollectivePayments(ctx, openCollective)
+				if err != nil {
+					log.Printf("Open Collective reconciliation: %v", err)
+				} else if n > 0 {
+					log.Printf("Open Collective reconciliation: applied %d charge(s)", n)
+				}
+			}
+			reconcile()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					reconcile()
+				}
+			}
+		}()
+	}
 
 	<-ctx.Done()
 

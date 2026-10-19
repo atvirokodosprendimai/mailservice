@@ -85,14 +85,14 @@ func TestLoadFreeMode(t *testing.T) {
 	t.Setenv("DATABASE_MODE", "local")
 	t.Setenv("EDPROOF_HMAC_SECRET", "0123456789abcdef0123456789abcdef")
 
-	t.Run("unset defaults to true", func(t *testing.T) {
+	t.Run("unset defaults to false", func(t *testing.T) {
 		t.Setenv("FREE_MODE", "")
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("load config: %v", err)
 		}
-		if !cfg.FreeMode {
-			t.Fatalf("expected FreeMode true when FREE_MODE unset, got false")
+		if cfg.FreeMode {
+			t.Fatalf("expected FreeMode false when FREE_MODE unset, got true")
 		}
 	})
 
@@ -118,14 +118,14 @@ func TestLoadFreeMode(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid value falls back to default true", func(t *testing.T) {
+	t.Run("invalid value falls back to default false", func(t *testing.T) {
 		t.Setenv("FREE_MODE", "garbage")
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("load config: %v", err)
 		}
-		if !cfg.FreeMode {
-			t.Fatalf("expected FreeMode true when FREE_MODE=garbage, got false")
+		if cfg.FreeMode {
+			t.Fatalf("expected FreeMode false when FREE_MODE=garbage, got true")
 		}
 	})
 }

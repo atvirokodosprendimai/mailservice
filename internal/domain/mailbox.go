@@ -11,20 +11,22 @@ const (
 )
 
 type Mailbox struct {
-	ID                  string
-	AccountID           string
-	OwnerEmail          string
-	BillingEmail        string
-	KeyFingerprint      string
-	IMAPHost            string
-	IMAPPort            int
-	IMAPUsername        string
-	IMAPPassword        string
-	AccessToken         string
-	PaymentSessionID    string
-	PaymentURL          string
-	ActivationTokenHash string
-	ActivationExpiresAt *time.Time
+	ID                   string
+	AccountID            string
+	OwnerEmail           string
+	BillingEmail         string
+	KeyFingerprint       string
+	IMAPHost             string
+	IMAPPort             int
+	IMAPUsername         string
+	IMAPPassword         string
+	AccessToken          string
+	PaymentSessionID     string
+	LastPaymentChargeID  string
+	LastPaymentChargedAt *time.Time
+	PaymentURL           string
+	ActivationTokenHash  string
+	ActivationExpiresAt  *time.Time
 	// ActivationURL is a transient in-memory field used only for claim responses
 	// and emails in free mode. It is never persisted: the repository model does
 	// not map it, and toModel/toDomain ignore it.

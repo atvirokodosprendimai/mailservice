@@ -55,9 +55,6 @@ func TestRenderReport(t *testing.T) {
 			SupportVolume:       2,
 			RenewalsInWindow:    1,
 		},
-		Polar: polarMetrics{
-			SubscriptionsObserved: 11,
-		},
 		Admin: adminMetrics{
 			ResolveCalls:        84,
 			FailedKeyProofRatio: 0.125,

@@ -109,6 +109,18 @@ type PaymentSession struct {
 	URL       string
 }
 
+// PaymentCharge is a settled recurring charge attributed by a checkout tag.
+type PaymentCharge struct {
+	Tag       string
+	ChargeID  string
+	ChargedAt time.Time
+}
+
+// PaymentChargeSource reads settled charges for background reconciliation.
+type PaymentChargeSource interface {
+	ListPaidCharges(ctx context.Context) ([]PaymentCharge, error)
+}
+
 type PaymentGateway interface {
 	CreatePaymentLink(ctx context.Context, req PaymentLinkRequest) (*PaymentLink, error)
 	GetPaymentSession(ctx context.Context, sessionID string) (*PaymentSession, error)

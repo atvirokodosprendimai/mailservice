@@ -39,7 +39,7 @@
           pname = "mailservice-api";
           version = self.shortRev or self.dirtyShortRev or "dev";
           src = self;
-          vendorHash = "sha256-ZnqGKn5P+OWMbKH2qhc2aQ2T8cwHGL/n9uAgRqJPg18=";
+          vendorHash = "sha256-+RK4FvHfU1yOpQmTYSB+8oF+mPloVYv//qnHMYmN6yo=";
           subPackages = [ "cmd/app" ];
           env.CGO_ENABLED = "0";
           ldflags = [
