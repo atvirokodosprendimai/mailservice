@@ -75,6 +75,12 @@ resource "hcloud_server" "app" {
   }
 
   user_data = local.server_user_data
+
+  # The server holds the only copy of the maildirs and auto-apply runs unreviewed on push to main.
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [image, user_data]
+  }
 }
 
 locals {
