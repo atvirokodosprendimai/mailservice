@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +26,7 @@ type SupportConfig struct {
 }
 
 type MailboxService struct {
+	paymentReconcileMu sync.Mutex
 	repo          ports.MailboxRepository
 	accounts      ports.AccountRepository
 	payment       ports.PaymentGateway
@@ -421,6 +423,10 @@ func (s *MailboxService) ActivateMailboxByActivationToken(ctx context.Context, r
 }
 
 func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID string) (*domain.Mailbox, error) {
+	return s.markMailboxPaid(ctx, paymentSessionID, nil)
+}
+
+func (s *MailboxService) markMailboxPaid(ctx context.Context, paymentSessionID string, charge *ports.PaymentCharge) (*domain.Mailbox, error) {
 	// Free mode makes the payment path inert (KTD4): activation happens through
 	// the emailed activation link, never through a payment signal.
 	if s.freeMode {
@@ -439,6 +445,11 @@ func (s *MailboxService) MarkMailboxPaid(ctx context.Context, paymentSessionID s
 			}
 		}
 		return mailbox, nil
+	}
+
+	if charge != nil {
+		mailbox.LastPaymentChargeID = charge.ChargeID
+		mailbox.LastPaymentChargedAt = &charge.ChargedAt
 	}
 
 	now := time.Now().UTC()
@@ -536,6 +547,65 @@ type ReconcileResult struct {
 	Status    string `json:"status"`
 	Action    string `json:"action"`
 	Error     string `json:"error,omitempty"`
+}
+
+// ReconcileOpenCollectivePayments applies each settled charge once to its recorded checkout.
+func (s *MailboxService) ReconcileOpenCollectivePayments(ctx context.Context, source ports.PaymentChargeSource) (int, error) {
+	if s.freeMode {
+		return 0, nil
+	}
+	s.paymentReconcileMu.Lock()
+	defer s.paymentReconcileMu.Unlock()
+	charges, err := source.ListPaidCharges(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("list Open Collective charges: %w", err)
+	}
+	applied := 0
+	for _, charge := range charges {
+		mailbox, err := s.repo.GetByPaymentSessionID(ctx, charge.Tag)
+		if errors.Is(err, ports.ErrMailboxNotFound) {
+			continue // A tag alone does not create a server-recorded checkout intent.
+		}
+		if err != nil {
+			return applied, fmt.Errorf("find mailbox for charge: %w", err)
+		}
+		if !strings.HasPrefix(mailbox.PaymentSessionID, "tva-") || charge.ChargeID == "" ||
+			(!mailbox.CreatedAt.IsZero() && charge.ChargedAt.Before(mailbox.CreatedAt)) ||
+			(mailbox.LastPaymentChargedAt != nil && !charge.ChargedAt.After(*mailbox.LastPaymentChargedAt)) {
+			continue
+		}
+		if mailbox.Status == domain.MailboxStatusPendingPayment {
+			if _, err := s.markMailboxPaid(ctx, charge.Tag, &charge); err != nil {
+				return applied, fmt.Errorf("activate mailbox %s: %w", mailbox.ID, err)
+			}
+		} else {
+			base := charge.ChargedAt
+			if mailbox.ExpiresAt != nil && mailbox.ExpiresAt.After(base) {
+				base = *mailbox.ExpiresAt
+			}
+			nextExpiry := base.AddDate(0, 1, 0)
+			if mailbox.AccountID != "" {
+				if err := s.accounts.UpdateSubscriptionExpiresAt(ctx, mailbox.AccountID, nextExpiry); err != nil {
+					return applied, fmt.Errorf("renew account for mailbox %s: %w", mailbox.ID, err)
+				}
+			}
+			mailbox.Status = domain.MailboxStatusActive
+			mailbox.PaidAt = &charge.ChargedAt
+			mailbox.ExpiresAt = &nextExpiry
+			mailbox.LastPaymentChargeID = charge.ChargeID
+			mailbox.LastPaymentChargedAt = &charge.ChargedAt
+			if err := s.repo.Update(ctx, mailbox); err != nil {
+				return applied, fmt.Errorf("renew mailbox %s: %w", mailbox.ID, err)
+			}
+			if s.provisioner != nil {
+				if err := s.provisioner.EnsureMailbox(ctx, mailbox); err != nil {
+					return applied, fmt.Errorf("provision renewed mailbox %s: %w", mailbox.ID, err)
+				}
+			}
+		}
+		applied++
+	}
+	return applied, nil
 }
 
 // ReconcilePendingPayments checks all mailboxes stuck in pending_payment status
@@ -976,7 +1046,7 @@ func (s *MailboxService) shouldRewriteLegacyIMAPHost(value string) bool {
 	return host == "imap.mailservice.local"
 }
 
-// validateCoupon checks if the coupon code is valid and returns the Polar discount ID
+// validateCoupon checks if the coupon code is valid and returns the provider discount ID
 // and the number of months to grant. Returns ("", 0, nil) when no coupon is provided.
 func (s *MailboxService) validateCoupon(couponCode string) (discountID string, grantedMonths int, err error) {
 	if couponCode == "" {

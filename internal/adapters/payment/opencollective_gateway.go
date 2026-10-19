@@ -1,0 +1,199 @@
+package payment
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/base32"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/atvirokodosprendimai/mailservice/internal/core/ports"
+)
+
+const (
+	ocPageSize    = 100
+	ocMaxPages    = 20
+	ocTimeout     = 30 * time.Second
+	ocOrdersQuery = `query ($slug: String!, $limit: Int!, $offset: Int!) {
+  account(slug: $slug) {
+    orders(limit: $limit, offset: $offset, filter: INCOMING) {
+      nodes { publicId status frequency lastChargedAt processedAt tier { slug } tags }
+    }
+  }
+}`
+)
+
+// OpenCollectiveConfig contains the checkout and read-only order API settings.
+type OpenCollectiveConfig struct {
+	CheckoutURL   string
+	APIURL        string
+	PersonalToken string
+	ProjectSlug   string
+	TierSlug      string
+	Client        *http.Client
+}
+
+// OpenCollectiveGateway creates tagged checkouts and polls settled orders.
+type OpenCollectiveGateway struct {
+	checkoutURL *url.URL
+	apiURL      string
+	token       string
+	projectSlug string
+	tierSlug    string
+	client      *http.Client
+}
+
+// NewOpenCollectiveGateway validates the checkout and API endpoints.
+func NewOpenCollectiveGateway(cfg OpenCollectiveConfig) (*OpenCollectiveGateway, error) {
+	checkout, err := url.Parse(cfg.CheckoutURL)
+	if err != nil || checkout.Scheme != "https" || checkout.Host != "opencollective.com" || !strings.Contains(checkout.Path, "/contribute/") || !strings.HasSuffix(checkout.Path, "/checkout") {
+		return nil, fmt.Errorf("invalid Open Collective checkout URL")
+	}
+	api, err := url.Parse(cfg.APIURL)
+	if err != nil || (api.Scheme != "https" && !(api.Scheme == "http" && (api.Hostname() == "localhost" || api.Hostname() == "127.0.0.1"))) || api.Host == "" || api.User != nil || api.RawQuery != "" || api.Fragment != "" {
+		return nil, fmt.Errorf("invalid Open Collective API URL")
+	}
+	client := cfg.Client
+	if client == nil {
+		client = &http.Client{Timeout: ocTimeout}
+	}
+	return &OpenCollectiveGateway{checkoutURL: checkout, apiURL: cfg.APIURL, token: cfg.PersonalToken, projectSlug: cfg.ProjectSlug, tierSlug: cfg.TierSlug, client: client}, nil
+}
+
+func checkoutTag(mailboxID string) string {
+	sum := sha256.Sum256([]byte("truevipaccess-checkout:" + mailboxID))
+	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sum[:])
+	return "tva-" + strings.ToLower(encoded[:16])
+}
+
+// CreatePaymentLink returns a tagged checkout URL without making a network call.
+func (g *OpenCollectiveGateway) CreatePaymentLink(_ context.Context, req ports.PaymentLinkRequest) (*ports.PaymentLink, error) {
+	if req.MailboxID == "" {
+		return nil, fmt.Errorf("mailbox ID is required")
+	}
+	tag := checkoutTag(req.MailboxID)
+	checkout := *g.checkoutURL
+	query := checkout.Query()
+	query.Set("tags", tag)
+	checkout.RawQuery = query.Encode()
+	return &ports.PaymentLink{SessionID: tag, URL: checkout.String()}, nil
+}
+
+// GetPaymentSession reports a checkout confirmed only after an authenticated order read.
+func (g *OpenCollectiveGateway) GetPaymentSession(ctx context.Context, sessionID string) (*ports.PaymentSession, error) {
+	if g.token == "" || g.projectSlug == "" || g.tierSlug == "" {
+		return &ports.PaymentSession{SessionID: sessionID, Status: ports.PaymentSessionStatusOpen}, nil
+	}
+	charges, err := g.ListPaidCharges(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, charge := range charges {
+		if charge.Tag == sessionID {
+			return &ports.PaymentSession{SessionID: sessionID, Status: ports.PaymentSessionStatusConfirmed}, nil
+		}
+	}
+	return &ports.PaymentSession{SessionID: sessionID, Status: ports.PaymentSessionStatusOpen}, nil
+}
+
+type ocOrdersResponse struct {
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+	Data struct {
+		Account *struct {
+			Orders struct {
+				Nodes []struct {
+					PublicID      string  `json:"publicId"`
+					Status        string  `json:"status"`
+					Frequency     string  `json:"frequency"`
+					LastChargedAt *string `json:"lastChargedAt"`
+					ProcessedAt   *string `json:"processedAt"`
+					Tier          *struct {
+						Slug string `json:"slug"`
+					} `json:"tier"`
+					Tags []string `json:"tags"`
+				} `json:"nodes"`
+			} `json:"orders"`
+		} `json:"account"`
+	} `json:"data"`
+}
+
+// ListPaidCharges reads all monthly orders on the configured tier. Price is deliberately ignored.
+func (g *OpenCollectiveGateway) ListPaidCharges(ctx context.Context) ([]ports.PaymentCharge, error) {
+	if g.token == "" || g.projectSlug == "" || g.tierSlug == "" {
+		return nil, fmt.Errorf("Open Collective reconciliation requires token, project slug and tier slug")
+	}
+	var charges []ports.PaymentCharge
+	for page := 0; page < ocMaxPages; page++ {
+		batch, err := g.fetchPage(ctx, page*ocPageSize)
+		if err != nil {
+			return nil, err
+		}
+		for _, order := range batch.Data.Account.Orders.Nodes {
+			if order.Tier == nil || order.Tier.Slug != g.tierSlug || order.Frequency != "MONTHLY" || (order.Status != "ACTIVE" && order.Status != "PAID") || order.PublicID == "" {
+				continue
+			}
+			charged := order.LastChargedAt
+			if charged == nil {
+				charged = order.ProcessedAt
+			}
+			if charged == nil {
+				continue
+			}
+			chargedAt, err := time.Parse(time.RFC3339, *charged)
+			if err != nil {
+				return nil, fmt.Errorf("invalid Open Collective charge time: %w", err)
+			}
+			for _, tag := range order.Tags {
+				if !strings.HasPrefix(tag, "tva-") {
+					continue
+				}
+				charges = append(charges, ports.PaymentCharge{Tag: tag, ChargeID: order.PublicID + ":" + chargedAt.UTC().Format(time.RFC3339Nano), ChargedAt: chargedAt.UTC()})
+			}
+		}
+		if len(batch.Data.Account.Orders.Nodes) < ocPageSize {
+			sort.Slice(charges, func(i, j int) bool { return charges[i].ChargedAt.Before(charges[j].ChargedAt) })
+			return charges, nil
+		}
+	}
+	return nil, fmt.Errorf("Open Collective orders exceeded %d pages", ocMaxPages)
+}
+
+func (g *OpenCollectiveGateway) fetchPage(ctx context.Context, offset int) (ocOrdersResponse, error) {
+	var result ocOrdersResponse
+	body, err := json.Marshal(map[string]any{"query": ocOrdersQuery, "variables": map[string]any{"slug": g.projectSlug, "limit": ocPageSize, "offset": offset}})
+	if err != nil {
+		return result, fmt.Errorf("encode Open Collective query: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.apiURL, bytes.NewReader(body))
+	if err != nil {
+		return result, fmt.Errorf("create Open Collective request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Personal-Token", g.token)
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return result, fmt.Errorf("Open Collective request: %w", err)
+	}
+	defer resp.Body.Close()
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return result, fmt.Errorf("decode Open Collective response: %w", err)
+	}
+	if len(result.Errors) != 0 {
+		return result, fmt.Errorf("Open Collective rejected orders query: %s", result.Errors[0].Message)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return result, fmt.Errorf("Open Collective HTTP %d", resp.StatusCode)
+	}
+	if result.Data.Account == nil {
+		return result, fmt.Errorf("Open Collective account unavailable")
+	}
+	return result, nil
+}

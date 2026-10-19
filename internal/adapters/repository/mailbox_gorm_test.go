@@ -21,6 +21,7 @@ func TestMailboxRepositoryPersistsBillingEmailAndKeyFingerprint(t *testing.T) {
 	}
 
 	repo := NewMailboxRepository(db)
+	chargedAt := time.Date(2026, 10, 19, 9, 0, 0, 0, time.UTC)
 	mailbox := &domain.Mailbox{
 		ID:               "mbx-1",
 		AccountID:        "acc-1",
@@ -33,6 +34,8 @@ func TestMailboxRepositoryPersistsBillingEmailAndKeyFingerprint(t *testing.T) {
 		IMAPPassword:     "secret",
 		AccessToken:      "access-1",
 		PaymentSessionID: "payment-1",
+		LastPaymentChargeID: "or_1:2026-10-19T09:00:00Z",
+		LastPaymentChargedAt: &chargedAt,
 		PaymentURL:       "https://pay.example.com/session/1",
 		Status:           domain.MailboxStatusPendingPayment,
 	}
@@ -50,6 +53,9 @@ func TestMailboxRepositoryPersistsBillingEmailAndKeyFingerprint(t *testing.T) {
 	}
 	if stored.KeyFingerprint != "edproof:abc123" {
 		t.Fatalf("expected key fingerprint, got %q", stored.KeyFingerprint)
+	}
+	if stored.LastPaymentChargeID != mailbox.LastPaymentChargeID || stored.LastPaymentChargedAt == nil || !stored.LastPaymentChargedAt.Equal(chargedAt) {
+		t.Fatalf("charge cursor was not persisted: %+v", stored)
 	}
 
 	byKey, err := repo.GetByKeyFingerprint(context.Background(), "edproof:abc123")
