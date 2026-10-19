@@ -3,7 +3,7 @@
 Practical guidance for coding agents working in this repository.
 
 ## Project Snapshot
-- Go API for inbound mailbox provisioning (OpenClaw use case). Free mode is the default: `POST /v1/mailboxes/claim` -> email activation link -> `POST /v1/access/resolve`. Legacy account/token flow still exists and must stay stable during migration.
+- Go API for inbound mailbox provisioning (OpenClaw use case). Paid mode is the default: `POST /v1/mailboxes/claim` -> Open Collective checkout -> reconciliation -> `POST /v1/access/resolve`. Free mode remains available with `FREE_MODE=true`. Legacy account/token flow still exists and must stay stable during migration.
 - Product boundary: inbound email + IMAP read access only; no SMTP/outbound sending.
 
 ## Architecture (Hexagonal)

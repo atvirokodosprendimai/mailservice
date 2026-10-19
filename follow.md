@@ -12,15 +12,9 @@ curl -X POST http://localhost:8080/v1/mailboxes/claim \
 
 - Same key returns the same mailbox.
 - Different key returns a different mailbox.
-- Service emails a one-time activation link to `billing_email` (24-hour expiry; the claim response carries it in `payment_url`, name kept for compatibility).
+- The claim response includes an Open Collective monthly checkout URL in `payment_url`; the mailbox stays `pending_payment` until a settled order with its tag is reconciled.
 
-2. Activate the mailbox and then resolve IMAP details with the same key:
-
-The owner (or the agent, which received the link in the claim response) opens the activation link:
-
-```bash
-curl -sf "<activation_url>"  # 200 = activated / already active; 404 = link expired or used
-```
+2. Complete the Open Collective checkout and then resolve IMAP details with the same key. Activation happens after the next authenticated order poll (default interval 15 minutes):
 
 ```bash
 curl -X POST http://localhost:8080/v1/access/resolve \
@@ -89,7 +83,7 @@ curl -X POST http://localhost:8080/v1/mailboxes \
 
 - If there is no pending mailbox, service creates one, emails an activation link to the owner, and returns `201`.
 - If a pending mailbox already exists, service returns it with `200` and status `pending_payment`.
-- Free mode ignores account subscription state; mailboxes never expire once activated.
+- With `FREE_MODE=true`, the service emails an activation link and activated mailboxes do not expire. The default paid flow uses Open Collective.
 
 6. Poll mailbox status:
 
