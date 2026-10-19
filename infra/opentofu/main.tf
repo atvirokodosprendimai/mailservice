@@ -75,6 +75,12 @@ resource "hcloud_server" "app" {
   }
 
   user_data = local.server_user_data
+
+  # The server holds the only copy of the maildirs and auto-apply runs unreviewed on push to main.
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [image, user_data]
+  }
 }
 
 locals {
@@ -108,6 +114,10 @@ resource "cloudflare_record" "mail_a" {
   type    = "A"
   ttl     = 300
   proxied = false
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 resource "cloudflare_record" "mx_primary" {
@@ -117,6 +127,10 @@ resource "cloudflare_record" "mx_primary" {
   type     = "MX"
   priority = 10
   ttl      = 300
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 output "server_ipv4" {
