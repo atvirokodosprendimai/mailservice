@@ -27,21 +27,21 @@ type SupportConfig struct {
 
 type MailboxService struct {
 	paymentReconcileMu sync.Mutex
-	repo          ports.MailboxRepository
-	accounts      ports.AccountRepository
-	payment       ports.PaymentGateway
-	notifier      ports.Notifier
-	tokenGen      ports.TokenGenerator
-	provisioner   ports.MailRuntimeProvisioner
-	mailReader    ports.MailReader
-	mailDomain    string
-	imapHost      string
-	imapPort      int
-	giftCoupon    GiftCouponConfig
-	support       SupportConfig
-	metrics       *metrics.Registry
-	freeMode      bool
-	publicBaseURL string
+	repo               ports.MailboxRepository
+	accounts           ports.AccountRepository
+	payment            ports.PaymentGateway
+	notifier           ports.Notifier
+	tokenGen           ports.TokenGenerator
+	provisioner        ports.MailRuntimeProvisioner
+	mailReader         ports.MailReader
+	mailDomain         string
+	imapHost           string
+	imapPort           int
+	giftCoupon         GiftCouponConfig
+	support            SupportConfig
+	metrics            *metrics.Registry
+	freeMode           bool
+	publicBaseURL      string
 }
 
 func NewMailboxService(repo ports.MailboxRepository, accounts ports.AccountRepository, payment ports.PaymentGateway, notifier ports.Notifier, tokenGen ports.TokenGenerator, provisioner ports.MailRuntimeProvisioner, mailReader ports.MailReader, mailDomain string, imapHost string, imapPort int, giftCoupon ...GiftCouponConfig) *MailboxService {
@@ -453,6 +453,10 @@ func (s *MailboxService) markMailboxPaid(ctx context.Context, paymentSessionID s
 	}
 
 	now := time.Now().UTC()
+	if charge != nil {
+		// Backfilled payments start their month when OC charged the card, not when this poll runs.
+		now = charge.ChargedAt
+	}
 	if strings.TrimSpace(mailbox.AccountID) == "" {
 		base := now
 		if mailbox.ExpiresAt != nil && mailbox.ExpiresAt.After(base) {

@@ -23,7 +23,7 @@ const (
 	ocOrdersQuery = `query ($slug: String!, $limit: Int!, $offset: Int!) {
   account(slug: $slug) {
     orders(limit: $limit, offset: $offset, filter: INCOMING) {
-      nodes { publicId status frequency lastChargedAt processedAt tier { slug } tags }
+      nodes { publicId frequency tier { slug } tags transactions { publicId type kind createdAt isRefunded } }
     }
   }
 }`
@@ -110,15 +110,19 @@ type ocOrdersResponse struct {
 		Account *struct {
 			Orders struct {
 				Nodes []struct {
-					PublicID      string  `json:"publicId"`
-					Status        string  `json:"status"`
-					Frequency     string  `json:"frequency"`
-					LastChargedAt *string `json:"lastChargedAt"`
-					ProcessedAt   *string `json:"processedAt"`
-					Tier          *struct {
+					PublicID  string `json:"publicId"`
+					Frequency string `json:"frequency"`
+					Tier      *struct {
 						Slug string `json:"slug"`
 					} `json:"tier"`
-					Tags []string `json:"tags"`
+					Tags         []string `json:"tags"`
+					Transactions []struct {
+						PublicID   string `json:"publicId"`
+						Type       string `json:"type"`
+						Kind       string `json:"kind"`
+						CreatedAt  string `json:"createdAt"`
+						IsRefunded bool   `json:"isRefunded"`
+					} `json:"transactions"`
 				} `json:"nodes"`
 			} `json:"orders"`
 		} `json:"account"`
@@ -137,25 +141,23 @@ func (g *OpenCollectiveGateway) ListPaidCharges(ctx context.Context) ([]ports.Pa
 			return nil, err
 		}
 		for _, order := range batch.Data.Account.Orders.Nodes {
-			if order.Tier == nil || order.Tier.Slug != g.tierSlug || order.Frequency != "MONTHLY" || (order.Status != "ACTIVE" && order.Status != "PAID") || order.PublicID == "" {
+			if order.Tier == nil || order.Tier.Slug != g.tierSlug || order.Frequency != "MONTHLY" || order.PublicID == "" {
 				continue
 			}
-			charged := order.LastChargedAt
-			if charged == nil {
-				charged = order.ProcessedAt
-			}
-			if charged == nil {
-				continue
-			}
-			chargedAt, err := time.Parse(time.RFC3339, *charged)
-			if err != nil {
-				return nil, fmt.Errorf("invalid Open Collective charge time: %w", err)
-			}
-			for _, tag := range order.Tags {
-				if !strings.HasPrefix(tag, "tva-") {
+			for _, transaction := range order.Transactions {
+				if transaction.Type != "CREDIT" || transaction.Kind != "CONTRIBUTION" || transaction.IsRefunded || transaction.PublicID == "" {
 					continue
 				}
-				charges = append(charges, ports.PaymentCharge{Tag: tag, ChargeID: order.PublicID + ":" + chargedAt.UTC().Format(time.RFC3339Nano), ChargedAt: chargedAt.UTC()})
+				chargedAt, err := time.Parse(time.RFC3339, transaction.CreatedAt)
+				if err != nil {
+					return nil, fmt.Errorf("invalid Open Collective transaction time: %w", err)
+				}
+				for _, tag := range order.Tags {
+					if !strings.HasPrefix(tag, "tva-") {
+						continue
+					}
+					charges = append(charges, ports.PaymentCharge{Tag: tag, ChargeID: transaction.PublicID, ChargedAt: chargedAt.UTC()})
+				}
 			}
 		}
 		if len(batch.Data.Account.Orders.Nodes) < ocPageSize {

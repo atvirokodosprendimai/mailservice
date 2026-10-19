@@ -35,12 +35,16 @@ func TestOpenCollectiveCheckoutAndPaidOrderMatching(t *testing.T) {
 			t.Errorf("project slug = %q", payload.Variables.Slug)
 		}
 		fixture := `{"data":{"account":{"orders":{"nodes":[
-{"publicId":"or_1","status":"ACTIVE","frequency":"MONTHLY","lastChargedAt":"2026-10-19T09:00:00Z","amount":{"value":1.15,"currency":"EUR"},"tier":{"slug":"mailbox-monthly"},"tags":["TAG"]},
-{"publicId":"or_2","status":"ACTIVE","frequency":"MONTHLY","lastChargedAt":"2026-10-19T09:00:00Z","tier":{"slug":"wrong"},"tags":["TAG"]},
-{"publicId":"or_3","status":"PENDING","frequency":"MONTHLY","lastChargedAt":"2026-10-19T09:00:00Z","tier":{"slug":"mailbox-monthly"},"tags":["TAG"]},
-{"publicId":"or_4","status":"PAID","frequency":"ONETIME","processedAt":"2026-10-19T09:00:00Z","tier":{"slug":"mailbox-monthly"},"tags":["TAG"]},
-{"publicId":"or_5","status":"ACTIVE","frequency":"MONTHLY","lastChargedAt":"2026-10-19T09:00:00Z","tier":null,"tags":["TAG"]},
-{"publicId":"or_6","status":"ACTIVE","frequency":"MONTHLY","lastChargedAt":"2026-10-19T09:00:00Z","tier":{"slug":"mailbox-monthly"},"tags":null}
+{"publicId":"or_1","frequency":"MONTHLY","amount":{"value":1.15,"currency":"EUR"},"tier":{"slug":"mailbox-monthly"},"tags":["TAG"],"transactions":[
+{"publicId":"tx_1","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-09-19T09:00:00Z","isRefunded":false},
+{"publicId":"tx_2","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T09:00:00Z","isRefunded":false},
+{"publicId":"tx_tip","type":"CREDIT","kind":"PLATFORM_TIP","createdAt":"2026-10-19T09:00:00Z","isRefunded":false},
+{"publicId":"tx_refund","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-08-19T09:00:00Z","isRefunded":true}]},
+{"publicId":"or_2","frequency":"MONTHLY","tier":{"slug":"wrong"},"tags":["TAG"],"transactions":[{"publicId":"tx_3","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T09:00:00Z"}]},
+{"publicId":"or_3","frequency":"MONTHLY","tier":{"slug":"mailbox-monthly"},"tags":["TAG"],"transactions":[]},
+{"publicId":"or_4","frequency":"ONETIME","tier":{"slug":"mailbox-monthly"},"tags":["TAG"],"transactions":[{"publicId":"tx_4","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T09:00:00Z"}]},
+{"publicId":"or_5","frequency":"MONTHLY","tier":null,"tags":["TAG"],"transactions":[{"publicId":"tx_5","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T09:00:00Z"}]},
+{"publicId":"or_6","frequency":"MONTHLY","tier":{"slug":"mailbox-monthly"},"tags":null,"transactions":[{"publicId":"tx_6","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T09:00:00Z"}]}
 ]}}}}`
 		_, _ = w.Write([]byte(strings.ReplaceAll(fixture, "TAG", tag)))
 	}))
@@ -67,7 +71,7 @@ func TestOpenCollectiveCheckoutAndPaidOrderMatching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(charges) != 1 || charges[0].Tag != tag || !strings.HasPrefix(charges[0].ChargeID, "or_1:") {
+	if len(charges) != 2 || charges[0].Tag != tag || charges[0].ChargeID != "tx_1" || charges[1].ChargeID != "tx_2" {
 		t.Fatalf("charges = %+v", charges)
 	}
 	session, err := gateway.GetPaymentSession(context.Background(), tag)

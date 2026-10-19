@@ -16,7 +16,7 @@ func (f fakeChargeSource) ListPaidCharges(context.Context) ([]ports.PaymentCharg
 }
 
 func TestReconcileOpenCollectiveActivatesAndRenewsOnce(t *testing.T) {
-	chargedAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+	chargedAt := time.Now().UTC().Add(-35 * 24 * time.Hour).Truncate(time.Second)
 	mailbox := &domain.Mailbox{ID: "mbx-1", PaymentSessionID: "tva-example", Status: domain.MailboxStatusPendingPayment, CreatedAt: chargedAt.Add(-time.Minute)}
 	repo := &fakeMailboxRepo{byStripeSession: map[string]*domain.Mailbox{"tva-example": mailbox}}
 	svc := NewMailboxService(repo, &fakeMailboxAccountRepo{}, &fakePaymentGateway{}, &fakeMailboxNotifier{}, fakeMailboxTokenGenerator{token: "token"}, nil, &fakeMailReader{}, "mail.test", "imap.test", 993)
@@ -29,6 +29,9 @@ func TestReconcileOpenCollectiveActivatesAndRenewsOnce(t *testing.T) {
 		t.Fatalf("activation = %+v", mailbox)
 	}
 	firstExpiry := *mailbox.ExpiresAt
+	if !firstExpiry.Equal(chargedAt.AddDate(0, 1, 0)) {
+		t.Fatalf("backfilled activation expiry = %v, want one month after charge", firstExpiry)
+	}
 	if n, err := svc.ReconcileOpenCollectivePayments(context.Background(), source); err != nil || n != 0 {
 		t.Fatalf("repeat reconcile = %d, %v", n, err)
 	}
