@@ -195,14 +195,12 @@ jobs:
             printf 'IMAP_PORT=%s\n' "$IMAP_PORT"
             printf 'MAX_CONCURRENT_REQUESTS=%s\n' "$MAX_CONCURRENT_REQUESTS"
             printf 'MAILBOX_PRICE_CENTS=%s\n' "$MAILBOX_PRICE_CENTS"
-            printf 'POLAR_TOKEN=%s\n' "$POLAR_TOKEN"
-            printf 'POLAR_PRODUCT_ID=%s\n' "$POLAR_PRODUCT_ID"
-            printf 'POLAR_SERVER_URL=%s\n' "$POLAR_SERVER_URL"
-            printf 'POLAR_SUCCESS_URL=%s\n' "$POLAR_SUCCESS_URL"
-            printf 'POLAR_RETURN_URL=%s\n' "$POLAR_RETURN_URL"
-            printf 'POLAR_WEBHOOK_SECRET=%s\n' "$POLAR_WEBHOOK_SECRET"
-            printf 'POLAR_GIFT_DISCOUNT_ID=%s\n' "$POLAR_GIFT_DISCOUNT_ID"
-            printf 'POLAR_GIFT_COUPON_CODE=%s\n' "$POLAR_GIFT_COUPON_CODE"
+            printf 'OPENCOLLECTIVE_CHECKOUT_URL=%s\n' "$OPENCOLLECTIVE_CHECKOUT_URL"
+            printf 'OPENCOLLECTIVE_PERSONAL_TOKEN=%s\n' "$OPENCOLLECTIVE_PERSONAL_TOKEN"
+            printf 'OPENCOLLECTIVE_PROJECT_SLUG=%s\n' "$OPENCOLLECTIVE_PROJECT_SLUG"
+            printf 'OPENCOLLECTIVE_TIER_SLUG=%s\n' "$OPENCOLLECTIVE_TIER_SLUG"
+            printf 'OPENCOLLECTIVE_API_URL=%s\n' "$OPENCOLLECTIVE_API_URL"
+            printf 'OPENCOLLECTIVE_RECONCILE_INTERVAL=%s\n' "$OPENCOLLECTIVE_RECONCILE_INTERVAL"
             printf 'EDPROOF_HMAC_SECRET=%s\n' "$EDPROOF_HMAC_SECRET"
             printf 'DATABASE_MODE=local\n'
             printf 'TURSO_DATABASE_URL=%s\n' "$TURSO_DATABASE_URL"
@@ -235,14 +233,12 @@ jobs:
           IMAP_PORT: ${{ vars.IMAP_PORT }}
           MAX_CONCURRENT_REQUESTS: ${{ vars.MAX_CONCURRENT_REQUESTS }}
           MAILBOX_PRICE_CENTS: ${{ vars.MAILBOX_PRICE_CENTS }}
-          POLAR_TOKEN: ${{ secrets.POLAR_TOKEN }}
-          POLAR_PRODUCT_ID: ${{ vars.POLAR_PRODUCT_ID }}
-          POLAR_SERVER_URL: ${{ vars.POLAR_SERVER_URL }}
-          POLAR_SUCCESS_URL: ${{ vars.POLAR_SUCCESS_URL }}
-          POLAR_RETURN_URL: ${{ vars.POLAR_RETURN_URL }}
-          POLAR_WEBHOOK_SECRET: ${{ secrets.POLAR_WEBHOOK_SECRET }}
-          POLAR_GIFT_DISCOUNT_ID: ${{ vars.POLAR_GIFT_DISCOUNT_ID }}
-          POLAR_GIFT_COUPON_CODE: ${{ vars.POLAR_GIFT_COUPON_CODE }}
+          OPENCOLLECTIVE_CHECKOUT_URL: ${{ vars.OPENCOLLECTIVE_CHECKOUT_URL }}
+          OPENCOLLECTIVE_PERSONAL_TOKEN: ${{ secrets.OPENCOLLECTIVE_PERSONAL_TOKEN }}
+          OPENCOLLECTIVE_PROJECT_SLUG: ${{ vars.OPENCOLLECTIVE_PROJECT_SLUG }}
+          OPENCOLLECTIVE_TIER_SLUG: ${{ vars.OPENCOLLECTIVE_TIER_SLUG }}
+          OPENCOLLECTIVE_API_URL: ${{ vars.OPENCOLLECTIVE_API_URL }}
+          OPENCOLLECTIVE_RECONCILE_INTERVAL: ${{ vars.OPENCOLLECTIVE_RECONCILE_INTERVAL }}
           EDPROOF_HMAC_SECRET: ${{ secrets.EDPROOF_HMAC_SECRET }}
           TURSO_DATABASE_URL: ${{ vars.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
@@ -269,7 +265,7 @@ jobs:
             set -eu
             env_file="/var/lib/secrets/mailservice.env"
             missing=()
-            for var in POLAR_TOKEN POLAR_PRODUCT_ID POLAR_WEBHOOK_SECRET EDPROOF_HMAC_SECRET MAIL_DOMAIN IMAP_HOST IMAP_PORT PUBLIC_BASE_URL; do
+            for var in EDPROOF_HMAC_SECRET MAIL_DOMAIN IMAP_HOST IMAP_PORT PUBLIC_BASE_URL; do
               if ! grep -q "^${var}=.\+" "$env_file" 2>/dev/null; then
                 missing+=("$var")
               fi
