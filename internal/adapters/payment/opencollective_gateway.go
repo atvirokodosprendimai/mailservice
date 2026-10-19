@@ -144,6 +144,12 @@ func (g *OpenCollectiveGateway) ListPaidCharges(ctx context.Context) ([]ports.Pa
 			if order.Tier == nil || order.Tier.Slug != g.tierSlug || order.Frequency != "MONTHLY" || order.PublicID == "" {
 				continue
 			}
+			// One order pays for exactly one mailbox; several tva- tags would let one
+			// €1 contribution activate many, so an ambiguous order credits none.
+			tag, ok := singleMailboxTag(order.Tags)
+			if !ok {
+				continue
+			}
 			for _, transaction := range order.Transactions {
 				// A nullable refund flag is not evidence that the charge remains settled.
 				if transaction.Type != "CREDIT" || transaction.Kind != "CONTRIBUTION" || transaction.IsRefunded == nil || *transaction.IsRefunded || transaction.PublicID == "" {
@@ -153,12 +159,7 @@ func (g *OpenCollectiveGateway) ListPaidCharges(ctx context.Context) ([]ports.Pa
 				if err != nil {
 					return nil, fmt.Errorf("invalid Open Collective transaction time: %w", err)
 				}
-				for _, tag := range order.Tags {
-					if !strings.HasPrefix(tag, "tva-") {
-						continue
-					}
-					charges = append(charges, ports.PaymentCharge{Tag: tag, ChargeID: transaction.PublicID, ChargedAt: chargedAt.UTC()})
-				}
+				charges = append(charges, ports.PaymentCharge{Tag: tag, ChargeID: transaction.PublicID, ChargedAt: chargedAt.UTC()})
 			}
 		}
 		if len(batch.Data.Account.Orders.Nodes) < ocPageSize {
@@ -199,4 +200,19 @@ func (g *OpenCollectiveGateway) fetchPage(ctx context.Context, offset int) (ocOr
 		return result, fmt.Errorf("Open Collective account unavailable")
 	}
 	return result, nil
+}
+
+// singleMailboxTag returns the order's only tva- tag; zero or several is not attributable.
+func singleMailboxTag(tags []string) (string, bool) {
+	found := ""
+	for _, tag := range tags {
+		if !strings.HasPrefix(tag, "tva-") {
+			continue
+		}
+		if found != "" {
+			return "", false
+		}
+		found = tag
+	}
+	return found, found != ""
 }

@@ -94,3 +94,30 @@ func TestOpenCollectiveGraphQLErrorsAreNotEmptyOrders(t *testing.T) {
 		t.Fatal("GraphQL error reported as empty orders")
 	}
 }
+
+// One €1 order must never pay for more than one mailbox: an order carrying
+// several tva- tags is ambiguous and credits none of them.
+func TestOpenCollectiveOrderWithSeveralMailboxTagsCreditsNone(t *testing.T) {
+	a, b := checkoutTag("mbx-a"), checkoutTag("mbx-b")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fixture := `{"data":{"account":{"orders":{"nodes":[
+{"publicId":"or_1","frequency":"MONTHLY","tier":{"slug":"mailbox-monthly"},"tags":["A","B","unrelated"],"transactions":[
+{"publicId":"tx_1","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T09:00:00Z","isRefunded":false}]},
+{"publicId":"or_2","frequency":"MONTHLY","tier":{"slug":"mailbox-monthly"},"tags":["A","unrelated"],"transactions":[
+{"publicId":"tx_2","type":"CREDIT","kind":"CONTRIBUTION","createdAt":"2026-10-19T10:00:00Z","isRefunded":false}]}
+]}}}}`
+		_, _ = w.Write([]byte(strings.NewReplacer("\"A\"", "\""+a+"\"", "\"B\"", "\""+b+"\"").Replace(fixture)))
+	}))
+	defer server.Close()
+	gateway, err := NewOpenCollectiveGateway(OpenCollectiveConfig{CheckoutURL: "https://opencollective.com/it-uoga/projects/truevipaccess/contribute/mailbox-monthly-106782/checkout", APIURL: server.URL, PersonalToken: "t", ProjectSlug: "truevipaccess", TierSlug: "mailbox-monthly"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	charges, err := gateway.ListPaidCharges(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(charges) != 1 || charges[0].Tag != a || charges[0].ChargeID != "tx_2" {
+		t.Fatalf("charges = %+v, want only tx_2 for %s", charges, a)
+	}
+}
